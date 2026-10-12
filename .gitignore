@@ -1,0 +1,12 @@
+# Generated build directories
+/build/
+/build-*/
+/out/
+
+# Local editor settings
+/.vs/
+/.vscode/
+/CMakeUserPresets.json
+
+# Downloaded project archives
+/*.zip
