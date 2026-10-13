@@ -85,13 +85,17 @@ UiLayout CalculateUiLayout(float width, float height, const UiSettings& settings
     // Both the bar and toolbar stop their content before the minimap frame.
     const float contentWidth = std::min(layout.minimap.x, layout.toolbar.x) - 2 * gap;
     const float demandW = 80.0f * s;
-    const float tickerWidth = contentWidth - demandW - gap;
+
+    // Gap between the RCI indicator and the other elements.
+    const float demandGap = 200.0f * s;
+
+    const float tickerWidth = contentWidth - demandW - demandGap;
 
     layout.newsTicker = {gap, layout.bottomBar.y + gap, tickerWidth, 28.0f * s};
 
     const float rowY = layout.newsTicker.y + layout.newsTicker.h + gap;
     const float rowH = layout.height - gap - rowY;
-    const float statsW = contentWidth - demandW - 3 * gap;
+    const float statsW = tickerWidth - 2.0f * gap;
 
     layout.cityName = {gap, rowY, statsW * 0.42f, rowH};
     layout.population = {layout.cityName.x + layout.cityName.w + gap, rowY, statsW * 0.27f, rowH};
