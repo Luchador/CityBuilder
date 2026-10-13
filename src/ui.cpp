@@ -66,12 +66,14 @@ UiLayout CalculateUiLayout(float width, float height, const UiSettings& settings
 
     layout.width = std::max(width, 1.0f);
     layout.height = std::max(height, 1.0f);
+    
     // Normally 1. Window minimum size is 800x480; retain safe geometry even
     // if a platform temporarily reports a smaller non-minimized window.
     const float s = std::min({1.0f, layout.width / 800.0f, layout.height / 480.0f});
     layout.scale = s;
     const float bottom = std::clamp(settings.bottomBarHeight, 72.0f, 128.0f) * s;
     const float right = std::clamp(settings.toolbarWidth, 128.0f, 240.0f) * s;
+
     // Reserve useful space for city information and toolbar controls.
     const float maxMap = std::min({512.0f * s, layout.width - 480.0f * s, layout.height - 220.0f * s});
     const float map = std::clamp(settings.minimapSize * s, 128.0f * s, maxMap);
@@ -113,7 +115,11 @@ std::vector<UiVertex> BuildUiBackground(const UiLayout& layout)
     Quad(vertices, layout.toolbar, panelTop, panelBottom);
     Frame(vertices, layout.toolbar, 2 * s, false);
     Well(vertices, layout.toolbarContent, s);
-    Well(vertices, layout.newsTicker, s);
+
+    // News Ticker
+    Solid(vertices, layout.newsTicker, {0.0f, 0.0f, 0.0f});
+    Frame(vertices, layout.newsTicker, s, true);
+
     Well(vertices, layout.cityName, s);
     Well(vertices, layout.population, s);
     Well(vertices, layout.funds, s);
