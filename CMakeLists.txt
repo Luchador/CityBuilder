@@ -9,7 +9,7 @@ set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
 add_subdirectory(vendored/SDL EXCLUDE_FROM_ALL)
 
-add_executable(CityBuilder src/main.cpp src/terrain.hpp src/shaders.hpp)
+add_executable(CityBuilder src/main.cpp src/terrain.hpp src/shaders.hpp src/ui.cpp src/ui.hpp)
 target_compile_features(CityBuilder PRIVATE cxx_std_20)
 target_compile_definitions(CityBuilder PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 # D3DCompile is supplied by the Windows SDK; no separate shader tools needed.

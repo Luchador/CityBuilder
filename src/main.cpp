@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
 #include <memory>
 #include <stdexcept>
@@ -11,6 +12,7 @@
 
 #include "terrain.hpp"
 #include "shaders.hpp"
+#include "ui.hpp"
 
 [[noreturn]] static void Fail(const char* operation)
 {
@@ -158,6 +160,9 @@ public:
             SDL_WaitForGPUIdle(device);
             if (terrainPipeline) SDL_ReleaseGPUGraphicsPipeline(device, terrainPipeline);
             if (gridPipeline) SDL_ReleaseGPUGraphicsPipeline(device, gridPipeline);
+            if (uiPipeline) SDL_ReleaseGPUGraphicsPipeline(device, uiPipeline);
+            if (uiVertexShader) SDL_ReleaseGPUShader(device, uiVertexShader);
+            if (uiVertices) SDL_ReleaseGPUBuffer(device, uiVertices);
             if (vertexShader) SDL_ReleaseGPUShader(device, vertexShader);
             if (fragmentShader) SDL_ReleaseGPUShader(device, fragmentShader);
             if (vertices) SDL_ReleaseGPUBuffer(device, vertices);
@@ -183,6 +188,8 @@ public:
             Fail("Create window");
         }
 
+        if (!SDL_SetWindowMinimumSize(window, 800, 480)) Fail("Set minimum window size");
+
         device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_DXBC, false, "direct3d12");
 
         if (!device) 
@@ -201,6 +208,8 @@ public:
         fragmentShader = CompileShader(device, FragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT);
         terrainPipeline = MakePipeline(false);
         gridPipeline = MakePipeline(true);
+        uiVertexShader = CompileShader(device, UiVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
+        uiPipeline = MakeUiPipeline();
 
         const TerrainMesh mesh = BuildTerrain();
 
@@ -253,6 +262,20 @@ public:
 
                 if (event.type == SDL_EVENT_MOUSE_WHEEL) 
                 {
+                    int windowWidth = 0, windowHeight = 0;
+
+                    if (!SDL_GetWindowSize(window, &windowWidth, &windowHeight)) 
+                    {
+                        continue;
+                    }
+
+                    const auto layout = CalculateUiLayout(static_cast<float>(windowWidth), static_cast<float>(windowHeight), uiSettings);
+
+                    if (!layout.IsWorldPoint(event.wheel.mouse_x, event.wheel.mouse_y)) 
+                    {
+                        continue;
+                    }
+
                     float amount = event.wheel.y;
     
                     if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) 
@@ -281,6 +304,71 @@ public:
     }
 
 private:
+    SDL_GPUGraphicsPipeline* MakeUiPipeline()
+    {
+        SDL_GPUVertexBufferDescription buffer{};
+        buffer.pitch = sizeof(UiVertex);
+        buffer.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+        SDL_GPUVertexAttribute attributes[2]{};
+        attributes[0].location = 0;
+        attributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
+        attributes[1].location = 1;
+        attributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
+        attributes[1].offset = offsetof(UiVertex, r);
+        SDL_GPUColorTargetDescription color{};
+        color.format = SDL_GetGPUSwapchainTextureFormat(device, window);
+        color.blend_state.enable_blend = false;
+
+        SDL_GPUGraphicsPipelineCreateInfo info{};
+        info.vertex_shader = uiVertexShader;
+        info.fragment_shader = fragmentShader;
+        info.vertex_input_state.vertex_buffer_descriptions = &buffer;
+        info.vertex_input_state.num_vertex_buffers = 1;
+        info.vertex_input_state.vertex_attributes = attributes;
+        info.vertex_input_state.num_vertex_attributes = 2;
+        info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+        info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+        info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
+        info.depth_stencil_state.enable_depth_test = false;
+        info.depth_stencil_state.enable_depth_write = false;
+        info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_ALWAYS;
+        info.target_info.color_target_descriptions = &color;
+        info.target_info.num_color_targets = 1;
+        // Rendered in its own pass after the terrain, with no depth attachment.
+        SDL_GPUGraphicsPipeline* pipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
+        if (!pipeline) Fail("Create UI pipeline");
+        return pipeline;
+    }
+
+    void EnsureUi()
+    {
+        int width = 0, height = 0;
+    
+        if (!SDL_GetWindowSize(window, &width, &height)) Fail("Get UI window size");
+
+        const auto next = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
+
+        if (uiVertices && next.width == uiLayout.width && next.height == uiLayout.height && next.minimap.w == uiLayout.minimap.w && next.toolbar.w == uiLayout.toolbar.w && next.bottomBar.h == uiLayout.bottomBar.h) 
+        {
+            return;
+        }
+
+        const auto mesh = BuildUiBackground(next);
+
+        SDL_GPUBuffer* replacement = UploadBuffer(device, mesh.data(), static_cast<Uint32>(mesh.size() * sizeof(UiVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
+
+        if (uiVertices) 
+        {
+            SDL_ReleaseGPUBuffer(device, uiVertices);
+        }
+    
+        uiVertices = replacement;
+        uiVertexCount = static_cast<Uint32>(mesh.size());
+        uiLayout = next;
+    }
+
     SDL_GPUGraphicsPipeline* MakePipeline(bool grid)
     {
         SDL_GPUVertexBufferDescription buffer{};
@@ -383,6 +471,10 @@ private:
 
     void Render()
     {
+        // Geometry is uploaded only when window/layout dimensions change.
+        // Do this before acquiring the presentation command buffer.
+        EnsureUi();
+
         SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device);
 
         if (!commands) 
@@ -435,8 +527,15 @@ private:
         depthTarget.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
         depthTarget.cycle = true;
 
-        Uniforms view{centerX, centerZ, halfHeight, static_cast<float>(width) / static_cast<float>(height), 0.20f, 0.58f, 0.22f, 0.0f};
+        const int worldWidth = std::max(1, static_cast<int>(std::lround(uiLayout.world.w * static_cast<float>(width) / uiLayout.width)));
+        const int worldHeight = std::max(1, static_cast<int>(std::lround(uiLayout.world.h * static_cast<float>(height) / uiLayout.height)));
+    
+        Uniforms view{centerX, centerZ, halfHeight, static_cast<float>(worldWidth) / static_cast<float>(worldHeight), 0.20f, 0.58f, 0.22f, 0.0f};
         SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color, 1, &depthTarget);
+        SDL_GPUViewport worldViewport{0, 0, static_cast<float>(worldWidth), static_cast<float>(worldHeight), 0, 1};
+        SDL_Rect worldScissor{0, 0, worldWidth, worldHeight};
+        SDL_SetGPUViewport(pass, &worldViewport);
+        SDL_SetGPUScissor(pass, &worldScissor);
         SDL_BindGPUGraphicsPipeline(pass, terrainPipeline);
         SDL_GPUBufferBinding vertexBinding{vertices, 0};
         SDL_GPUBufferBinding indexBinding{indices, 0};
@@ -460,6 +559,21 @@ private:
 
         SDL_EndGPURenderPass(pass);
 
+        // Preserve the city image and cover the docks with opaque UI geometry.
+        color.load_op = SDL_GPU_LOADOP_LOAD;
+        pass = SDL_BeginGPURenderPass(commands, &color, 1, nullptr);
+        SDL_GPUViewport uiViewport{0, 0, static_cast<float>(width), static_cast<float>(height), 0, 1};
+        SDL_Rect uiScissor{0, 0, static_cast<int>(width), static_cast<int>(height)};
+        SDL_SetGPUViewport(pass, &uiViewport);
+        SDL_SetGPUScissor(pass, &uiScissor);
+        SDL_BindGPUGraphicsPipeline(pass, uiPipeline);
+        SDL_GPUBufferBinding uiBinding{uiVertices, 0};
+        SDL_BindGPUVertexBuffers(pass, 0, &uiBinding, 1);
+        const float screen[4] = {uiLayout.width, uiLayout.height, 0, 0};
+        SDL_PushGPUVertexUniformData(commands, 0, screen, sizeof(screen));
+        SDL_DrawGPUPrimitives(pass, uiVertexCount, 1, 0, 0);
+        SDL_EndGPURenderPass(pass);
+
         if (!SDL_SubmitGPUCommandBuffer(commands)) 
         {
             Fail("Submit frame");
@@ -477,6 +591,12 @@ private:
     SDL_GPUBuffer* indices = nullptr;
     SDL_GPUBuffer* gridVertices = nullptr;
     SDL_GPUTexture* depth = nullptr;
+    UiSettings uiSettings;
+    UiLayout uiLayout;
+    SDL_GPUShader* uiVertexShader = nullptr;
+    SDL_GPUGraphicsPipeline* uiPipeline = nullptr;
+    SDL_GPUBuffer* uiVertices = nullptr;
+    Uint32 uiVertexCount = 0;
     Uint32 depthWidth = 0, depthHeight = 0;
     Uint32 indexCount = 0, lineVertexCount = 0;
     bool showGrid = true;
