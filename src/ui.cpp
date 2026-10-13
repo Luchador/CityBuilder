@@ -66,7 +66,7 @@ UiLayout CalculateUiLayout(float width, float height, const UiSettings& settings
 
     layout.width = std::max(width, 1.0f);
     layout.height = std::max(height, 1.0f);
-    
+
     // Normally 1. Window minimum size is 800x480; retain safe geometry even
     // if a platform temporarily reports a smaller non-minimized window.
     const float s = std::min({1.0f, layout.width / 800.0f, layout.height / 480.0f});
@@ -84,16 +84,19 @@ UiLayout CalculateUiLayout(float width, float height, const UiSettings& settings
     const float gap = 8.0f * s;
     // Both the bar and toolbar stop their content before the minimap frame.
     const float contentWidth = std::min(layout.minimap.x, layout.toolbar.x) - 2 * gap;
-    layout.newsTicker = {gap, layout.bottomBar.y + gap, contentWidth, 28.0f * s};
+    const float demandW = 80.0f * s;
+    const float tickerWidth = contentWidth - demandW - gap;
+
+    layout.newsTicker = {gap, layout.bottomBar.y + gap, tickerWidth, 28.0f * s};
+
     const float rowY = layout.newsTicker.y + layout.newsTicker.h + gap;
     const float rowH = layout.height - gap - rowY;
-    const float demandW = 80.0f * s;
     const float statsW = contentWidth - demandW - 3 * gap;
 
     layout.cityName = {gap, rowY, statsW * 0.42f, rowH};
     layout.population = {layout.cityName.x + layout.cityName.w + gap, rowY, statsW * 0.27f, rowH};
     layout.funds = {layout.population.x + layout.population.w + gap, rowY, statsW * 0.31f, rowH};
-    layout.zoneDemand = {layout.funds.x + layout.funds.w + gap, rowY, demandW, rowH};
+    layout.zoneDemand = {gap + contentWidth - demandW, layout.bottomBar.y + gap, demandW, layout.bottomBar.h - 2.0f * gap};
     layout.toolbarContent = {layout.toolbar.x + gap, gap, right - 2 * gap, std::min(layout.minimap.y, layout.world.h) - 2 * gap};
     layout.minimapContent = Inset(layout.minimap, gap);
 
