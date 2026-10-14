@@ -1,19 +1,15 @@
 #pragma once
 
 // Shader Model 5.1 / DXBC 
-inline constexpr char VertexShaderSource[] = R"hlsl(
+// Shared by terrain and water so both use exactly the same camera/depth math.
+inline constexpr char WorldViewShaderSource[] = R"hlsl(
 cbuffer View : register(b0, space1)
 {
     float4 camera; // center X, center Z, vertical half-span, aspect ratio
     float4 style;  // RGB tint, depth offset
 };
 
-struct Output {
-    float4 position : SV_Position;
-    float4 color : TEXCOORD0;
-};
-
-Output main(float3 position : TEXCOORD0, float3 normal : TEXCOORD1, float3 vertexColor : TEXCOORD2)
+float4 ProjectWorldPosition(float3 position)
 {
     float3 p = position - float3(camera.x, 0.0, camera.y);
 
@@ -22,9 +18,20 @@ Output main(float3 position : TEXCOORD0, float3 normal : TEXCOORD1, float3 verte
     float up = dot(p, float3(-0.38511795, 0.83867057, -0.38511795));
     float towardCamera = dot(p, float3(0.59302965, 0.54463904, 0.59302965));
 
-    Output result;
+    return float4(right / (camera.z * camera.w), up / camera.z, 0.5 - towardCamera / 2048.0 + style.w, 1.0);
+}
+)hlsl";
 
-    result.position = float4(right / (camera.z * camera.w), up / camera.z, 0.5 - towardCamera / 2048.0 + style.w, 1.0);
+inline constexpr char VertexShaderSource[] = R"hlsl(
+struct Output {
+    float4 position : SV_Position;
+    float4 color : TEXCOORD0;
+};
+
+Output main(float3 position : TEXCOORD0, float3 normal : TEXCOORD1, float3 vertexColor : TEXCOORD2)
+{
+    Output result;
+    result.position = ProjectWorldPosition(position);
 
     const float ambientIntensity = 0.45;
     const float directionalIntensity = 1.00;

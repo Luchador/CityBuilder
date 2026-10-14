@@ -18,12 +18,21 @@ constexpr bool IsWaterElevation(float height)
     return height < TerrainSeaLevel;
 }
 
+struct LakeSettings
+{
+    std::uint32_t count = 6;    // Maximum lakes; fewer if there isn't enough flat land. Range: 0..64.
+    float minRadius = 10.0f;    // Radius in tiles, before shoreline variation. Range: 4..64.
+    float maxRadius = 22.0f;    // Range: minRadius..64.
+    float depth = 3.0f;         // Maximum depth below sea level; snapped down to a height step. Range: 0..256.
+};
+
 struct TerrainSettings
 {
     std::uint32_t seed = 1337;
     float hillHeight = 6.0f;   // Height cap in tile units; rounded down to a height step. Range: 0..256.
     float hillSize = 32.0f;     // Broad noise wavelength in tiles. Range: 8..1024.
     float flatCoverage = 0.7f;  // Fraction flattened to Y=0 before height snapping. Range: 0..1.
+    LakeSettings lakes;         // Second pass; count=0 or depth=0 keeps the original landscape.
 };
 
 struct TerrainColor
@@ -63,6 +72,8 @@ TerrainColor SampleTerrainColor(float height, const TerrainPalette& palette = {}
 struct TerrainHeightmap
 {
     std::vector<float> heights = std::vector<float>(TerrainVertexCount, 0.0f);
+
+    void Validate() const;
 
     // x and z must be in 0..MapSize, inclusive.
     float Height(std::uint32_t x, std::uint32_t z) const

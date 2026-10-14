@@ -63,6 +63,123 @@ namespace
         {
             throw std::invalid_argument("Terrain settings require hillHeight 0..256, hillSize 8..1024, and flatCoverage 0..1");
         }
+        const auto& lakes = settings.lakes;
+        if (lakes.count > 64 ||
+            !std::isfinite(lakes.minRadius) || lakes.minRadius < 4 || lakes.minRadius > 64 ||
+            !std::isfinite(lakes.maxRadius) || lakes.maxRadius < lakes.minRadius || lakes.maxRadius > 64 ||
+            !std::isfinite(lakes.depth) || lakes.depth < 0 || lakes.depth > TerrainMaxElevation)
+        {
+            throw std::invalid_argument("Lake settings require count 0..64, radii 4..64 with minRadius <= maxRadius, and depth 0..256");
+        }
+    }
+
+    void AddLakes(TerrainHeightmap& terrain, const TerrainSettings& settings)
+    {
+        const auto& lakes = settings.lakes;
+        float maximumDepthStep = std::floor(lakes.depth / TerrainHeightStep);
+        if (maximumDepthStep * TerrainHeightStep > lakes.depth) --maximumDepthStep;
+        if (lakes.count == 0 || maximumDepthStep < 1) return;
+
+        // Distance to a hill or map edge in king moves (all eight neighbors cost
+        // one). This UNDERestimates Euclidean distance, giving each lake a safe
+        // footprint entirely inside the first pass's flat, sea-level land.
+        std::vector<int> clearance(TerrainVertexCount);
+        for (std::uint32_t z = 0; z <= MapSize; ++z)
+        {
+            for (std::uint32_t x = 0; x <= MapSize; ++x)
+            {
+                const auto index = z * TerrainStride + x;
+                clearance[index] = terrain.heights[index] == TerrainSeaLevel
+                    ? static_cast<int>(std::min({x, z, MapSize - x, MapSize - z})) : 0;
+            }
+        }
+        for (std::uint32_t z = 1; z < MapSize; ++z)
+        {
+            for (std::uint32_t x = 1; x < MapSize; ++x)
+            {
+                const auto i = z * TerrainStride + x;
+                clearance[i] = std::min(clearance[i], 1 + std::min({clearance[i - 1],
+                    clearance[i - TerrainStride - 1], clearance[i - TerrainStride], clearance[i - TerrainStride + 1]}));
+            }
+        }
+        for (std::uint32_t z = MapSize - 1; z > 0; --z)
+        {
+            for (std::uint32_t x = MapSize - 1; x > 0; --x)
+            {
+                const auto i = z * TerrainStride + x;
+                clearance[i] = std::min(clearance[i], 1 + std::min({clearance[i + 1],
+                    clearance[i + TerrainStride - 1], clearance[i + TerrainStride], clearance[i + TerrainStride + 1]}));
+            }
+        }
+
+        struct Candidate { std::uint32_t x, z; float rank; };
+        struct Lake { float x, z, radius; };
+        std::vector<Candidate> candidates;
+        const std::uint32_t lakeSeed = settings.seed ^ 0x6c616b65u;
+        for (std::uint32_t z = 1; z < MapSize; ++z)
+        {
+            for (std::uint32_t x = 1; x < MapSize; ++x)
+            {
+                if (static_cast<float>(clearance[z * TerrainStride + x]) >= lakes.minRadius + 2.0f)
+                    candidates.push_back({x, z, LatticeValue(x, z, lakeSeed)});
+            }
+        }
+        // Hash ranks make the order repeatable without depending on the standard
+        // library's random distribution/shuffle implementation. Break ties by position.
+        std::sort(candidates.begin(), candidates.end(), [](const Candidate& a, const Candidate& b)
+        {
+            if (a.rank != b.rank) return a.rank < b.rank;
+            if (a.z != b.z) return a.z < b.z;
+            return a.x < b.x;
+        });
+
+        std::vector<Lake> placed;
+        for (const auto& candidate : candidates)
+        {
+            if (placed.size() >= lakes.count) break;
+            const float cx = static_cast<float>(candidate.x);
+            const float cz = static_cast<float>(candidate.z);
+            const float available = static_cast<float>(clearance[candidate.z * TerrainStride + candidate.x]) - 2.0f;
+            const float radius = std::lerp(lakes.minRadius, std::min(lakes.maxRadius, available),
+                                          LatticeValue(candidate.x, candidate.z, lakeSeed ^ 0x92d68ca2u));
+            const bool overlaps = std::any_of(placed.begin(), placed.end(), [&](const Lake& other)
+            {
+                const float dx = cx - other.x, dz = cz - other.z;
+                const float separation = radius + other.radius + 4.0f;
+                return dx * dx + dz * dz < separation * separation;
+            });
+            if (overlaps) continue;
+
+            const float angle = 6.28318530718f * LatticeValue(candidate.x, candidate.z, lakeSeed ^ 0xa535a9b7u);
+            const float cosine = std::cos(angle), sine = std::sin(angle);
+            const float aspect = 0.60f + 0.40f * LatticeValue(candidate.x, candidate.z, lakeSeed ^ 0x7f4a7c15u);
+
+            const int startX = static_cast<int>(std::floor(cx - radius));
+            const int endX = static_cast<int>(std::ceil(cx + radius));
+            const int startZ = static_cast<int>(std::floor(cz - radius));
+            const int endZ = static_cast<int>(std::ceil(cz + radius));
+            for (int z = startZ; z <= endZ; ++z)
+            {
+                for (int x = startX; x <= endX; ++x)
+                {
+                    const float fx = static_cast<float>(x), fz = static_cast<float>(z);
+                    const float dx = fx - cx, dz = fz - cz;
+                    const float along = dx * cosine + dz * sine;
+                    const float across = (-dx * sine + dz * cosine) / aspect;
+                    const float distance = std::sqrt(along * along + across * across);
+                    // Coherent variation rounds the shore without a perfect circle.
+                    // The varying radius never exceeds the safe footprint above.
+                    const float shoreRadius = radius * (0.65f + 0.35f * ValueNoise(fx / 7.0f, fz / 7.0f, lakeSeed));
+                    const float t = std::clamp(1.0f - distance / shoreRadius, 0.0f, 1.0f);
+                    const float smoothDepth = lakes.depth * t * t * (3.0f - 2.0f * t);
+                    const float steps = std::min(std::round(smoothDepth / TerrainHeightStep), maximumDepthStep);
+                    const auto index = static_cast<std::size_t>(z) * TerrainStride + static_cast<std::size_t>(x);
+                    if (terrain.heights[index] == TerrainSeaLevel && steps > 0)
+                        terrain.heights[index] = TerrainSeaLevel - steps * TerrainHeightStep;
+                }
+            }
+            placed.push_back({cx, cz, radius});
+        }
     }
 
     void ValidatePalette(const TerrainPalette& palette)
@@ -133,9 +250,10 @@ TerrainColor SampleTerrainColor(float height, const TerrainPalette& palette)
     return SamplePalette(height, palette);
 }
 
-TerrainHeightmap GenerateTerrain(const TerrainSettings& settings)
+namespace
 {
-    Validate(settings);
+TerrainHeightmap GenerateHills(const TerrainSettings& settings)
+{
     TerrainHeightmap terrain;
 
     if (settings.hillHeight == 0 || settings.flatCoverage == 1) 
@@ -182,9 +300,7 @@ TerrainHeightmap GenerateTerrain(const TerrainSettings& settings)
     {
         const float t = std::clamp((height - cutoff) / range, 0.0f, 1.0f);
 
-        /**
-         * Shape the hills first then snap the shared corners to increments of 0.2.
-         */
+        // Shape the hills first, then snap the shared corners to TerrainHeightStep.
         const float smoothHeight = settings.hillHeight * (t * t * (3.0f - 2.0f * t));
         const float step = std::min(std::round(smoothHeight * stepsPerUnit), maximumStep);
 
@@ -193,13 +309,25 @@ TerrainHeightmap GenerateTerrain(const TerrainSettings& settings)
 
     return terrain;
 }
+}
+
+TerrainHeightmap GenerateTerrain(const TerrainSettings& settings)
+{
+    Validate(settings);
+    auto terrain = GenerateHills(settings);
+    AddLakes(terrain, settings); // Runs even when the first pass produced an entirely flat map.
+    return terrain;
+}
+
+void TerrainHeightmap::Validate() const
+{
+    if (heights.size() != TerrainVertexCount || !std::all_of(heights.begin(), heights.end(), [](float h) { return std::isfinite(h) && h <= TerrainMaxElevation; }))
+        throw std::invalid_argument("Terrain heightmap must contain 257x257 finite heights at or below 256");
+}
 
 TerrainMesh BuildTerrain(const TerrainHeightmap& terrain, const TerrainPalette& palette)
 {
-    if (terrain.heights.size() != TerrainVertexCount || !std::all_of(terrain.heights.begin(), terrain.heights.end(), [](float h) { return std::isfinite(h) && h <= TerrainMaxElevation; }))
-    {
-        throw std::invalid_argument("Terrain heightmap must contain 257x257 finite heights at or below 256");
-    }
+    terrain.Validate();
     ValidatePalette(palette);
 
     TerrainMesh mesh;

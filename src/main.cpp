@@ -12,6 +12,8 @@
 
 #include "terrain.hpp"
 #include "shaders.hpp"
+#include "water.hpp"
+#include "water_shaders.hpp"
 #include "ui.hpp"
 #include "pan.hpp"
 #include "pan_overlay.hpp"
@@ -36,12 +38,13 @@ struct BlobReleaser
     }
 };
 
-static SDL_GPUShader* CompileShader(SDL_GPUDevice* device, const char* source, SDL_GPUShaderStage stage, Uint32 samplers = 0)
+static SDL_GPUShader* CompileShader(SDL_GPUDevice* device, const char* source, SDL_GPUShaderStage stage, Uint32 samplers = 0, const char* preamble = "")
 {
     ID3DBlob* rawCode = nullptr;
     ID3DBlob* rawErrors = nullptr;
     const bool vertex = stage == SDL_GPU_SHADERSTAGE_VERTEX;
-    const HRESULT result = D3DCompile(source, std::strlen(source), vertex ? "terrain.vert" : "terrain.frag", nullptr, nullptr, "main", vertex ? "vs_5_1" : "ps_5_1", D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &rawCode, &rawErrors);
+    const std::string fullSource = std::string(preamble) + source;
+    const HRESULT result = D3DCompile(fullSource.data(), fullSource.size(), vertex ? "city.vert" : "city.frag", nullptr, nullptr, "main", vertex ? "vs_5_1" : "ps_5_1", D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &rawCode, &rawErrors);
 
     std::unique_ptr<ID3DBlob, BlobReleaser> code(rawCode), errors(rawErrors);
 
@@ -174,6 +177,11 @@ public:
             if (panVertexShader) SDL_ReleaseGPUShader(device, panVertexShader);
             if (panFragmentShader) SDL_ReleaseGPUShader(device, panFragmentShader);
             if (terrainPipeline) SDL_ReleaseGPUGraphicsPipeline(device, terrainPipeline);
+            if (waterPipeline) SDL_ReleaseGPUGraphicsPipeline(device, waterPipeline);
+            if (waterVertexShader) SDL_ReleaseGPUShader(device, waterVertexShader);
+            if (waterFragmentShader) SDL_ReleaseGPUShader(device, waterFragmentShader);
+            if (waterVertices) SDL_ReleaseGPUBuffer(device, waterVertices);
+            if (waterIndices) SDL_ReleaseGPUBuffer(device, waterIndices);
             if (gridPipeline) SDL_ReleaseGPUGraphicsPipeline(device, gridPipeline);
             if (uiPipeline) SDL_ReleaseGPUGraphicsPipeline(device, uiPipeline);
             if (uiVertexShader) SDL_ReleaseGPUShader(device, uiVertexShader);
@@ -220,10 +228,13 @@ public:
         claimed = true;
         textures.Initialize(device);
 
-        vertexShader = CompileShader(device, VertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
+        vertexShader = CompileShader(device, VertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
         fragmentShader = CompileShader(device, FragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT);
         terrainPipeline = MakePipeline(false);
         gridPipeline = MakePipeline(true);
+        waterVertexShader = CompileShader(device, WaterVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
+        waterFragmentShader = CompileShader(device, WaterFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT);
+        waterPipeline = MakeWaterPipeline();
         uiVertexShader = CompileShader(device, UiVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
         uiPipeline = MakeUiPipeline();
         textVertexShader = CompileShader(device, TextVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
@@ -246,6 +257,16 @@ public:
         gridVertices = UploadBuffer(device, mesh.lines.data(), static_cast<Uint32>(mesh.lines.size() * sizeof(Vertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
         indexCount = static_cast<Uint32>(mesh.indices.size());
         lineVertexCount = static_cast<Uint32>(mesh.lines.size());
+
+        const WaterMesh water = BuildWater(terrain);
+        waterIndexCount = static_cast<Uint32>(water.indices.size());
+        if (waterIndexCount > 0)
+        {
+            waterVertices = UploadBuffer(device, water.vertices.data(), static_cast<Uint32>(water.vertices.size() * sizeof(WaterVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
+            waterIndices = UploadBuffer(device, water.indices.data(), static_cast<Uint32>(water.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
+        }
+        SDL_Log("Water tiles: %u / %u", static_cast<unsigned int>(waterIndexCount / 6),
+                static_cast<unsigned int>(MapSize * MapSize));
     }
 
     void Run()
@@ -529,6 +550,47 @@ private:
         return pipeline;
     }
 
+    SDL_GPUGraphicsPipeline* MakeWaterPipeline()
+    {
+        SDL_GPUVertexBufferDescription buffer{};
+        buffer.pitch = sizeof(WaterVertex);
+        buffer.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+        SDL_GPUVertexAttribute attributes[2]{};
+        attributes[0].location = 0;
+        attributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+        attributes[0].offset = offsetof(WaterVertex, x);
+        attributes[1].location = 1;
+        attributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT;
+        attributes[1].offset = offsetof(WaterVertex, waterDepth);
+
+        SDL_GPUColorTargetDescription color{};
+        color.format = SDL_GetGPUSwapchainTextureFormat(device, window);
+        color.blend_state.enable_blend = false;
+
+        SDL_GPUGraphicsPipelineCreateInfo info{};
+        info.vertex_shader = waterVertexShader;
+        info.fragment_shader = waterFragmentShader;
+        info.vertex_input_state.vertex_buffer_descriptions = &buffer;
+        info.vertex_input_state.num_vertex_buffers = 1;
+        info.vertex_input_state.vertex_attributes = attributes;
+        info.vertex_input_state.num_vertex_attributes = 2;
+        info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+        info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
+        info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
+        info.depth_stencil_state.enable_depth_test = true;
+        info.depth_stencil_state.enable_depth_write = true;
+        info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS;
+        info.target_info.color_target_descriptions = &color;
+        info.target_info.num_color_targets = 1;
+        info.target_info.has_depth_stencil_target = true;
+        info.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
+        SDL_GPUGraphicsPipeline* pipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
+        if (!pipeline) Fail("Create water pipeline");
+        return pipeline;
+    }
+
     bool EnsureDepth(Uint32 width, Uint32 height)
     {
         if (depth && width == depthWidth && height == depthHeight) 
@@ -706,6 +768,23 @@ private:
             SDL_DrawGPUPrimitives(pass, lineVertexCount, 1, 0, 0);
         }
 
+        // Draw opaque water after the grid, covering submerged lines. The grid
+        // itself still follows the lake bed; there is no floating grid on water.
+        if (waterIndexCount > 0)
+        {
+            SDL_BindGPUGraphicsPipeline(pass, waterPipeline);
+            SDL_GPUBufferBinding waterVertexBinding{waterVertices, 0};
+            SDL_GPUBufferBinding waterIndexBinding{waterIndices, 0};
+            SDL_BindGPUVertexBuffers(pass, 0, &waterVertexBinding, 1);
+            SDL_BindGPUIndexBuffer(pass, &waterIndexBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+            view.red = WaterColor.r;
+            view.green = WaterColor.g;
+            view.blue = WaterColor.b;
+            view.depthOffset = 0.0f;
+            SDL_PushGPUVertexUniformData(commands, 0, &view, sizeof(view));
+            SDL_DrawGPUIndexedPrimitives(pass, waterIndexCount, 1, 0, 0, 0);
+        }
+
         SDL_EndGPURenderPass(pass);
 
         // Preserve the city image and cover the docks with opaque UI geometry.
@@ -738,6 +817,12 @@ private:
     SDL_GPUShader* fragmentShader = nullptr;
     SDL_GPUGraphicsPipeline* terrainPipeline = nullptr;
     SDL_GPUGraphicsPipeline* gridPipeline = nullptr;
+    SDL_GPUShader* waterVertexShader = nullptr;
+    SDL_GPUShader* waterFragmentShader = nullptr;
+    SDL_GPUGraphicsPipeline* waterPipeline = nullptr;
+    SDL_GPUBuffer* waterVertices = nullptr;
+    SDL_GPUBuffer* waterIndices = nullptr;
+    Uint32 waterIndexCount = 0;
     SDL_GPUBuffer* vertices = nullptr;
     SDL_GPUBuffer* indices = nullptr;
     SDL_GPUBuffer* gridVertices = nullptr;

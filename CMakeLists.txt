@@ -25,7 +25,8 @@ FetchContent_Declare(SDL_ttf
     GIT_SUBMODULES_RECURSE OFF)
 FetchContent_MakeAvailable(SDL_ttf)
 
-add_executable(CityBuilder src/main.cpp src/terrain.cpp src/terrain.hpp src/shaders.hpp src/ui.cpp src/ui.hpp
+add_executable(CityBuilder src/main.cpp src/terrain.cpp src/terrain.hpp src/shaders.hpp
+    src/water.cpp src/water.hpp src/water_shaders.hpp src/ui.cpp src/ui.hpp
     src/pan.cpp src/pan.hpp src/pan_overlay.cpp src/pan_overlay.hpp
     src/texture.cpp src/texture.hpp src/text.cpp src/text.hpp src/text_shaders.hpp
     src/ui_text.cpp src/ui_text.hpp)
@@ -47,6 +48,14 @@ add_custom_target(copy_assets
 add_dependencies(CityBuilder copy_assets)
 
 option(CITY_BUILD_TESTS "Build terrain, camera panning, and texture manager tests" OFF)
+option(CITY_BUILD_LAKE_TESTS "Build the standalone lake and water mesh tests" OFF)
+if(CITY_BUILD_TESTS OR CITY_BUILD_LAKE_TESTS)
+    enable_testing()
+    add_executable(CityLakeTests tests/lake_tests.cpp src/terrain.cpp src/water.cpp)
+    target_compile_features(CityLakeTests PRIVATE cxx_std_20)
+    target_include_directories(CityLakeTests PRIVATE src)
+    add_test(NAME CityLakeTests COMMAND CityLakeTests)
+endif()
 if(CITY_BUILD_TESTS)
     enable_testing()
     add_executable(CityPanTests tests/pan_tests.cpp src/pan.cpp src/ui.cpp)
