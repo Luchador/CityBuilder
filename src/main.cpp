@@ -268,7 +268,6 @@ public:
                     if (event.key.key == SDLK_G) 
                     {
                         showGrid = !showGrid;
-                        SDL_Log("Grid: %s", showGrid ? "on" : "off");
                     }
     
                     if (event.key.key == SDLK_HOME) 

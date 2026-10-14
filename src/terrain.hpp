@@ -21,7 +21,7 @@ constexpr bool IsWaterElevation(float height)
 struct TerrainSettings
 {
     std::uint32_t seed = 1337;
-    float hillHeight = 2.0f;   // Height cap in tile units; rounded down to a height step. Range: 0..256.
+    float hillHeight = 6.0f;   // Height cap in tile units; rounded down to a height step. Range: 0..256.
     float hillSize = 32.0f;     // Broad noise wavelength in tiles. Range: 8..1024.
     float flatCoverage = 0.7f;  // Fraction flattened to Y=0 before height snapping. Range: 0..1.
 };
@@ -44,13 +44,13 @@ struct TerrainPalette
 {
     // Colors are fully reached at the previous row's upper elevation; the blend is at the top of each band.
     std::array<TerrainColorBand, 6> bands{{
-        // Upper elevation                          // Transition width    // Color
-        {TerrainSeaLevel,                           1.0f,                  {0.06f, 0.28f, 0.52f}}, // Water; shoreline -1..0.
-        {12.0f,                                     2.0f,                  {0.55f, 0.66f, 0.52f}}, // Light green; blend 16..24.
-        {64.0f,                                     16.0f,                 {0.25f, 0.57f, 0.22f}}, // Medium green; blend 48..64.
-        {144.0f,                                    32.0f,                 {0.10f, 0.32f, 0.14f}}, // Dark green; blend 112..144.
-        {224.0f,                                    32.0f,                 {0.46f, 0.33f, 0.21f}}, // Brown; blend 192..224.
-        {TerrainMaxElevation,                       0.0f,                  {1.00f, 1.00f, 1.00f}}  // Snow.
+        // Upper elevation                          // Transition width     // Color
+        {TerrainSeaLevel,                           1.0f,                   {0.06f, 0.28f, 0.52f}}, // Water
+        {0.5f,                                      0.25f,                  {0.28f, 0.42f, 0.24f}}, // Light green
+        {1.5f,                                      1.0f,                   {0.24f, 0.4f,  0.18f}}, // Medium green
+        {8.0f,                                      4.0f,                   {0.10f, 0.32f, 0.14f}}, // Dark green
+        {224.0f,                                    32.0f,                  {0.42f, 0.51f, 0.22f}}, // Yellow-green
+        {TerrainMaxElevation,                       0.0f,                   {1.00f, 1.00f, 1.00f}}  // Snow.
     }};
 };
 
