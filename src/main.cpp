@@ -482,7 +482,7 @@ private:
         info.vertex_input_state.num_vertex_attributes = 3;
         info.primitive_type = grid ? SDL_GPU_PRIMITIVETYPE_LINELIST : SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
         info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
-        info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+        info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
         info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
         info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
         info.depth_stencil_state.enable_depth_test = true;
