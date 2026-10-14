@@ -26,6 +26,7 @@ FetchContent_Declare(SDL_ttf
 FetchContent_MakeAvailable(SDL_ttf)
 
 add_executable(CityBuilder src/main.cpp src/terrain.cpp src/terrain.hpp src/shaders.hpp
+    src/terrain_skirt.cpp src/terrain_skirt.hpp src/terrain_skirt_shaders.hpp
     src/water.cpp src/water.hpp src/water_shaders.hpp src/ui.cpp src/ui.hpp
     src/pan.cpp src/pan.hpp src/pan_overlay.cpp src/pan_overlay.hpp
     src/texture.cpp src/texture.hpp src/text.cpp src/text.hpp src/text_shaders.hpp
@@ -48,6 +49,14 @@ add_custom_target(copy_assets
 add_dependencies(CityBuilder copy_assets)
 
 option(CITY_BUILD_TESTS "Build terrain, camera panning, and texture manager tests" OFF)
+option(CITY_BUILD_SKIRT_TESTS "Build the standalone terrain skirt tests" OFF)
+if(CITY_BUILD_TESTS OR CITY_BUILD_SKIRT_TESTS)
+    enable_testing()
+    add_executable(CitySkirtTests tests/skirt_tests.cpp src/terrain.cpp src/terrain_skirt.cpp)
+    target_compile_features(CitySkirtTests PRIVATE cxx_std_20)
+    target_include_directories(CitySkirtTests PRIVATE src)
+    add_test(NAME CitySkirtTests COMMAND CitySkirtTests)
+endif()
 option(CITY_BUILD_LAKE_TESTS "Build the standalone lake and water mesh tests" OFF)
 if(CITY_BUILD_TESTS OR CITY_BUILD_LAKE_TESTS)
     enable_testing()

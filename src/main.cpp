@@ -11,6 +11,8 @@
 #include <string>
 
 #include "terrain.hpp"
+#include "terrain_skirt.hpp"
+#include "terrain_skirt_shaders.hpp"
 #include "shaders.hpp"
 #include "water.hpp"
 #include "water_shaders.hpp"
@@ -38,7 +40,7 @@ struct BlobReleaser
     }
 };
 
-static SDL_GPUShader* CompileShader(SDL_GPUDevice* device, const char* source, SDL_GPUShaderStage stage, Uint32 samplers = 0, const char* preamble = "")
+static SDL_GPUShader* CompileShader(SDL_GPUDevice* device, const char* source, SDL_GPUShaderStage stage, Uint32 samplers = 0, const char* preamble = "", Uint32 fragmentUniforms = 0)
 {
     ID3DBlob* rawCode = nullptr;
     ID3DBlob* rawErrors = nullptr;
@@ -59,7 +61,7 @@ static SDL_GPUShader* CompileShader(SDL_GPUDevice* device, const char* source, S
     info.entrypoint = "main";
     info.format = SDL_GPU_SHADERFORMAT_DXBC;
     info.stage = stage;
-    info.num_uniform_buffers = vertex ? 1u : 0u;
+    info.num_uniform_buffers = vertex ? 1u : fragmentUniforms;
     info.num_samplers = samplers;
     SDL_GPUShader* shader = SDL_CreateGPUShader(device, &info);
 
@@ -177,6 +179,11 @@ public:
             if (panVertexShader) SDL_ReleaseGPUShader(device, panVertexShader);
             if (panFragmentShader) SDL_ReleaseGPUShader(device, panFragmentShader);
             if (terrainPipeline) SDL_ReleaseGPUGraphicsPipeline(device, terrainPipeline);
+            if (skirtPipeline) SDL_ReleaseGPUGraphicsPipeline(device, skirtPipeline);
+            if (skirtVertexShader) SDL_ReleaseGPUShader(device, skirtVertexShader);
+            if (skirtFragmentShader) SDL_ReleaseGPUShader(device, skirtFragmentShader);
+            if (skirtVertices) SDL_ReleaseGPUBuffer(device, skirtVertices);
+            if (skirtIndices) SDL_ReleaseGPUBuffer(device, skirtIndices);
             if (waterPipeline) SDL_ReleaseGPUGraphicsPipeline(device, waterPipeline);
             if (waterVertexShader) SDL_ReleaseGPUShader(device, waterVertexShader);
             if (waterFragmentShader) SDL_ReleaseGPUShader(device, waterFragmentShader);
@@ -232,6 +239,9 @@ public:
         fragmentShader = CompileShader(device, FragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT);
         terrainPipeline = MakePipeline(false);
         gridPipeline = MakePipeline(true);
+        skirtVertexShader = CompileShader(device, TerrainSkirtVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
+        skirtFragmentShader = CompileShader(device, TerrainSkirtFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 0, "", 1);
+        skirtPipeline = MakeSkirtPipeline();
         waterVertexShader = CompileShader(device, WaterVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
         waterFragmentShader = CompileShader(device, WaterFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT);
         waterPipeline = MakeWaterPipeline();
@@ -257,6 +267,12 @@ public:
         gridVertices = UploadBuffer(device, mesh.lines.data(), static_cast<Uint32>(mesh.lines.size() * sizeof(Vertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
         indexCount = static_cast<Uint32>(mesh.indices.size());
         lineVertexCount = static_cast<Uint32>(mesh.lines.size());
+
+        const TerrainSkirtMesh skirt = BuildTerrainSkirt(terrain, skirtSettings);
+        skirtUniforms = MakeTerrainSkirtUniforms(skirtSettings);
+        skirtVertices = UploadBuffer(device, skirt.vertices.data(), static_cast<Uint32>(skirt.vertices.size() * sizeof(TerrainSkirtVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
+        skirtIndices = UploadBuffer(device, skirt.indices.data(), static_cast<Uint32>(skirt.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
+        skirtIndexCount = static_cast<Uint32>(skirt.indices.size());
 
         const WaterMesh water = BuildWater(terrain);
         waterIndexCount = static_cast<Uint32>(water.indices.size());
@@ -550,6 +566,50 @@ private:
         return pipeline;
     }
 
+    SDL_GPUGraphicsPipeline* MakeSkirtPipeline()
+    {
+        SDL_GPUVertexBufferDescription buffer{};
+        buffer.pitch = sizeof(TerrainSkirtVertex);
+        buffer.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
+        SDL_GPUVertexAttribute attributes[3]{};
+        attributes[0].location = 0;
+        attributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+        attributes[0].offset = offsetof(TerrainSkirtVertex, x);
+        attributes[1].location = 1;
+        attributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+        attributes[1].offset = offsetof(TerrainSkirtVertex, nx);
+        attributes[2].location = 2;
+        attributes[2].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT;
+        attributes[2].offset = offsetof(TerrainSkirtVertex, terrainHeight);
+
+        SDL_GPUColorTargetDescription color{};
+        color.format = SDL_GetGPUSwapchainTextureFormat(device, window);
+        color.blend_state.enable_blend = false;
+
+        SDL_GPUGraphicsPipelineCreateInfo info{};
+        info.vertex_shader = skirtVertexShader;
+        info.fragment_shader = skirtFragmentShader;
+        info.vertex_input_state.vertex_buffer_descriptions = &buffer;
+        info.vertex_input_state.num_vertex_buffers = 1;
+        info.vertex_input_state.vertex_attributes = attributes;
+        info.vertex_input_state.num_vertex_attributes = 3;
+        info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
+        info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+        info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
+        info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
+        info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
+        info.depth_stencil_state.enable_depth_test = true;
+        info.depth_stencil_state.enable_depth_write = true;
+        info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
+        info.target_info.color_target_descriptions = &color;
+        info.target_info.num_color_targets = 1;
+        info.target_info.has_depth_stencil_target = true;
+        info.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
+        SDL_GPUGraphicsPipeline* pipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
+        if (!pipeline) Fail("Create terrain skirt pipeline");
+        return pipeline;
+    }
+
     SDL_GPUGraphicsPipeline* MakeWaterPipeline()
     {
         SDL_GPUVertexBufferDescription buffer{};
@@ -741,6 +801,18 @@ private:
         SDL_Rect worldScissor{0, 0, worldWidth, worldHeight};
         SDL_SetGPUViewport(pass, &worldViewport);
         SDL_SetGPUScissor(pass, &worldScissor);
+
+        // Opaque outward-facing rock walls. Drawing these before the ground
+        // lets the terrain cover the shared top edge naturally.
+        SDL_BindGPUGraphicsPipeline(pass, skirtPipeline);
+        SDL_GPUBufferBinding skirtVertexBinding{skirtVertices, 0};
+        SDL_GPUBufferBinding skirtIndexBinding{skirtIndices, 0};
+        SDL_BindGPUVertexBuffers(pass, 0, &skirtVertexBinding, 1);
+        SDL_BindGPUIndexBuffer(pass, &skirtIndexBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+        SDL_PushGPUVertexUniformData(commands, 0, &view, sizeof(view));
+        SDL_PushGPUFragmentUniformData(commands, 0, &skirtUniforms, sizeof(skirtUniforms));
+        SDL_DrawGPUIndexedPrimitives(pass, skirtIndexCount, 1, 0, 0, 0);
+
         SDL_BindGPUGraphicsPipeline(pass, terrainPipeline);
         SDL_GPUBufferBinding vertexBinding{vertices, 0};
         SDL_GPUBufferBinding indexBinding{indices, 0};
@@ -817,6 +889,14 @@ private:
     SDL_GPUShader* fragmentShader = nullptr;
     SDL_GPUGraphicsPipeline* terrainPipeline = nullptr;
     SDL_GPUGraphicsPipeline* gridPipeline = nullptr;
+    TerrainSkirtSettings skirtSettings;
+    TerrainSkirtUniforms skirtUniforms{};
+    SDL_GPUShader* skirtVertexShader = nullptr;
+    SDL_GPUShader* skirtFragmentShader = nullptr;
+    SDL_GPUGraphicsPipeline* skirtPipeline = nullptr;
+    SDL_GPUBuffer* skirtVertices = nullptr;
+    SDL_GPUBuffer* skirtIndices = nullptr;
+    Uint32 skirtIndexCount = 0;
     SDL_GPUShader* waterVertexShader = nullptr;
     SDL_GPUShader* waterFragmentShader = nullptr;
     SDL_GPUGraphicsPipeline* waterPipeline = nullptr;

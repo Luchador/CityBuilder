@@ -20,6 +20,16 @@ float4 ProjectWorldPosition(float3 position)
 
     return float4(right / (camera.z * camera.w), up / camera.z, 0.5 - towardCamera / 2048.0 + style.w, 1.0);
 }
+
+float WorldBrightness(float3 normal)
+{
+    const float ambientIntensity = 0.45;
+    const float directionalIntensity = 1.00;
+    const float3 lightDirection = float3(-0.6, 0.5, 0.0);
+
+    float sunlight = saturate(dot(normalize(normal), lightDirection));
+    return (ambientIntensity + directionalIntensity * sunlight) / 0.89;
+}
 )hlsl";
 
 inline constexpr char VertexShaderSource[] = R"hlsl(
@@ -33,14 +43,7 @@ Output main(float3 position : TEXCOORD0, float3 normal : TEXCOORD1, float3 verte
     Output result;
     result.position = ProjectWorldPosition(position);
 
-    const float ambientIntensity = 0.45;
-    const float directionalIntensity = 1.00;
-    const float3 lightDirection = float3(-0.6, 0.5, 0.0);
-
-    float sunlight = saturate(dot(normalize(normal), lightDirection));
-    float brightness = (ambientIntensity + directionalIntensity * sunlight) / 0.89;
-
-    result.color = float4(vertexColor * style.rgb * brightness, 1.0);
+    result.color = float4(vertexColor * style.rgb * WorldBrightness(normal), 1.0);
 
     return result;
 }
