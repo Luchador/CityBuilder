@@ -15,6 +15,7 @@
 #include "ui.hpp"
 #include "pan.hpp"
 #include "pan_overlay.hpp"
+#include "texture.hpp"
 
 [[noreturn]] static void Fail(const char* operation)
 {
@@ -163,6 +164,7 @@ public:
         {
             SDL_WaitForGPUIdle(device);
             panOverlay.Release();
+            textures.Release();
             if (panVertexShader) SDL_ReleaseGPUShader(device, panVertexShader);
             if (panFragmentShader) SDL_ReleaseGPUShader(device, panFragmentShader);
             if (terrainPipeline) SDL_ReleaseGPUGraphicsPipeline(device, terrainPipeline);
@@ -210,6 +212,7 @@ public:
         }
 
         claimed = true;
+        textures.Initialize(device);
 
         vertexShader = CompileShader(device, VertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
         fragmentShader = CompileShader(device, FragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT);
@@ -219,7 +222,7 @@ public:
         uiPipeline = MakeUiPipeline();
         panVertexShader = CompileShader(device, PanVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
         panFragmentShader = CompileShader(device, PanFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
-        panOverlay.Initialize(device, panVertexShader, panFragmentShader,
+        panOverlay.Initialize(device, textures, panVertexShader, panFragmentShader,
                               SDL_GetGPUSwapchainTextureFormat(device, window));
 
         const TerrainMesh mesh = BuildTerrain();
@@ -680,6 +683,7 @@ private:
     SDL_GPUTexture* depth = nullptr;
     AnchoredPan mousePan;
     PanSettings panSettings;
+    TextureManager textures;
     PanOverlay panOverlay;
     bool restoreCursor = false;
     SDL_GPUShader* panVertexShader = nullptr;
