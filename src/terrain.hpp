@@ -36,8 +36,13 @@ struct Vertex
 {
     float x, y, z;
     float nx = 0, ny = 1, nz = 0;
+
+    // Default terrain color.
+    float r = 0.20f;
+    float g = 0.58f;
+    float b = 0.22f;
 };
-static_assert(sizeof(Vertex) == 24);
+static_assert(sizeof(Vertex) == 36);
 
 struct TerrainMesh {
     std::vector<Vertex> vertices;

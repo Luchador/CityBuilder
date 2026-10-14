@@ -450,14 +450,25 @@ private:
         buffer.slot = 0;
         buffer.pitch = sizeof(Vertex);
         buffer.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
-        SDL_GPUVertexAttribute attributes[2]{};
+        SDL_GPUVertexAttribute attributes[3]{};
+
+        // Position
         attributes[0].location = 0;
         attributes[0].buffer_slot = 0;
         attributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+        attributes[0].offset = offsetof(Vertex, x);
+
+        // Normal
         attributes[1].location = 1;
         attributes[1].buffer_slot = 0;
         attributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
         attributes[1].offset = offsetof(Vertex, nx);
+
+        // Color
+        attributes[2].location = 2;
+        attributes[2].buffer_slot = 0;
+        attributes[2].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+        attributes[2].offset = offsetof(Vertex, r);
 
         SDL_GPUColorTargetDescription color{};
         color.format = SDL_GetGPUSwapchainTextureFormat(device, window);
@@ -469,7 +480,7 @@ private:
         info.vertex_input_state.vertex_buffer_descriptions = &buffer;
         info.vertex_input_state.num_vertex_buffers = 1;
         info.vertex_input_state.vertex_attributes = attributes;
-        info.vertex_input_state.num_vertex_attributes = 2;
+        info.vertex_input_state.num_vertex_attributes = 3;
         info.primitive_type = grid ? SDL_GPU_PRIMITIVETYPE_LINELIST : SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
         info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
         info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
@@ -626,7 +637,7 @@ private:
         const int worldWidth = std::max(1, static_cast<int>(std::lround(uiLayout.world.w * static_cast<float>(width) / uiLayout.width)));
         const int worldHeight = std::max(1, static_cast<int>(std::lround(uiLayout.world.h * static_cast<float>(height) / uiLayout.height)));
     
-        Uniforms view{centerX, centerZ, halfHeight, static_cast<float>(worldWidth) / static_cast<float>(worldHeight), 0.20f, 0.58f, 0.22f, 0.0f};
+        Uniforms view{centerX, centerZ, halfHeight, static_cast<float>(worldWidth) / static_cast<float>(worldHeight), 1.0f, 1.0f, 1.0f, 0.0f};
         SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color, 1, &depthTarget);
         SDL_GPUViewport worldViewport{0, 0, static_cast<float>(worldWidth), static_cast<float>(worldHeight), 0, 1};
         SDL_Rect worldScissor{0, 0, worldWidth, worldHeight};
