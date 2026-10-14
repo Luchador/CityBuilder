@@ -471,7 +471,22 @@ private:
 
         SDL_GPUColorTargetDescription color{};
         color.format = SDL_GetGPUSwapchainTextureFormat(device, window);
-        color.blend_state.enable_blend = false; // Fully opaque terrain and lines.
+
+        // Terrain is fully opaque while the grid has partially transparent.
+        color.blend_state.enable_blend = grid;
+
+        if (grid)
+        {
+            // Mix the grid color with the terrain beneath it.
+            color.blend_state.src_color_blendfactor = SDL_GPU_BLENDFACTOR_CONSTANT_COLOR;
+            color.blend_state.dst_color_blendfactor = SDL_GPU_BLENDFACTOR_ONE_MINUS_CONSTANT_COLOR;
+            color.blend_state.color_blend_op = SDL_GPU_BLENDOP_ADD;
+
+            // Preserve the existing framebuffer alpha.
+            color.blend_state.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ZERO;
+            color.blend_state.dst_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
+            color.blend_state.alpha_blend_op = SDL_GPU_BLENDOP_ADD;
+        }
 
         SDL_GPUGraphicsPipelineCreateInfo info{};
         info.vertex_shader = vertexShader;
@@ -653,6 +668,11 @@ private:
         if (showGrid) 
         {
             SDL_BindGPUGraphicsPipeline(pass, gridPipeline);
+
+            // Make grid partially transparent.
+            constexpr float GridOpacity = 0.3f;
+    
+            SDL_SetGPUBlendConstants(pass, {GridOpacity, GridOpacity, GridOpacity, GridOpacity});
             SDL_GPUBufferBinding lineBinding{gridVertices, 0};
             SDL_BindGPUVertexBuffers(pass, 0, &lineBinding, 1);
             view.red = view.green = view.blue = 0.0f;
