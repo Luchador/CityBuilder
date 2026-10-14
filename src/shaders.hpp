@@ -62,3 +62,50 @@ float4 main(Input input) : SV_Target0
     return input.color;
 }
 )hlsl";
+
+inline constexpr char PanVertexShaderSource[] = R"hlsl(
+cbuffer Sprite : register(b0, space1)
+{
+    float4 screen;
+    float4 rectangle; // center X/Y, half width/height in window coordinates
+    float4 rotation;  // cosine, sine, unused, unused
+};
+
+struct Output {
+    float4 position : SV_Position;
+    float2 uv : TEXCOORD0;
+};
+
+Output main(uint vertex : SV_VertexID)
+{
+    const float2 corners[6] = {
+        float2(-1, -1), float2(1, -1), float2(-1, 1),
+        float2(1, -1), float2(1, 1), float2(-1, 1)
+    };
+    float2 corner = corners[vertex];
+    float2 local = corner * rectangle.zw;
+    float2 rotated = float2(rotation.x * local.x - rotation.y * local.y,
+                            rotation.y * local.x + rotation.x * local.y);
+    float2 pixel = rectangle.xy + rotated;
+    Output result;
+    result.position = float4(pixel.x / screen.x * 2 - 1,
+                             1 - pixel.y / screen.y * 2, 0, 1);
+    result.uv = (corner + 1) * 0.5;
+    return result;
+}
+)hlsl";
+
+inline constexpr char PanFragmentShaderSource[] = R"hlsl(
+Texture2D image : register(t0, space2);
+SamplerState imageSampler : register(s0, space2);
+
+struct Input {
+    float4 position : SV_Position;
+    float2 uv : TEXCOORD0;
+};
+
+float4 main(Input input) : SV_Target0
+{
+    return image.Sample(imageSampler, input.uv);
+}
+)hlsl";

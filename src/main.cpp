@@ -13,6 +13,8 @@
 #include "terrain.hpp"
 #include "shaders.hpp"
 #include "ui.hpp"
+#include "pan.hpp"
+#include "pan_overlay.hpp"
 
 [[noreturn]] static void Fail(const char* operation)
 {
@@ -30,7 +32,7 @@ struct BlobReleaser
     }
 };
 
-static SDL_GPUShader* CompileShader(SDL_GPUDevice* device, const char* source, SDL_GPUShaderStage stage)
+static SDL_GPUShader* CompileShader(SDL_GPUDevice* device, const char* source, SDL_GPUShaderStage stage, Uint32 samplers = 0)
 {
     ID3DBlob* rawCode = nullptr;
     ID3DBlob* rawErrors = nullptr;
@@ -51,6 +53,7 @@ static SDL_GPUShader* CompileShader(SDL_GPUDevice* device, const char* source, S
     info.format = SDL_GPU_SHADERFORMAT_DXBC;
     info.stage = stage;
     info.num_uniform_buffers = vertex ? 1u : 0u;
+    info.num_samplers = samplers;
     SDL_GPUShader* shader = SDL_CreateGPUShader(device, &info);
 
     if (!shader) 
@@ -155,9 +158,13 @@ class Application
 public:
     ~Application()
     {
+        StopMousePan();
         if (device) 
         {
             SDL_WaitForGPUIdle(device);
+            panOverlay.Release();
+            if (panVertexShader) SDL_ReleaseGPUShader(device, panVertexShader);
+            if (panFragmentShader) SDL_ReleaseGPUShader(device, panFragmentShader);
             if (terrainPipeline) SDL_ReleaseGPUGraphicsPipeline(device, terrainPipeline);
             if (gridPipeline) SDL_ReleaseGPUGraphicsPipeline(device, gridPipeline);
             if (uiPipeline) SDL_ReleaseGPUGraphicsPipeline(device, uiPipeline);
@@ -210,6 +217,10 @@ public:
         gridPipeline = MakePipeline(true);
         uiVertexShader = CompileShader(device, UiVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
         uiPipeline = MakeUiPipeline();
+        panVertexShader = CompileShader(device, PanVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
+        panFragmentShader = CompileShader(device, PanFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
+        panOverlay.Initialize(device, panVertexShader, panFragmentShader,
+                              SDL_GetGPUSwapchainTextureFormat(device, window));
 
         const TerrainMesh mesh = BuildTerrain();
 
@@ -235,6 +246,7 @@ public:
 
             while (SDL_PollEvent(&event)) 
             {
+                HandlePanEvent(event);
                 if (event.type == SDL_EVENT_QUIT) 
                 {
                     running = false;
@@ -255,6 +267,7 @@ public:
     
                     if (event.key.key == SDLK_HOME) 
                     {
+                        StopMousePan();
                         centerX = centerZ = MapExtent * 0.5f;
                         halfHeight = 120.0f;
                     }
@@ -296,7 +309,18 @@ public:
 
             if (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) 
             {
+                if (mousePan.Active())
+                {
+                    float x = 0, y = 0;
+                    const SDL_MouseButtonFlags buttons = SDL_GetMouseState(&x, &y);
+                    if (buttons & SDL_BUTTON_RMASK) mousePan.Move(x, y);
+                    else StopMousePan(); // Protect against a missed release event.
+                }
                 PanCamera(dt);
+            }
+            else
+            {
+                StopMousePan();
             }
 
             Render();
@@ -304,6 +328,51 @@ public:
     }
 
 private:
+    void StopMousePan()
+    {
+        if (!mousePan.Active()) return;
+        mousePan.End();
+        SDL_CaptureMouse(false);
+        if (restoreCursor) SDL_ShowCursor();
+        restoreCursor = false;
+    }
+
+    void HandlePanEvent(const SDL_Event& event)
+    {
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_RIGHT)
+        {
+            StopMousePan();
+        }
+        else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST ||
+                 event.type == SDL_EVENT_WINDOW_MINIMIZED ||
+                 event.type == SDL_EVENT_WINDOW_HIDDEN ||
+                 event.type == SDL_EVENT_WINDOW_RESIZED ||
+                 event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
+        {
+            // Avoid stale screen anchors after a resize or loss of focus.
+            StopMousePan();
+        }
+        else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+                 event.button.button == SDL_BUTTON_RIGHT && !mousePan.Active())
+        {
+            int width = 0, height = 0;
+            if (!SDL_GetWindowSize(window, &width, &height)) return;
+            if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) return;
+            const auto layout = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
+            if (!layout.IsWorldPoint(event.button.x, event.button.y)) return;
+            mousePan.Begin(event.button.x, event.button.y);
+            restoreCursor = SDL_CursorVisible();
+            if (restoreCursor) SDL_HideCursor();
+            // Receive release/motion even outside the client area. SDL also has
+            // automatic capture while buttons are held if explicit capture fails.
+            if (!SDL_CaptureMouse(true)) SDL_Log("Mouse capture: %s", SDL_GetError());
+        }
+        else if (event.type == SDL_EVENT_MOUSE_MOTION)
+        {
+            mousePan.Move(event.motion.x, event.motion.y);
+        }
+    }
+
     SDL_GPUGraphicsPipeline* MakeUiPipeline()
     {
         SDL_GPUVertexBufferDescription buffer{};
@@ -450,6 +519,18 @@ private:
 
     void PanCamera(float dt)
     {
+        if (mousePan.Active())
+        {
+            const PanMotion motion = mousePan.Motion(panSettings);
+            int width = 0, height = 0;
+            if (!SDL_GetWindowSize(window, &width, &height)) return;
+            const auto layout = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
+            // Keep visual scroll speed stable at different zoom levels.
+            const float screenToWorld = 2.0f * halfHeight / std::max(1.0f, layout.world.h);
+            MoveCamera(motion.x * dt * screenToWorld, motion.y * dt * screenToWorld);
+            return; // The dead zone remains stationary even if keys are held.
+        }
+
         const bool* keys = SDL_GetKeyboardState(nullptr);
         float horizontal = static_cast<float>(keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT]) - static_cast<float>(keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT]);
         float vertical = static_cast<float>(keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP]) - static_cast<float>(keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN]);
@@ -464,9 +545,14 @@ private:
         horizontal *= speed / length;
         vertical *= speed / length;
 
-        // Inverse ground-plane projection: movement is relative to the screen.
-        centerX = std::clamp(centerX + 0.70710678f * horizontal - 1.22474487f * vertical, 0.0f, MapExtent);
-        centerZ = std::clamp(centerZ - 0.70710678f * horizontal - 1.22474487f * vertical, 0.0f, MapExtent);
+        MoveCamera(horizontal, -vertical);
+    }
+
+    void MoveCamera(float right, float down)
+    {
+        const GroundPan movement = ScreenToGroundPan(right, down);
+        centerX = std::clamp(centerX + movement.x, 0.0f, MapExtent);
+        centerZ = std::clamp(centerZ + movement.z, 0.0f, MapExtent);
     }
 
     void Render()
@@ -572,6 +658,7 @@ private:
         const float screen[4] = {uiLayout.width, uiLayout.height, 0, 0};
         SDL_PushGPUVertexUniformData(commands, 0, screen, sizeof(screen));
         SDL_DrawGPUPrimitives(pass, uiVertexCount, 1, 0, 0);
+        panOverlay.Draw(commands, pass, uiLayout.width, uiLayout.height, mousePan, panSettings);
         SDL_EndGPURenderPass(pass);
 
         if (!SDL_SubmitGPUCommandBuffer(commands)) 
@@ -591,6 +678,12 @@ private:
     SDL_GPUBuffer* indices = nullptr;
     SDL_GPUBuffer* gridVertices = nullptr;
     SDL_GPUTexture* depth = nullptr;
+    AnchoredPan mousePan;
+    PanSettings panSettings;
+    PanOverlay panOverlay;
+    bool restoreCursor = false;
+    SDL_GPUShader* panVertexShader = nullptr;
+    SDL_GPUShader* panFragmentShader = nullptr;
     UiSettings uiSettings;
     UiLayout uiLayout;
     SDL_GPUShader* uiVertexShader = nullptr;
