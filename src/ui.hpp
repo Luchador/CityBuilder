@@ -21,7 +21,7 @@ struct UiLayout
 {
     float width = 0, height = 0, scale = 1;
     UiRect world, bottomBar, toolbar, minimap;
-    UiRect newsTicker, cityName, population, funds, zoneDemand;
+    UiRect newsTicker, cityName, population, funds, date, zoneDemand;
     UiRect toolbarContent, minimapContent;
     bool IsWorldPoint(float x, float y) const;
 };

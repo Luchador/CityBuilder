@@ -86,8 +86,9 @@ UiLayout CalculateUiLayout(float width, float height, const UiSettings& settings
     const float contentWidth = std::min(layout.minimap.x, layout.toolbar.x) - 2 * gap;
     const float demandW = 80.0f * s;
 
-    // Gap between the RCI indicator and the other elements.
-    const float demandGap = 200.0f * s;
+    // Preserve the wide RCI gap at the normal window size, but give the four
+    // information panels priority when the window narrows or the minimap grows.
+    const float demandGap = std::clamp(contentWidth - demandW - 640.0f * s, gap, 200.0f * s);
 
     const float tickerWidth = contentWidth - demandW - demandGap;
 
@@ -95,11 +96,12 @@ UiLayout CalculateUiLayout(float width, float height, const UiSettings& settings
 
     const float rowY = layout.newsTicker.y + layout.newsTicker.h + gap;
     const float rowH = layout.height - gap - rowY;
-    const float statsW = tickerWidth - 2.0f * gap;
+    const float statsW = tickerWidth - 3.0f * gap;
 
-    layout.cityName = {gap, rowY, statsW * 0.42f, rowH};
-    layout.population = {layout.cityName.x + layout.cityName.w + gap, rowY, statsW * 0.27f, rowH};
-    layout.funds = {layout.population.x + layout.population.w + gap, rowY, statsW * 0.31f, rowH};
+    layout.cityName = {gap, rowY, statsW * 0.32f, rowH};
+    layout.population = {layout.cityName.x + layout.cityName.w + gap, rowY, statsW * 0.22f, rowH};
+    layout.funds = {layout.population.x + layout.population.w + gap, rowY, statsW * 0.24f, rowH};
+    layout.date = {layout.funds.x + layout.funds.w + gap, rowY, statsW * 0.22f, rowH};
     layout.zoneDemand = {gap + contentWidth - demandW, layout.bottomBar.y + gap, demandW, layout.bottomBar.h - 2.0f * gap};
     layout.toolbarContent = {layout.toolbar.x + gap, gap, right - 2 * gap, std::min(layout.minimap.y, layout.world.h) - 2 * gap};
     layout.minimapContent = Inset(layout.minimap, gap);
@@ -130,6 +132,7 @@ std::vector<UiVertex> BuildUiBackground(const UiLayout& layout)
     Well(vertices, layout.cityName, s);
     Well(vertices, layout.population, s);
     Well(vertices, layout.funds, s);
+    Well(vertices, layout.date, s);
     Well(vertices, layout.zoneDemand, s);
 
     // Small R/C/I color keys only: these do not pretend to show demand values.

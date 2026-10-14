@@ -9,13 +9,30 @@ set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
 add_subdirectory(vendored/SDL EXCLUDE_FROM_ALL)
 
+# SDL_ttf 3.2.2, including its pinned FreeType and HarfBuzz dependencies.
+# Downloaded into build/_deps on the first configure; no system font SDK needed.
+include(FetchContent)
+set(BUILD_SHARED_LIBS OFF CACHE BOOL "Build dependencies statically" FORCE)
+set(SDLTTF_VENDORED ON CACHE BOOL "Use SDL_ttf's bundled font dependencies" FORCE)
+set(SDLTTF_HARFBUZZ ON CACHE BOOL "Enable Unicode text shaping" FORCE)
+set(SDLTTF_PLUTOSVG OFF CACHE BOOL "SVG color emoji are not used by the UI" FORCE)
+set(SDLTTF_SAMPLES OFF CACHE BOOL "" FORCE)
+set(SDLTTF_INSTALL OFF CACHE BOOL "" FORCE)
+FetchContent_Declare(SDL_ttf
+    GIT_REPOSITORY https://github.com/libsdl-org/SDL_ttf.git
+    GIT_TAG a1ce3670aec736ecbf0936c43f2f0cc53aa61e5b
+    GIT_SUBMODULES external/freetype external/harfbuzz
+    GIT_SUBMODULES_RECURSE OFF)
+FetchContent_MakeAvailable(SDL_ttf)
+
 add_executable(CityBuilder src/main.cpp src/terrain.cpp src/terrain.hpp src/shaders.hpp src/ui.cpp src/ui.hpp
     src/pan.cpp src/pan.hpp src/pan_overlay.cpp src/pan_overlay.hpp
-    src/texture.cpp src/texture.hpp)
+    src/texture.cpp src/texture.hpp src/text.cpp src/text.hpp src/text_shaders.hpp
+    src/ui_text.cpp src/ui_text.hpp)
 target_compile_features(CityBuilder PRIVATE cxx_std_20)
 target_compile_definitions(CityBuilder PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 # D3DCompile is supplied by the Windows SDK; no separate shader tools needed.
-target_link_libraries(CityBuilder PRIVATE SDL3::SDL3-static d3dcompiler)
+target_link_libraries(CityBuilder PRIVATE SDL3::SDL3-static SDL3_ttf::SDL3_ttf-static d3dcompiler)
 if(MSVC)
     target_compile_options(CityBuilder PRIVATE /W4 /permissive-)
 endif()

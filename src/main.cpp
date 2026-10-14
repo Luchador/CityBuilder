@@ -16,6 +16,9 @@
 #include "pan.hpp"
 #include "pan_overlay.hpp"
 #include "texture.hpp"
+#include "text.hpp"
+#include "text_shaders.hpp"
+#include "ui_text.hpp"
 
 [[noreturn]] static void Fail(const char* operation)
 {
@@ -163,6 +166,9 @@ public:
         if (device) 
         {
             SDL_WaitForGPUIdle(device);
+            textRenderer.Release();
+            if (textVertexShader) SDL_ReleaseGPUShader(device, textVertexShader);
+            if (textFragmentShader) SDL_ReleaseGPUShader(device, textFragmentShader);
             panOverlay.Release();
             textures.Release();
             if (panVertexShader) SDL_ReleaseGPUShader(device, panVertexShader);
@@ -220,6 +226,11 @@ public:
         gridPipeline = MakePipeline(true);
         uiVertexShader = CompileShader(device, UiVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
         uiPipeline = MakeUiPipeline();
+        textVertexShader = CompileShader(device, TextVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
+        textFragmentShader = CompileShader(device, TextFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
+        textRenderer.Initialize(device, textVertexShader, textFragmentShader,
+                                SDL_GetGPUSwapchainTextureFormat(device, window));
+        bottomBarText.Initialize(textRenderer);
         panVertexShader = CompileShader(device, PanVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
         panFragmentShader = CompileShader(device, PanFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
         panOverlay.Initialize(device, textures, panVertexShader, panFragmentShader,
@@ -441,6 +452,7 @@ private:
         uiVertices = replacement;
         uiVertexCount = static_cast<Uint32>(mesh.size());
         uiLayout = next;
+        bottomBarText.SetLayout(uiLayout);
     }
 
     SDL_GPUGraphicsPipeline* MakePipeline(bool grid)
@@ -596,6 +608,16 @@ private:
         // Do this before acquiring the presentation command buffer.
         EnsureUi();
 
+        // Font atlas uploads must be submitted before this frame's render commands.
+        // Rasterize at drawable resolution, then place glyphs in logical UI units.
+        int pixelWidth = 0, pixelHeight = 0;
+        if (!SDL_GetWindowSizeInPixels(window, &pixelWidth, &pixelHeight)) Fail("Get text pixel scale");
+        if (pixelWidth > 0 && pixelHeight > 0)
+        {
+            textRenderer.Prepare(std::max(static_cast<float>(pixelWidth) / uiLayout.width,
+                                          static_cast<float>(pixelHeight) / uiLayout.height));
+        }
+
         SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device);
 
         if (!commands) 
@@ -699,6 +721,7 @@ private:
         const float screen[4] = {uiLayout.width, uiLayout.height, 0, 0};
         SDL_PushGPUVertexUniformData(commands, 0, screen, sizeof(screen));
         SDL_DrawGPUPrimitives(pass, uiVertexCount, 1, 0, 0);
+        textRenderer.Draw(commands, pass, uiLayout.width, uiLayout.height, width, height);
         panOverlay.Draw(commands, pass, uiLayout.width, uiLayout.height, mousePan, panSettings);
         SDL_EndGPURenderPass(pass);
 
@@ -724,6 +747,10 @@ private:
     AnchoredPan mousePan;
     PanSettings panSettings;
     TextureManager textures;
+    TextRenderer textRenderer;
+    BottomBarText bottomBarText;
+    SDL_GPUShader* textVertexShader = nullptr;
+    SDL_GPUShader* textFragmentShader = nullptr;
     PanOverlay panOverlay;
     bool restoreCursor = false;
     SDL_GPUShader* panVertexShader = nullptr;
