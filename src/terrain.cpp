@@ -57,13 +57,69 @@ namespace
 
     void Validate(const TerrainSettings& settings)
     {
-        if (!std::isfinite(settings.hillHeight) || settings.hillHeight < 0 || settings.hillHeight > 128 ||
+        if (!std::isfinite(settings.hillHeight) || settings.hillHeight < 0 || settings.hillHeight > TerrainMaxElevation ||
             !std::isfinite(settings.hillSize) || settings.hillSize < 8 || settings.hillSize > 1024 ||
             !std::isfinite(settings.flatCoverage) || settings.flatCoverage < 0 || settings.flatCoverage > 1)
         {
-            throw std::invalid_argument("Terrain settings require hillHeight 0..128, hillSize 8..1024, and flatCoverage 0..1");
+            throw std::invalid_argument("Terrain settings require hillHeight 0..256, hillSize 8..1024, and flatCoverage 0..1");
         }
     }
+
+    void ValidatePalette(const TerrainPalette& palette)
+    {
+        const auto validChannel = [](float value)
+        {
+            return std::isfinite(value) && value >= 0 && value <= 1;
+        };
+        for (std::size_t i = 0; i < palette.bands.size(); ++i)
+        {
+            const auto& band = palette.bands[i];
+            if (!std::isfinite(band.upperElevation) || !std::isfinite(band.transitionWidth) ||
+                band.transitionWidth < 0 || !validChannel(band.color.r) ||
+                !validChannel(band.color.g) || !validChannel(band.color.b))
+            {
+                throw std::invalid_argument("Terrain palette requires finite elevations, nonnegative transition widths, and RGB values in 0..1");
+            }
+            if (i > 0 && (band.upperElevation <= palette.bands[i - 1].upperElevation ||
+                          band.transitionWidth > band.upperElevation - palette.bands[i - 1].upperElevation))
+            {
+                throw std::invalid_argument("Terrain palette boundaries must increase and transition zones must fit within their bands");
+            }
+        }
+        if (palette.bands.front().upperElevation != TerrainSeaLevel ||
+            palette.bands.back().upperElevation != TerrainMaxElevation ||
+            palette.bands.back().transitionWidth != 0)
+        {
+            throw std::invalid_argument("Terrain palette must end water at 0 and snow at 256, with no transition after snow");
+        }
+    }
+
+    TerrainColor SamplePalette(float height, const TerrainPalette& palette)
+    {
+        for (std::size_t i = 0; i + 1 < palette.bands.size(); ++i)
+        {
+            const auto& band = palette.bands[i];
+            if (height >= band.upperElevation) continue;
+
+            const float blendStart = band.upperElevation - band.transitionWidth;
+            if (band.transitionWidth == 0 || height <= blendStart) return band.color;
+
+            const float t = std::clamp((height - blendStart) / band.transitionWidth, 0.0f, 1.0f);
+            const float blend = t * t * (3.0f - 2.0f * t);
+            const auto& next = palette.bands[i + 1].color;
+            return {std::lerp(band.color.r, next.r, blend),
+                    std::lerp(band.color.g, next.g, blend),
+                    std::lerp(band.color.b, next.b, blend)};
+        }
+        return palette.bands.back().color;
+    }
+}
+
+TerrainColor SampleTerrainColor(float height, const TerrainPalette& palette)
+{
+    if (!std::isfinite(height)) throw std::invalid_argument("Terrain color requires a finite elevation");
+    ValidatePalette(palette);
+    return SamplePalette(height, palette);
 }
 
 TerrainHeightmap GenerateTerrain(const TerrainSettings& settings)
@@ -127,12 +183,13 @@ TerrainHeightmap GenerateTerrain(const TerrainSettings& settings)
     return terrain;
 }
 
-TerrainMesh BuildTerrain(const TerrainHeightmap& terrain)
+TerrainMesh BuildTerrain(const TerrainHeightmap& terrain, const TerrainPalette& palette)
 {
-    if (terrain.heights.size() != TerrainVertexCount || !std::all_of(terrain.heights.begin(), terrain.heights.end(), [](float h) { return std::isfinite(h); }))
+    if (terrain.heights.size() != TerrainVertexCount || !std::all_of(terrain.heights.begin(), terrain.heights.end(), [](float h) { return std::isfinite(h) && h <= TerrainMaxElevation; }))
     {
-        throw std::invalid_argument("Terrain heightmap must contain 257x257 finite heights");
+        throw std::invalid_argument("Terrain heightmap must contain 257x257 finite heights at or below 256");
     }
+    ValidatePalette(palette);
 
     TerrainMesh mesh;
     mesh.vertices.reserve(TerrainVertexCount);
@@ -151,7 +208,11 @@ TerrainMesh BuildTerrain(const TerrainHeightmap& terrain)
             const float dx = (terrain.Height(right, z) - terrain.Height(left, z)) / static_cast<float>(right - left);
             const float dz = (terrain.Height(x, front) - terrain.Height(x, back)) / static_cast<float>(front - back);
             const float inverseLength = 1.0f / std::sqrt(dx * dx + 1.0f + dz * dz);
-            mesh.vertices.push_back({static_cast<float>(x), terrain.Height(x, z), static_cast<float>(z), -dx * inverseLength, inverseLength, -dz * inverseLength});
+            const float height = terrain.Height(x, z);
+            const TerrainColor color = SamplePalette(height, palette);
+            mesh.vertices.push_back({static_cast<float>(x), height, static_cast<float>(z),
+                                     -dx * inverseLength, inverseLength, -dz * inverseLength,
+                                     color.r, color.g, color.b});
         }
     }
 
