@@ -101,11 +101,27 @@ TerrainHeightmap GenerateTerrain(const TerrainSettings& settings)
         return terrain;
     }
 
+    // Use integer step counts, then convert back to world units. Clamp the step
+    // count so a non-multiple hillHeight (e.g. 8.15) still respects the height cap.
+    constexpr float stepsPerUnit = 1.0f / TerrainHeightStep;
+    float maximumStep = std::floor(settings.hillHeight * stepsPerUnit);
+
+    if (maximumStep / stepsPerUnit > settings.hillHeight)
+    {
+        --maximumStep; // Handle a floating-point value immediately below a step.
+    }
+
     for (float& height : terrain.heights)
     {
         const float t = std::clamp((height - cutoff) / range, 0.0f, 1.0f);
-        // Smoothstep meets the exactly-flat floor with zero slope, avoiding a ledge.
-        height = settings.hillHeight * (t * t * (3.0f - 2.0f * t));
+
+        /**
+         * Shape the hills first then snap the shared corners to increments of 0.2.
+         */
+        const float smoothHeight = settings.hillHeight * (t * t * (3.0f - 2.0f * t));
+        const float step = std::min(std::round(smoothHeight * stepsPerUnit), maximumStep);
+
+        height = step / stepsPerUnit;
     }
 
     return terrain;

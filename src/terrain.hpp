@@ -7,12 +7,15 @@ constexpr float MapExtent = static_cast<float>(MapSize);
 constexpr std::uint32_t TerrainStride = MapSize + 1;
 constexpr std::uint32_t TerrainVertexCount = TerrainStride * TerrainStride;
 
+// Allowed elevation increments
+constexpr float TerrainHeightStep = 0.2f;
+
 struct TerrainSettings
 {
     std::uint32_t seed = 1337;
-    float hillHeight = 8.0f;   // Highest point, in tile-length units. Range: 0..128.
+    float hillHeight = 8.0f;   // Height cap in tile units; rounded down to a height step. Range: 0..128.
     float hillSize = 32.0f;     // Broad noise wavelength in tiles. Range: 8..1024.
-    float flatCoverage = 0.7f;  // Fraction of vertices flattened to Y=0. Range: 0..1.
+    float flatCoverage = 0.7f;  // Fraction flattened to Y=0 before height snapping. Range: 0..1.
 };
 
 // One shared height per tile corner. Retained by Application for future terrain
