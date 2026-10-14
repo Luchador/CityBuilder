@@ -68,7 +68,7 @@ cbuffer Sprite : register(b0, space1)
 {
     float4 screen;
     float4 rectangle; // center X/Y, half width/height in window coordinates
-    float4 rotation;  // cosine, sine, unused, unused
+    float4 transform; // row-major 2x2 screen-space transform
 };
 
 struct Output {
@@ -84,9 +84,8 @@ Output main(uint vertex : SV_VertexID)
     };
     float2 corner = corners[vertex];
     float2 local = corner * rectangle.zw;
-    float2 rotated = float2(rotation.x * local.x - rotation.y * local.y,
-                            rotation.y * local.x + rotation.x * local.y);
-    float2 pixel = rectangle.xy + rotated;
+    float2 projected = float2(dot(transform.xy, local), dot(transform.zw, local));
+    float2 pixel = rectangle.xy + projected;
     Output result;
     result.position = float4(pixel.x / screen.x * 2 - 1,
                              1 - pixel.y / screen.y * 2, 0, 1);

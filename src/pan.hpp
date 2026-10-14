@@ -2,10 +2,11 @@
 
 struct PanSettings
 {
-    // Window-coordinate units; circle image is 64 units across.
-    float deadZoneRadius = 40.0f; // Circle radius plus an 8-unit margin.
+    // The 64-unit source circle is displayed at half size (32 across).
+    static constexpr float circleScale = 0.5f;
+    float deadZoneRadius = 32.0f * circleScale + 8.0f; // 24-unit radius with margin.
     float speedPerUnit = 4.0f;    // Screen units/second per unit beyond the zone.
-    float maximumSpeed = 1200.0f;
+    float maximumSpeed = 2400.0f;
 };
 
 struct PanMotion
