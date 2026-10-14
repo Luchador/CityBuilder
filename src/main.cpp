@@ -222,9 +222,13 @@ public:
         uiPipeline = MakeUiPipeline();
         panVertexShader = CompileShader(device, PanVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
         panFragmentShader = CompileShader(device, PanFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
-        panOverlay.Initialize(device, textures, panVertexShader, panFragmentShader, SDL_GetGPUSwapchainTextureFormat(device, window));
+        panOverlay.Initialize(device, textures, panVertexShader, panFragmentShader,
+                              SDL_GetGPUSwapchainTextureFormat(device, window));
 
-        const TerrainMesh mesh = BuildTerrain();
+        terrainSettings.seed = SDL_rand_bits(); // Use a fixed number here to replay a landscape.
+        SDL_Log("Terrain seed: %u", static_cast<unsigned int>(terrainSettings.seed));
+        terrain = GenerateTerrain(terrainSettings);
+        const TerrainMesh mesh = BuildTerrain(terrain);
 
         vertices = UploadBuffer(device, mesh.vertices.data(), static_cast<Uint32>(mesh.vertices.size() * sizeof(Vertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
         indices = UploadBuffer(device, mesh.indices.data(), static_cast<Uint32>(mesh.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
@@ -354,41 +358,20 @@ private:
             // Avoid stale screen anchors after a resize or loss of focus.
             StopMousePan();
         }
-        else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_RIGHT && !mousePan.Active())
+        else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
+                 event.button.button == SDL_BUTTON_RIGHT && !mousePan.Active())
         {
             int width = 0, height = 0;
-    
-            if (!SDL_GetWindowSize(window, &width, &height)) 
-            {
-                return;
-            }
-    
-            if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) 
-            {
-                return;
-            }
-        
+            if (!SDL_GetWindowSize(window, &width, &height)) return;
+            if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) return;
             const auto layout = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
-    
-            if (!layout.IsWorldPoint(event.button.x, event.button.y)) 
-            {
-                return;
-            }
-
+            if (!layout.IsWorldPoint(event.button.x, event.button.y)) return;
             mousePan.Begin(event.button.x, event.button.y);
             restoreCursor = SDL_CursorVisible();
-
-            if (restoreCursor) 
-            {
-                SDL_HideCursor();
-            }
-    
+            if (restoreCursor) SDL_HideCursor();
             // Receive release/motion even outside the client area. SDL also has
             // automatic capture while buttons are held if explicit capture fails.
-            if (!SDL_CaptureMouse(true)) 
-            {
-                SDL_Log("Mouse capture: %s", SDL_GetError());
-            }
+            if (!SDL_CaptureMouse(true)) SDL_Log("Mouse capture: %s", SDL_GetError());
         }
         else if (event.type == SDL_EVENT_MOUSE_MOTION)
         {
@@ -438,10 +421,7 @@ private:
     {
         int width = 0, height = 0;
     
-        if (!SDL_GetWindowSize(window, &width, &height)) 
-        {
-            Fail("Get UI window size");
-        }
+        if (!SDL_GetWindowSize(window, &width, &height)) Fail("Get UI window size");
 
         const auto next = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
 
@@ -470,10 +450,14 @@ private:
         buffer.slot = 0;
         buffer.pitch = sizeof(Vertex);
         buffer.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
-        SDL_GPUVertexAttribute attribute{};
-        attribute.location = 0;
-        attribute.buffer_slot = 0;
-        attribute.format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+        SDL_GPUVertexAttribute attributes[2]{};
+        attributes[0].location = 0;
+        attributes[0].buffer_slot = 0;
+        attributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+        attributes[1].location = 1;
+        attributes[1].buffer_slot = 0;
+        attributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3;
+        attributes[1].offset = offsetof(Vertex, nx);
 
         SDL_GPUColorTargetDescription color{};
         color.format = SDL_GetGPUSwapchainTextureFormat(device, window);
@@ -484,8 +468,8 @@ private:
         info.fragment_shader = fragmentShader;
         info.vertex_input_state.vertex_buffer_descriptions = &buffer;
         info.vertex_input_state.num_vertex_buffers = 1;
-        info.vertex_input_state.vertex_attributes = &attribute;
-        info.vertex_input_state.num_vertex_attributes = 1;
+        info.vertex_input_state.vertex_attributes = attributes;
+        info.vertex_input_state.num_vertex_attributes = 2;
         info.primitive_type = grid ? SDL_GPU_PRIMITIVETYPE_LINELIST : SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
         info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
         info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
@@ -549,18 +533,11 @@ private:
         {
             const PanMotion motion = mousePan.Motion(panSettings);
             int width = 0, height = 0;
-    
-            if (!SDL_GetWindowSize(window, &width, &height)) 
-            {
-                return;
-            }
-    
+            if (!SDL_GetWindowSize(window, &width, &height)) return;
             const auto layout = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
-
             // Keep visual scroll speed stable at different zoom levels.
             const float screenToWorld = 2.0f * halfHeight / std::max(1.0f, layout.world.h);
             MoveCamera(motion.x * dt * screenToWorld, motion.y * dt * screenToWorld);
-    
             return; // The dead zone remains stationary even if keys are held.
         }
 
@@ -711,6 +688,8 @@ private:
     SDL_GPUBuffer* indices = nullptr;
     SDL_GPUBuffer* gridVertices = nullptr;
     SDL_GPUTexture* depth = nullptr;
+    TerrainSettings terrainSettings;
+    TerrainHeightmap terrain;
     AnchoredPan mousePan;
     PanSettings panSettings;
     TextureManager textures;

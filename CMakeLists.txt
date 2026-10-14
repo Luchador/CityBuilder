@@ -9,7 +9,7 @@ set(SDL_SHARED OFF CACHE BOOL "" FORCE)
 set(SDL_STATIC ON CACHE BOOL "" FORCE)
 add_subdirectory(vendored/SDL EXCLUDE_FROM_ALL)
 
-add_executable(CityBuilder src/main.cpp src/terrain.hpp src/shaders.hpp src/ui.cpp src/ui.hpp
+add_executable(CityBuilder src/main.cpp src/terrain.cpp src/terrain.hpp src/shaders.hpp src/ui.cpp src/ui.hpp
     src/pan.cpp src/pan.hpp src/pan_overlay.cpp src/pan_overlay.hpp
     src/texture.cpp src/texture.hpp)
 target_compile_features(CityBuilder PRIVATE cxx_std_20)
@@ -29,7 +29,7 @@ add_custom_target(copy_assets
     VERBATIM)
 add_dependencies(CityBuilder copy_assets)
 
-option(CITY_BUILD_TESTS "Build camera panning and texture manager tests" OFF)
+option(CITY_BUILD_TESTS "Build terrain, camera panning, and texture manager tests" OFF)
 if(CITY_BUILD_TESTS)
     enable_testing()
     add_executable(CityPanTests tests/pan_tests.cpp src/pan.cpp src/ui.cpp)
@@ -43,4 +43,9 @@ if(CITY_BUILD_TESTS)
     target_include_directories(CityTextureTests PRIVATE src)
     target_link_libraries(CityTextureTests PRIVATE SDL3::Headers)
     add_test(NAME CityTextureTests COMMAND CityTextureTests)
+
+    add_executable(CityTerrainTests tests/terrain_tests.cpp src/terrain.cpp)
+    target_compile_features(CityTerrainTests PRIVATE cxx_std_20)
+    target_include_directories(CityTerrainTests PRIVATE src)
+    add_test(NAME CityTerrainTests COMMAND CityTerrainTests)
 endif()

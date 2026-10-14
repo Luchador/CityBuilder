@@ -4,10 +4,37 @@
 
 constexpr std::uint32_t MapSize = 256;
 constexpr float MapExtent = static_cast<float>(MapSize);
+constexpr std::uint32_t TerrainStride = MapSize + 1;
+constexpr std::uint32_t TerrainVertexCount = TerrainStride * TerrainStride;
+
+struct TerrainSettings
+{
+    std::uint32_t seed = 1337;
+    float hillHeight = 8.0f;   // Highest point, in tile-length units. Range: 0..128.
+    float hillSize = 32.0f;     // Broad noise wavelength in tiles. Range: 8..1024.
+    float flatCoverage = 0.7f;  // Fraction of vertices flattened to Y=0. Range: 0..1.
+};
+
+// One shared height per tile corner. Retained by Application for future terrain
+// queries/editing; render geometry is built from this data, not the other way round.
+struct TerrainHeightmap
+{
+    std::vector<float> heights = std::vector<float>(TerrainVertexCount, 0.0f);
+
+    // x and z must be in 0..MapSize, inclusive.
+    float Height(std::uint32_t x, std::uint32_t z) const
+    {
+        return heights[z * TerrainStride + x];
+    }
+};
 
 // Terrain Vertex struct. Y is elevation. 1 unit = 1 tile length.
-struct Vertex { float x, y, z; };
-static_assert(sizeof(Vertex) == 12);
+struct Vertex
+{
+    float x, y, z;
+    float nx = 0, ny = 1, nz = 0;
+};
+static_assert(sizeof(Vertex) == 24);
 
 struct TerrainMesh {
     std::vector<Vertex> vertices;
@@ -15,49 +42,5 @@ struct TerrainMesh {
     std::vector<Vertex> lines;
 };
 
-inline TerrainMesh BuildTerrain()
-{
-    TerrainMesh mesh;
-    constexpr auto stride = MapSize + 1;
-
-    mesh.vertices.reserve(stride * stride);
-    mesh.indices.reserve(MapSize * MapSize * 6);
-
-    for (std::uint32_t z = 0; z <= MapSize; ++z)
-    {
-        for (std::uint32_t x = 0; x <= MapSize; ++x)
-        {
-            mesh.vertices.push_back({static_cast<float>(x), 0.0f, static_cast<float>(z)});
-        }
-    }
-
-    for (std::uint32_t z = 0; z < MapSize; ++z) 
-    {
-        for (std::uint32_t x = 0; x < MapSize; ++x) 
-        {
-            const auto a = z * stride + x;
-            const auto b = a + 1;
-            const auto c = a + stride;
-            const auto d = c + 1;
-
-            // Two tris per square, both with an upward normal.
-            mesh.indices.insert(mesh.indices.end(), {a, c, b, b, c, d});
-        }
-    }
-
-    /**
-     * Draw square black wireframe around each tile.
-     */
-    mesh.lines.reserve(4 * stride);
-
-    for (std::uint32_t i = 0; i <= MapSize; ++i) 
-    {
-        const float p = static_cast<float>(i);
-        mesh.lines.push_back({p, 0.0f, 0.0f});
-        mesh.lines.push_back({p, 0.0f, MapExtent});
-        mesh.lines.push_back({0.0f, 0.0f, p});
-        mesh.lines.push_back({MapExtent, 0.0f, p});
-    }
-
-    return mesh;
-}
+TerrainHeightmap GenerateTerrain(const TerrainSettings& settings);
+TerrainMesh BuildTerrain(const TerrainHeightmap& terrain);

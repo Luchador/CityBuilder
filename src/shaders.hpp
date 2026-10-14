@@ -13,7 +13,7 @@ struct Output {
     float4 color : TEXCOORD0;
 };
 
-Output main(float3 position : TEXCOORD0)
+Output main(float3 position : TEXCOORD0, float3 normal : TEXCOORD1)
 {
     float3 p = position - float3(camera.x, 0.0, camera.y);
 
@@ -25,7 +25,11 @@ Output main(float3 position : TEXCOORD0)
     Output result;
 
     result.position = float4(right / (camera.z * camera.w), up / camera.z, 0.5 - towardCamera / 2048.0 + style.w, 1.0);
-    result.color = float4(style.rgb, 1.0);
+    // Simple fixed sunlight makes hills readable even with the grid hidden.
+    // Divide by the flat-ground value to preserve the original green on plains.
+    float sunlight = saturate(dot(normalize(normal), float3(-0.6, 0.8, 0.0)));
+    float brightness = (0.45 + 0.55 * sunlight) / 0.89;
+    result.color = float4(style.rgb * brightness, 1.0);
     return result;
 }
 )hlsl";
