@@ -13,7 +13,7 @@ constexpr float TerrainHeightStep = 0.2f;
 struct TerrainSettings
 {
     std::uint32_t seed = 1337;
-    float hillHeight = 8.0f;   // Height cap in tile units; rounded down to a height step. Range: 0..128.
+    float hillHeight = 2.0f;   // Height cap in tile units; rounded down to a height step. Range: 0..128.
     float hillSize = 32.0f;     // Broad noise wavelength in tiles. Range: 8..1024.
     float flatCoverage = 0.7f;  // Fraction flattened to Y=0 before height snapping. Range: 0..1.
 };
