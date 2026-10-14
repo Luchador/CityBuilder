@@ -73,8 +73,8 @@ void PanOverlay::DrawImage(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pa
 {
     const float m00 = groundAligned ? 0.70710678f : std::cos(angle);
     const float m01 = groundAligned ? -0.70710678f : -std::sin(angle);
-    const float m10 = groundAligned ? 0.40824829f : std::sin(angle);
-    const float m11 = groundAligned ? 0.40824829f : std::cos(angle);
+    const float m10 = groundAligned ? 0.38511795f : std::sin(angle);
+    const float m11 = groundAligned ? 0.38511795f : std::cos(angle);
     const float uniforms[12] = {width, height, 0, 0, x, y, static_cast<float>(image.Width()) * 0.5f * scale, static_cast<float>(image.Height()) * 0.5f * scale, m00, m01, m10, m11};
 
     SDL_PushGPUVertexUniformData(commands, 0, uniforms, sizeof(uniforms));

@@ -9,7 +9,7 @@ constexpr std::uint32_t TerrainStride = MapSize + 1;
 constexpr std::uint32_t TerrainVertexCount = TerrainStride * TerrainStride;
 
 // Allowed elevation increments
-constexpr float TerrainHeightStep = 0.2f;
+constexpr float TerrainHeightStep = 0.25f;
 constexpr float TerrainSeaLevel = 0.0f;
 constexpr float TerrainMaxElevation = 256.0f;
 

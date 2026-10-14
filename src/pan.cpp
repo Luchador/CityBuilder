@@ -56,5 +56,5 @@ PanMotion AnchoredPan::Motion(const PanSettings& settings) const
 
 GroundPan ScreenToGroundPan(float right, float down)
 {
-    return {0.70710678f * right + 1.22474487f * down, -0.70710678f * right + 1.22474487f * down};
+    return {0.70710678f * right + 1.29830353f * down, -0.70710678f * right + 1.29830353f * down};
 }

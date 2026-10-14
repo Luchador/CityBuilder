@@ -17,18 +17,22 @@ Output main(float3 position : TEXCOORD0, float3 normal : TEXCOORD1, float3 verte
 {
     float3 p = position - float3(camera.x, 0.0, camera.y);
 
-    // Orthonormal isometric camera: 45-degree yaw, ~35.264-degree pitch.
+    // Orthographic camera: 45-degree yaw, 33-degree pitch.
     float right = dot(p, float3(0.70710678, 0.0, -0.70710678));
-    float up = dot(p, float3(-0.40824829, 0.81649658, -0.40824829));
-    float towardCamera = dot(p, float3(0.57735027, 0.57735027, 0.57735027));
+    float up = dot(p, float3(-0.38511795, 0.83867057, -0.38511795));
+    float towardCamera = dot(p, float3(0.59302965, 0.54463904, 0.59302965));
 
     Output result;
 
     result.position = float4(right / (camera.z * camera.w), up / camera.z, 0.5 - towardCamera / 2048.0 + style.w, 1.0);
-    // Simple fixed sunlight makes hills readable even with the grid hidden.
-    // Divide by the flat-ground value to preserve the original green on plains.
-    float sunlight = saturate(dot(normalize(normal), float3(-0.6, 0.8, 0.0)));
-    float brightness = (0.45 + 0.55 * sunlight) / 0.89;
+
+    const float ambientIntensity = 0.45;
+    const float directionalIntensity = 1.00;
+    const float3 lightDirection = float3(-0.6, 0.5, 0.0);
+
+    float sunlight = saturate(dot(normalize(normal), lightDirection));
+    float brightness = (ambientIntensity + directionalIntensity * sunlight) / 0.89;
+
     result.color = float4(vertexColor * style.rgb * brightness, 1.0);
 
     return result;

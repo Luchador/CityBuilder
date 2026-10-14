@@ -74,14 +74,13 @@ namespace
         for (std::size_t i = 0; i < palette.bands.size(); ++i)
         {
             const auto& band = palette.bands[i];
-            if (!std::isfinite(band.upperElevation) || !std::isfinite(band.transitionWidth) ||
-                band.transitionWidth < 0 || !validChannel(band.color.r) ||
-                !validChannel(band.color.g) || !validChannel(band.color.b))
+    
+            if (!std::isfinite(band.upperElevation) || !std::isfinite(band.transitionWidth) || band.transitionWidth < 0 || !validChannel(band.color.r) || !validChannel(band.color.g) || !validChannel(band.color.b))
             {
                 throw std::invalid_argument("Terrain palette requires finite elevations, nonnegative transition widths, and RGB values in 0..1");
             }
-            if (i > 0 && (band.upperElevation <= palette.bands[i - 1].upperElevation ||
-                          band.transitionWidth > band.upperElevation - palette.bands[i - 1].upperElevation))
+
+            if (i > 0 && (band.upperElevation <= palette.bands[i - 1].upperElevation || band.transitionWidth > band.upperElevation - palette.bands[i - 1].upperElevation))
             {
                 throw std::invalid_argument("Terrain palette boundaries must increase and transition zones must fit within their bands");
             }
@@ -99,17 +98,24 @@ namespace
         for (std::size_t i = 0; i + 1 < palette.bands.size(); ++i)
         {
             const auto& band = palette.bands[i];
-            if (height >= band.upperElevation) continue;
+    
+            if (height >= band.upperElevation) 
+            {
+                continue;
+            }
 
             const float blendStart = band.upperElevation - band.transitionWidth;
-            if (band.transitionWidth == 0 || height <= blendStart) return band.color;
+
+            if (band.transitionWidth == 0 || height <= blendStart) 
+            {
+                return band.color;
+            }
 
             const float t = std::clamp((height - blendStart) / band.transitionWidth, 0.0f, 1.0f);
             const float blend = t * t * (3.0f - 2.0f * t);
             const auto& next = palette.bands[i + 1].color;
-            return {std::lerp(band.color.r, next.r, blend),
-                    std::lerp(band.color.g, next.g, blend),
-                    std::lerp(band.color.b, next.b, blend)};
+    
+            return {std::lerp(band.color.r, next.r, blend), std::lerp(band.color.g, next.g, blend), std::lerp(band.color.b, next.b, blend)};
         }
         return palette.bands.back().color;
     }
@@ -117,8 +123,13 @@ namespace
 
 TerrainColor SampleTerrainColor(float height, const TerrainPalette& palette)
 {
-    if (!std::isfinite(height)) throw std::invalid_argument("Terrain color requires a finite elevation");
+    if (!std::isfinite(height)) 
+    {
+        throw std::invalid_argument("Terrain color requires a finite elevation");
+    }
+
     ValidatePalette(palette);
+
     return SamplePalette(height, palette);
 }
 

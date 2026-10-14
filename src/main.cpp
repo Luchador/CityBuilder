@@ -665,6 +665,7 @@ private:
         SDL_PushGPUVertexUniformData(commands, 0, &view, sizeof(view));
         SDL_DrawGPUIndexedPrimitives(pass, indexCount, 1, 0, 0, 0);
 
+        // Render the terrain line grid.
         if (showGrid) 
         {
             SDL_BindGPUGraphicsPipeline(pass, gridPipeline);
