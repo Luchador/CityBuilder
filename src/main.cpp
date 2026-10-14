@@ -222,8 +222,7 @@ public:
         uiPipeline = MakeUiPipeline();
         panVertexShader = CompileShader(device, PanVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
         panFragmentShader = CompileShader(device, PanFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
-        panOverlay.Initialize(device, textures, panVertexShader, panFragmentShader,
-                              SDL_GetGPUSwapchainTextureFormat(device, window));
+        panOverlay.Initialize(device, textures, panVertexShader, panFragmentShader, SDL_GetGPUSwapchainTextureFormat(device, window));
 
         const TerrainMesh mesh = BuildTerrain();
 
@@ -355,20 +354,41 @@ private:
             // Avoid stale screen anchors after a resize or loss of focus.
             StopMousePan();
         }
-        else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
-                 event.button.button == SDL_BUTTON_RIGHT && !mousePan.Active())
+        else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_RIGHT && !mousePan.Active())
         {
             int width = 0, height = 0;
-            if (!SDL_GetWindowSize(window, &width, &height)) return;
-            if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) return;
+    
+            if (!SDL_GetWindowSize(window, &width, &height)) 
+            {
+                return;
+            }
+    
+            if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) 
+            {
+                return;
+            }
+        
             const auto layout = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
-            if (!layout.IsWorldPoint(event.button.x, event.button.y)) return;
+    
+            if (!layout.IsWorldPoint(event.button.x, event.button.y)) 
+            {
+                return;
+            }
+
             mousePan.Begin(event.button.x, event.button.y);
             restoreCursor = SDL_CursorVisible();
-            if (restoreCursor) SDL_HideCursor();
+
+            if (restoreCursor) 
+            {
+                SDL_HideCursor();
+            }
+    
             // Receive release/motion even outside the client area. SDL also has
             // automatic capture while buttons are held if explicit capture fails.
-            if (!SDL_CaptureMouse(true)) SDL_Log("Mouse capture: %s", SDL_GetError());
+            if (!SDL_CaptureMouse(true)) 
+            {
+                SDL_Log("Mouse capture: %s", SDL_GetError());
+            }
         }
         else if (event.type == SDL_EVENT_MOUSE_MOTION)
         {
@@ -418,7 +438,10 @@ private:
     {
         int width = 0, height = 0;
     
-        if (!SDL_GetWindowSize(window, &width, &height)) Fail("Get UI window size");
+        if (!SDL_GetWindowSize(window, &width, &height)) 
+        {
+            Fail("Get UI window size");
+        }
 
         const auto next = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
 
@@ -526,11 +549,18 @@ private:
         {
             const PanMotion motion = mousePan.Motion(panSettings);
             int width = 0, height = 0;
-            if (!SDL_GetWindowSize(window, &width, &height)) return;
+    
+            if (!SDL_GetWindowSize(window, &width, &height)) 
+            {
+                return;
+            }
+    
             const auto layout = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
+
             // Keep visual scroll speed stable at different zoom levels.
             const float screenToWorld = 2.0f * halfHeight / std::max(1.0f, layout.world.h);
             MoveCamera(motion.x * dt * screenToWorld, motion.y * dt * screenToWorld);
+    
             return; // The dead zone remains stationary even if keys are held.
         }
 

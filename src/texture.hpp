@@ -17,9 +17,20 @@ public:
     Texture(const Texture&) = delete;
     Texture& operator=(const Texture&) = delete;
 
-    SDL_GPUTexture* Handle() const noexcept { return handle; }
-    Uint32 Width() const noexcept { return width; }
-    Uint32 Height() const noexcept { return height; }
+    SDL_GPUTexture* Handle() const noexcept 
+    { 
+        return handle; 
+    }
+
+    Uint32 Width() const noexcept 
+    { 
+        return width; 
+    }
+
+    Uint32 Height() const noexcept 
+    { 
+        return height; 
+    }
 
 private:
     friend class TextureManager;
@@ -36,7 +47,11 @@ class TextureManager
 {
 public:
     TextureManager() = default;
-    ~TextureManager() { Release(); }
+    ~TextureManager() 
+    { 
+        Release(); 
+    }
+
     TextureManager(const TextureManager&) = delete;
     TextureManager& operator=(const TextureManager&) = delete;
 
@@ -46,7 +61,10 @@ public:
     // Equivalent separators and dot segments share a cache entry. Match the
     // filename's case. Returned references survive later loads, until Release().
     const Texture& Load(std::string_view assetPath);
-    std::size_t Size() const noexcept { return textures.size(); }
+    std::size_t Size() const noexcept 
+    { 
+        return textures.size(); 
+    }
 
     // Invalidates every borrowed Texture reference/pointer. Safe to repeat.
     void Release() noexcept;
