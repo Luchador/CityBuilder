@@ -301,6 +301,7 @@ public:
 
             while (SDL_PollEvent(&event)) 
             {
+                if (HandleMinimapEvent(event)) continue;
                 HandlePanEvent(event);
                 if (event.type == SDL_EVENT_QUIT) 
                 {
@@ -382,6 +383,38 @@ public:
     }
 
 private:
+    bool HandleMinimapEvent(const SDL_Event& event)
+    {
+        if (event.type != SDL_EVENT_MOUSE_BUTTON_DOWN || event.button.button != SDL_BUTTON_LEFT)
+        {
+            return false;
+        }
+
+        if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) return false;
+
+        int width = 0, height = 0;
+        if (!SDL_GetWindowSize(window, &width, &height)) return false;
+
+        // A click can arrive before the first render, or immediately after a
+        // resize. Recalculate the CPU layout instead of using stale bounds.
+        // SDL mouse coordinates and these rectangles use logical window units.
+        const auto layout = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
+        minimap.SetLayout(layout);
+
+        float mapX = 0.0f, mapZ = 0.0f;
+        if (minimap.TryScreenToMap(event.button.x, event.button.y, mapX, mapZ))
+        {
+            StopMousePan();
+            centerX = mapX * MapExtent;
+            centerZ = mapZ * MapExtent;
+            return true;
+        }
+
+        // Reserve the entire panel for UI, including future minimap buttons.
+        // Clicking outside the diamond must never become a world click.
+        return minimap.GetBounds().Contains(event.button.x, event.button.y);
+    }
+
     void StopMousePan()
     {
         if (!mousePan.Active()) return;
@@ -508,7 +541,9 @@ private:
             return;
         }
 
-        const auto mesh = BuildUiBackground(next);
+        minimap.SetLayout(next);
+        auto mesh = BuildUiBackground(next);
+        minimap.AppendGeometry(mesh);
 
         SDL_GPUBuffer* replacement = UploadBuffer(device, mesh.data(), static_cast<Uint32>(mesh.size() * sizeof(UiVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
 
@@ -521,7 +556,6 @@ private:
         uiVertexCount = static_cast<Uint32>(mesh.size());
         uiLayout = next;
         bottomBarText.SetLayout(uiLayout);
-        minimap.SetLayout(uiLayout);
     }
 
     SDL_GPUGraphicsPipeline* MakePipeline(bool grid)
