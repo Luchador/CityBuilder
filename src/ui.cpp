@@ -9,7 +9,7 @@ bool UiRect::Contains(float px, float py) const
 
 bool UiLayout::IsWorldPoint(float x, float y) const
 {
-    return world.Contains(x, y) && !minimap.Contains(x, y);
+    return world.Contains(x, y) && !minimapPanel.Contains(x, y);
 }
 
 namespace
@@ -82,10 +82,10 @@ UiLayout CalculateUiLayout(float width, float height, const UiSettings& settings
     layout.world = {0, 0, layout.width - right, layout.height - bottom};
     layout.bottomBar = {0, layout.height - bottom, layout.width, bottom};
     layout.toolbar = {layout.width - right, 0, right, layout.height - bottom};
-    layout.minimap = {layout.width - map, layout.height - map, map, map};
+    layout.minimapPanel = {layout.width - map, layout.height - map, map, map};
     const float gap = 8.0f * s;
     // Both the bar and toolbar stop their content before the minimap frame.
-    const float contentWidth = std::min(layout.minimap.x, layout.toolbar.x) - 2 * gap;
+    const float contentWidth = std::min(layout.minimapPanel.x, layout.toolbar.x) - 2 * gap;
     const float demandW = 80.0f * s;
 
     // Preserve the wide RCI gap at the normal window size, but give the four
@@ -105,8 +105,8 @@ UiLayout CalculateUiLayout(float width, float height, const UiSettings& settings
     layout.funds = {layout.population.x + layout.population.w + gap, rowY, statsW * 0.24f, rowH};
     layout.date = {layout.funds.x + layout.funds.w + gap, rowY, statsW * 0.22f, rowH};
     layout.zoneDemand = {gap + contentWidth - demandW, layout.bottomBar.y + gap, demandW, layout.bottomBar.h - 2.0f * gap};
-    layout.toolbarContent = {layout.toolbar.x + gap, gap, right - 2 * gap, std::min(layout.minimap.y, layout.world.h) - 2 * gap};
-    layout.minimapContent = Inset(layout.minimap, gap);
+    layout.toolbarContent = {layout.toolbar.x + gap, gap, right - 2 * gap, std::min(layout.minimapPanel.y, layout.world.h) - 2 * gap};
+    layout.minimapContent = Inset(layout.minimapPanel, gap);
 
     return layout;
 }
@@ -148,8 +148,8 @@ std::vector<UiVertex> BuildUiBackground(const UiLayout& layout)
     }
 
     // Minimap background polygon.
-    Quad(vertices, layout.minimap, panelTop, panelBottom);
-    Frame(vertices, layout.minimap, 2 * s, false);
+    Quad(vertices, layout.minimapPanel, panelTop, panelBottom);
+    Frame(vertices, layout.minimapPanel, 2 * s, false);
 
     return vertices;
 }

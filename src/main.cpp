@@ -22,6 +22,7 @@
 #include "texture.hpp"
 #include "text.hpp"
 #include "text_shaders.hpp"
+#include "ui_minimap.hpp"
 #include "ui_text.hpp"
 
 [[noreturn]] static void Fail(const char* operation)
@@ -405,20 +406,41 @@ private:
             // Avoid stale screen anchors after a resize or loss of focus.
             StopMousePan();
         }
-        else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN &&
-                 event.button.button == SDL_BUTTON_RIGHT && !mousePan.Active())
+        else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_RIGHT && !mousePan.Active())
         {
             int width = 0, height = 0;
-            if (!SDL_GetWindowSize(window, &width, &height)) return;
-            if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) return;
+        
+            if (!SDL_GetWindowSize(window, &width, &height)) 
+            {
+                return;
+            }
+    
+            if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) 
+            {
+                return;
+            }
+        
             const auto layout = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
-            if (!layout.IsWorldPoint(event.button.x, event.button.y)) return;
+    
+            if (!layout.IsWorldPoint(event.button.x, event.button.y)) 
+            {
+                return;
+            }
+    
             mousePan.Begin(event.button.x, event.button.y);
             restoreCursor = SDL_CursorVisible();
-            if (restoreCursor) SDL_HideCursor();
+    
+            if (restoreCursor)
+            { 
+                SDL_HideCursor();
+            }
+    
             // Receive release/motion even outside the client area. SDL also has
             // automatic capture while buttons are held if explicit capture fails.
-            if (!SDL_CaptureMouse(true)) SDL_Log("Mouse capture: %s", SDL_GetError());
+            if (!SDL_CaptureMouse(true)) 
+            {
+                SDL_Log("Mouse capture: %s", SDL_GetError());
+            }
         }
         else if (event.type == SDL_EVENT_MOUSE_MOTION)
         {
@@ -458,9 +480,15 @@ private:
         info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_ALWAYS;
         info.target_info.color_target_descriptions = &color;
         info.target_info.num_color_targets = 1;
+
         // Rendered in its own pass after the terrain, with no depth attachment.
         SDL_GPUGraphicsPipeline* pipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
-        if (!pipeline) Fail("Create UI pipeline");
+
+        if (!pipeline) 
+        {
+            Fail("Create UI pipeline");
+        }
+
         return pipeline;
     }
 
@@ -468,11 +496,14 @@ private:
     {
         int width = 0, height = 0;
     
-        if (!SDL_GetWindowSize(window, &width, &height)) Fail("Get UI window size");
+        if (!SDL_GetWindowSize(window, &width, &height)) 
+        {
+            Fail("Get UI window size");
+        }
 
         const auto next = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
 
-        if (uiVertices && next.width == uiLayout.width && next.height == uiLayout.height && next.minimap.w == uiLayout.minimap.w && next.toolbar.w == uiLayout.toolbar.w && next.bottomBar.h == uiLayout.bottomBar.h) 
+        if (uiVertices && next.width == uiLayout.width && next.height == uiLayout.height && next.minimapPanel.w == uiLayout.minimapPanel.w && next.toolbar.w == uiLayout.toolbar.w && next.bottomBar.h == uiLayout.bottomBar.h) 
         {
             return;
         }
@@ -490,6 +521,7 @@ private:
         uiVertexCount = static_cast<Uint32>(mesh.size());
         uiLayout = next;
         bottomBarText.SetLayout(uiLayout);
+        minimap.SetLayout(uiLayout);
     }
 
     SDL_GPUGraphicsPipeline* MakePipeline(bool grid)
@@ -922,6 +954,7 @@ private:
     SDL_GPUShader* panFragmentShader = nullptr;
     UiSettings uiSettings;
     UiLayout uiLayout;
+    UiMinimap minimap;
     SDL_GPUShader* uiVertexShader = nullptr;
     SDL_GPUGraphicsPipeline* uiPipeline = nullptr;
     SDL_GPUBuffer* uiVertices = nullptr;

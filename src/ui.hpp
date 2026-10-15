@@ -19,7 +19,7 @@ struct UiSettings
 struct UiLayout
 {
     float width = 0, height = 0, scale = 1;
-    UiRect world, bottomBar, toolbar, minimap;
+    UiRect world, bottomBar, toolbar, minimapPanel;
     UiRect newsTicker, cityName, population, funds, date, zoneDemand;
     UiRect toolbarContent, minimapContent;
     bool IsWorldPoint(float x, float y) const;

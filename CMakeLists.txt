@@ -30,7 +30,8 @@ add_executable(CityBuilder src/main.cpp src/terrain.cpp src/terrain.hpp src/shad
     src/water.cpp src/water.hpp src/water_shaders.hpp src/ui.cpp src/ui.hpp
     src/pan.cpp src/pan.hpp src/pan_overlay.cpp src/pan_overlay.hpp
     src/texture.cpp src/texture.hpp src/text.cpp src/text.hpp src/text_shaders.hpp
-    src/ui_text.cpp src/ui_text.hpp)
+    src/ui_text.cpp src/ui_text.hpp
+	src/ui_minimap.cpp src/ui_minimap.hpp)
 target_compile_features(CityBuilder PRIVATE cxx_std_20)
 target_compile_definitions(CityBuilder PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 # D3DCompile is supplied by the Windows SDK; no separate shader tools needed.
