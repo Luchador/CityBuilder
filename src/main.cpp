@@ -269,7 +269,7 @@ public:
         lineVertexCount = static_cast<Uint32>(mesh.lines.size());
 
         const TerrainSkirtMesh skirt = BuildTerrainSkirt(terrain, skirtSettings);
-        skirtUniforms = MakeTerrainSkirtUniforms(skirtSettings);
+        skirtUniforms = MakeTerrainSkirtUniforms(skirtSettings, terrainSettings.seed);
         skirtVertices = UploadBuffer(device, skirt.vertices.data(), static_cast<Uint32>(skirt.vertices.size() * sizeof(TerrainSkirtVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
         skirtIndices = UploadBuffer(device, skirt.indices.data(), static_cast<Uint32>(skirt.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
         skirtIndexCount = static_cast<Uint32>(skirt.indices.size());

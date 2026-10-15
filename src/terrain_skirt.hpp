@@ -6,7 +6,8 @@ inline constexpr std::uint32_t TerrainSkirtLayerCount = 40;
 struct TerrainSkirtSettings
 {
     float bottomY = -40.0f;          // Fixed world height, below every terrain edge. Range: -512..256.
-    float thicknessExponent = 3.8f;  // 1 = equal layers; larger values thicken the lower layers. Range: 1..4.
+    float thicknessExponent = 3.8f;  // 1 = equal base widths; larger values thicken lower layers overall. Range: 1..4.
+    float thicknessVariation = 0.95f; // Random thickness multipliers before normalization. Range: 0..0.95; 0 disables variation.
 
     // Rock colors, ordered from the ground surface down to the bottom.
     std::array<TerrainColor, TerrainSkirtLayerCount> colors{{
@@ -50,7 +51,9 @@ struct TerrainSkirtMesh
 // float4 packing matches the fragment shader's uniform buffer layout.
 struct alignas(16) TerrainSkirtUniforms
 {
-    std::array<float, 4> settings; // bottomY, inverse thickness exponent, layer count, unused
+    std::array<float, 4> settings; // bottomY, unused, layer count, unused
+    // RGB color plus the layer's normalized bottom depth in the fourth channel.
+    // This channel is a boundary, not opacity; skirt rendering remains opaque.
     std::array<std::array<float, 4>, TerrainSkirtLayerCount> colors;
 };
 static_assert(sizeof(TerrainSkirtUniforms) == 16 * (TerrainSkirtLayerCount + 1));
@@ -58,4 +61,5 @@ static_assert(sizeof(TerrainSkirtUniforms) == 16 * (TerrainSkirtLayerCount + 1))
 // Four outward-facing walls. One quad per boundary tile, no interior walls or
 // bottom cap. The shader supplies all 40 bands without extra layer geometry.
 TerrainSkirtMesh BuildTerrainSkirt(const TerrainHeightmap& terrain, const TerrainSkirtSettings& settings = {});
-TerrainSkirtUniforms MakeTerrainSkirtUniforms(const TerrainSkirtSettings& settings = {});
+// Generate one shared band layout for all four walls, stable for a given seed.
+TerrainSkirtUniforms MakeTerrainSkirtUniforms(const TerrainSkirtSettings& settings = {}, std::uint32_t seed = 1337);

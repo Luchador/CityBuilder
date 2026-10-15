@@ -121,11 +121,12 @@ std::vector<UiVertex> BuildUiBackground(const UiLayout& layout)
     // Fixed dock backgrounds, followed by recessed areas for future content.
     Quad(vertices, layout.bottomBar, panelTop, panelBottom);
     Frame(vertices, layout.bottomBar, 2 * s, false);
+
+    // Toolbar.
     Quad(vertices, layout.toolbar, panelTop, panelBottom);
     Frame(vertices, layout.toolbar, 2 * s, false);
-    Well(vertices, layout.toolbarContent, s);
 
-    // News Ticker
+    // News Ticker.
     Solid(vertices, layout.newsTicker, {0.0f, 0.0f, 0.0f});
     Frame(vertices, layout.newsTicker, s, true);
 
@@ -135,7 +136,7 @@ std::vector<UiVertex> BuildUiBackground(const UiLayout& layout)
     Well(vertices, layout.date, s);
     Well(vertices, layout.zoneDemand, s);
 
-    // Small R/C/I color keys only: these do not pretend to show demand values.
+    // RCI indicator.
     const Color zoneColors[] = {{0.25f, 0.66f, 0.30f}, {0.25f, 0.51f, 0.83f}, {0.87f, 0.72f, 0.27f}};
 
     for (int i = 0; i < 3; ++i)
@@ -144,10 +145,9 @@ std::vector<UiVertex> BuildUiBackground(const UiLayout& layout)
         Solid(vertices, {layout.zoneDemand.x + 8 * s + i * cell, layout.zoneDemand.y + layout.zoneDemand.h - 8 * s,cell - 3 * s, 3 * s}, zoneColors[i]);
     }
 
-    // The independently sized square is drawn last, over the dock junction.
+    // Minimap background polygon.
     Quad(vertices, layout.minimap, panelTop, panelBottom);
     Frame(vertices, layout.minimap, 2 * s, false);
-    Well(vertices, layout.minimapContent, s);
 
     return vertices;
 }
