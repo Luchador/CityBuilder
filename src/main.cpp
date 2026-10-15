@@ -544,6 +544,7 @@ private:
         minimap.SetLayout(next);
         auto mesh = BuildUiBackground(next);
         minimap.AppendGeometry(mesh);
+        minimap.AppendViewOutline(mesh);
 
         SDL_GPUBuffer* replacement = UploadBuffer(device, mesh.data(), static_cast<Uint32>(mesh.size() * sizeof(UiVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
 

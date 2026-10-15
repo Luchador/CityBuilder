@@ -16,6 +16,21 @@ namespace
 
     // Accept floating-point rounding at the edges, far less than one pixel.
     constexpr float EdgeTolerance = 0.00001f;
+
+    void AppendRedRectangle(std::vector<UiVertex>& vertices, UiRect rect)
+    {
+        if (rect.w <= 0.0f || rect.h <= 0.0f)
+        {
+            return;
+        }
+
+        const UiVertex a{rect.x,          rect.y,          1, 0, 0, 1};
+        const UiVertex b{rect.x + rect.w, rect.y,          1, 0, 0, 1};
+        const UiVertex c{rect.x,          rect.y + rect.h, 1, 0, 0, 1};
+        const UiVertex d{rect.x + rect.w, rect.y + rect.h, 1, 0, 0, 1};
+
+        vertices.insert(vertices.end(), {a, b, c, b, d, c});
+    }
 }
 
 void UiMinimap::SetLayout(const UiLayout& layout)
@@ -105,4 +120,34 @@ void UiMinimap::AppendGeometry(std::vector<UiVertex>& vertices) const
     const UiVertex left = vertex(0.0f, 1.0f);
 
     vertices.insert(vertices.end(), {top, right, bottom, top, bottom, left});
+}
+
+void UiMinimap::AppendViewOutline(std::vector<UiVertex>& vertices) const
+{
+    if (diamondBounds.w <= 0.0f || diamondBounds.h <= 0.0f)
+    {
+        return;
+    }
+
+    const MinimapScreenPoint center = MapToScreen(0.5f, 0.5f);
+
+    // Size relative to the diamond's bounding rectangle.
+    const float width = diamondBounds.w * 0.40f;
+    const float height = diamondBounds.h * 0.30f;
+
+    const UiRect box{center.x - width * 0.5f, center.y - height * 0.5f, width, height};
+
+    const float thickness = std::min({2.0f, box.w * 0.5f, box.h * 0.5f});
+
+    // Top edge.
+    AppendRedRectangle(vertices, {box.x, box.y, box.w, thickness});
+
+    // Bottom edge.
+    AppendRedRectangle(vertices, {box.x, box.y + box.h - thickness, box.w, thickness});
+
+    // Left edge, between the top and bottom strips.
+    AppendRedRectangle(vertices, {box.x, box.y + thickness, thickness, box.h - 2.0f * thickness});
+
+    // Right edge.
+    AppendRedRectangle(vertices, {box.x + box.w - thickness, box.y + thickness, thickness, box.h - 2.0f * thickness});
 }

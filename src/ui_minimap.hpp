@@ -29,6 +29,9 @@ public:
     // Append two opaque triangles to the existing UI mesh.
     void AppendGeometry(std::vector<UiVertex>& vertices) const;
 
+    // Append the four rectangles that make up the camera view outline on the minimap.
+    void AppendViewOutline(std::vector<UiVertex>& vertices) const;
+
 private:
     UiRect bounds{};
     UiRect contentBounds{};
