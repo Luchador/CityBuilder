@@ -6,7 +6,7 @@ inline constexpr std::uint32_t TerrainSkirtLayerCount = 40;
 struct TerrainSkirtSettings
 {
     float bottomY = -40.0f;          // Fixed world height, below every terrain edge. Range: -512..256.
-    float thicknessExponent = 1.5f;  // 1 = equal layers; larger values thicken the lower layers. Range: 1..4.
+    float thicknessExponent = 3.8f;  // 1 = equal layers; larger values thicken the lower layers. Range: 1..4.
 
     // Rock colors, ordered from the ground surface down to the bottom.
     std::array<TerrainColor, TerrainSkirtLayerCount> colors{{
