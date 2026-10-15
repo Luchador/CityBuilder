@@ -194,6 +194,8 @@ public:
             if (uiPipeline) SDL_ReleaseGPUGraphicsPipeline(device, uiPipeline);
             if (uiVertexShader) SDL_ReleaseGPUShader(device, uiVertexShader);
             if (uiVertices) SDL_ReleaseGPUBuffer(device, uiVertices);
+            if (minimapOutlineVertices) SDL_ReleaseGPUBuffer(device, minimapOutlineVertices);
+            if (minimapOutlineTransfer) SDL_ReleaseGPUTransferBuffer(device, minimapOutlineTransfer);
             if (vertexShader) SDL_ReleaseGPUShader(device, vertexShader);
             if (fragmentShader) SDL_ReleaseGPUShader(device, fragmentShader);
             if (vertices) SDL_ReleaseGPUBuffer(device, vertices);
@@ -544,7 +546,6 @@ private:
         minimap.SetLayout(next);
         auto mesh = BuildUiBackground(next);
         minimap.AppendGeometry(mesh);
-        minimap.AppendViewOutline(mesh);
 
         SDL_GPUBuffer* replacement = UploadBuffer(device, mesh.data(), static_cast<Uint32>(mesh.size() * sizeof(UiVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
 
@@ -557,6 +558,62 @@ private:
         uiVertexCount = static_cast<Uint32>(mesh.size());
         uiLayout = next;
         bottomBarText.SetLayout(uiLayout);
+        minimapOutlineDirty = true;
+    }
+
+    void UpdateMinimapOutline(SDL_GPUCommandBuffer* commands, const MinimapView& view)
+    {
+        if (!minimapOutlineDirty && view == minimapOutlineView) return;
+
+        minimapOutlineMesh.clear();
+        minimapOutlineMesh.reserve(MaxMinimapOutlineVertices);
+        minimap.AppendViewOutline(minimapOutlineMesh, view);
+        if (minimapOutlineMesh.size() > MaxMinimapOutlineVertices)
+        {
+            throw std::runtime_error("Minimap outline exceeds its vertex buffer capacity.");
+        }
+
+        const auto count = static_cast<Uint32>(minimapOutlineMesh.size());
+        if (count > 0)
+        {
+            // Each rectangular stroke clipped by a diamond has at most eight
+            // corners (six triangles). Keep a little spare capacity and reuse
+            // these buffers; cycling protects data still used by earlier frames.
+            if (!minimapOutlineVertices)
+            {
+                SDL_GPUBufferCreateInfo info{};
+                info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
+                info.size = MaxMinimapOutlineVertices * static_cast<Uint32>(sizeof(UiVertex));
+                minimapOutlineVertices = SDL_CreateGPUBuffer(device, &info);
+                if (!minimapOutlineVertices) Fail("Create minimap outline buffer");
+            }
+            if (!minimapOutlineTransfer)
+            {
+                SDL_GPUTransferBufferCreateInfo info{};
+                info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+                info.size = MaxMinimapOutlineVertices * static_cast<Uint32>(sizeof(UiVertex));
+                minimapOutlineTransfer = SDL_CreateGPUTransferBuffer(device, &info);
+                if (!minimapOutlineTransfer) Fail("Create minimap outline transfer buffer");
+            }
+
+            const Uint32 bytes = count * static_cast<Uint32>(sizeof(UiVertex));
+            void* mapped = SDL_MapGPUTransferBuffer(device, minimapOutlineTransfer, true);
+            if (!mapped) Fail("Map minimap outline transfer buffer");
+            std::memcpy(mapped, minimapOutlineMesh.data(), bytes);
+            SDL_UnmapGPUTransferBuffer(device, minimapOutlineTransfer);
+
+            SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
+            if (!copy) Fail("Begin minimap outline upload");
+            const SDL_GPUTransferBufferLocation source{minimapOutlineTransfer, 0};
+            const SDL_GPUBufferRegion destination{minimapOutlineVertices, 0, bytes};
+            SDL_UploadToGPUBuffer(copy, &source, &destination, true);
+            SDL_EndGPUCopyPass(copy);
+        }
+
+        // Setting count to zero hides an entirely clipped outline immediately.
+        minimapOutlineVertexCount = count;
+        minimapOutlineView = view;
+        minimapOutlineDirty = false;
     }
 
     SDL_GPUGraphicsPipeline* MakePipeline(bool grid)
@@ -793,7 +850,7 @@ private:
 
     void Render()
     {
-        // Geometry is uploaded only when window/layout dimensions change.
+        // Static UI geometry is uploaded only when layout dimensions change.
         // Do this before acquiring the presentation command buffer.
         EnsureUi();
 
@@ -863,6 +920,20 @@ private:
         const int worldHeight = std::max(1, static_cast<int>(std::lround(uiLayout.world.h * static_cast<float>(height) / uiLayout.height)));
     
         Uniforms view{centerX, centerZ, halfHeight, static_cast<float>(worldWidth) / static_cast<float>(worldHeight), 1.0f, 1.0f, 1.0f, 0.0f};
+
+        // Use exactly the same camera and rounded pixel aspect as the world
+        // pass. Copy the small dynamic outline before any render pass begins.
+        try
+        {
+            UpdateMinimapOutline(commands, {view.centerX, view.centerZ, view.halfHeight, view.aspect, MapExtent});
+        }
+        catch (...)
+        {
+            // Once a swapchain texture is acquired, submit rather than cancel.
+            SDL_SubmitGPUCommandBuffer(commands);
+            throw;
+        }
+
         SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color, 1, &depthTarget);
         SDL_GPUViewport worldViewport{0, 0, static_cast<float>(worldWidth), static_cast<float>(worldHeight), 0, 1};
         SDL_Rect worldScissor{0, 0, worldWidth, worldHeight};
@@ -939,6 +1010,12 @@ private:
         const float screen[4] = {uiLayout.width, uiLayout.height, 0, 0};
         SDL_PushGPUVertexUniformData(commands, 0, screen, sizeof(screen));
         SDL_DrawGPUPrimitives(pass, uiVertexCount, 1, 0, 0);
+        if (minimapOutlineVertexCount > 0)
+        {
+            const SDL_GPUBufferBinding outlineBinding{minimapOutlineVertices, 0};
+            SDL_BindGPUVertexBuffers(pass, 0, &outlineBinding, 1);
+            SDL_DrawGPUPrimitives(pass, minimapOutlineVertexCount, 1, 0, 0);
+        }
         textRenderer.Draw(commands, pass, uiLayout.width, uiLayout.height, width, height);
         panOverlay.Draw(commands, pass, uiLayout.width, uiLayout.height, mousePan, panSettings);
         SDL_EndGPURenderPass(pass);
@@ -994,6 +1071,13 @@ private:
     SDL_GPUGraphicsPipeline* uiPipeline = nullptr;
     SDL_GPUBuffer* uiVertices = nullptr;
     Uint32 uiVertexCount = 0;
+    static constexpr Uint32 MaxMinimapOutlineVertices = 96;
+    SDL_GPUBuffer* minimapOutlineVertices = nullptr;
+    SDL_GPUTransferBuffer* minimapOutlineTransfer = nullptr;
+    Uint32 minimapOutlineVertexCount = 0;
+    std::vector<UiVertex> minimapOutlineMesh;
+    MinimapView minimapOutlineView{};
+    bool minimapOutlineDirty = true;
     Uint32 depthWidth = 0, depthHeight = 0;
     Uint32 indexCount = 0, lineVertexCount = 0;
     bool showGrid = true;

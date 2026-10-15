@@ -53,7 +53,7 @@ option(CITY_BUILD_TESTS "Build terrain, camera panning, and texture manager test
 option(CITY_BUILD_MINIMAP_TESTS "Build the standalone minimap geometry and picking tests" OFF)
 if(CITY_BUILD_TESTS OR CITY_BUILD_MINIMAP_TESTS)
     enable_testing()
-    add_executable(CityMinimapTests tests/minimap_tests.cpp src/ui.cpp src/ui_minimap.cpp)
+    add_executable(CityMinimapTests tests/minimap_tests.cpp src/ui.cpp src/ui_minimap.cpp src/pan.cpp)
     target_compile_features(CityMinimapTests PRIVATE cxx_std_20)
     target_include_directories(CityMinimapTests PRIVATE src)
     add_test(NAME CityMinimapTests COMMAND CityMinimapTests)
