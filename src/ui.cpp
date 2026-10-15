@@ -71,8 +71,10 @@ UiLayout CalculateUiLayout(float width, float height, const UiSettings& settings
     // if a platform temporarily reports a smaller non-minimized window.
     const float s = std::min({1.0f, layout.width / 800.0f, layout.height / 480.0f});
     layout.scale = s;
-    const float bottom = std::clamp(settings.bottomBarHeight, 72.0f, 128.0f) * s;
-    const float right = std::clamp(settings.toolbarWidth, 128.0f, 240.0f) * s;
+    const float bottom = std::clamp(settings.barSlimDimension, 72.0f, 128.0f) * s;
+
+    // Make the toolbar width the same as the bottom bar height.
+    const float right = bottom;
 
     // Reserve useful space for city information and toolbar controls.
     const float maxMap = std::min({512.0f * s, layout.width - 480.0f * s, layout.height - 220.0f * s});

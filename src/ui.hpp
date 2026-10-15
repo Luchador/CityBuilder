@@ -10,10 +10,9 @@ struct UiRect
 
 struct UiSettings
 {
-    // Window-coordinate units. The renderer handles drawable-pixel scaling.
-    float bottomBarHeight = 92.0f;
-    float toolbarWidth = 92.0f;
-    // Independent of toolbarWidth; a future slider/drag handle can set this.
+    // Height of the bottom bar, or width of the toolbar.
+    float barSlimDimension = 92.0f;
+
     float minimapSize = 224.0f;
 };
 
