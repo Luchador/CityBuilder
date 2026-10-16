@@ -1,15 +1,32 @@
 #include "ui.hpp"
 
 #include <algorithm>
+#include <array>
+#include <cmath>
 
 bool UiRect::Contains(float px, float py) const
 {
     return px >= x && py >= y && px < x + w && py < y + h;
 }
 
+/**
+ * Remove the upper left corner of the minimap panel with a 45 degree cut.
+ */
+float UiLayout::GetMinimapCornerCut() const
+{
+    const float padding = std::max(0.0f, minimapContent.x - minimapPanel.x);
+
+    return std::max(0.0f, std::min(minimapPanel.w, minimapPanel.h) * 0.5f - (std::sqrt(2.0f) - 1.0f) * padding);
+}
+
+bool UiLayout::IsMinimapPanelPoint(float x, float y) const
+{
+    return minimapPanel.Contains(x, y) && (x - minimapPanel.x) + (y - minimapPanel.y) >= GetMinimapCornerCut();
+}
+
 bool UiLayout::IsWorldPoint(float x, float y) const
 {
-    return world.Contains(x, y) && !minimapPanel.Contains(x, y);
+    return world.Contains(x, y) && !IsMinimapPanelPoint(x, y);
 }
 
 namespace
@@ -20,6 +37,71 @@ namespace
     }
 
     struct Color { float r, g, b; };
+    struct Point { float x, y; };
+
+    std::array<Point, 5> CutCornerPoints(UiRect r, float cut)
+    {
+        // Clockwise in screen coordinates, starting at the shortened top edge.
+        return {{{r.x + cut, r.y}, {r.x + r.w, r.y}, {r.x + r.w, r.y + r.h}, {r.x, r.y + r.h}, {r.x, r.y + cut}}};
+    }
+
+    void MinimapPanel(std::vector<UiVertex>& vertices, const UiLayout& layout, Color top, Color bottom)
+    {
+        const UiRect r = layout.minimapPanel;
+
+        if (r.w <= 0.0f || r.h <= 0.0f) 
+        {
+            return;
+        }
+
+        const float cut = layout.GetMinimapCornerCut();
+        const auto outer = CutCornerPoints(r, cut);
+
+        const auto gradientVertex = [=](Point p)
+        {
+            const float t = (p.y - r.y) / r.h;
+            return UiVertex{p.x, p.y,
+                top.r + (bottom.r - top.r) * t,
+                top.g + (bottom.g - top.g) * t,
+                top.b + (bottom.b - top.b) * t, 1.0f};
+        };
+
+        // A convex pentagon needs three triangles. Its removed corner has
+        // no geometry, allowing the already-rendered world to show through.
+        for (std::size_t i = 1; i + 1 < outer.size(); ++i)
+        {
+            vertices.insert(vertices.end(), {gradientVertex(outer[0]), gradientVertex(outer[i]), gradientVertex(outer[i + 1])});
+        }
+
+        const float edge = std::min(2.0f * layout.scale, std::min(r.w, r.h) * 0.125f);
+
+        if (edge <= 0.0f) 
+        {
+            return;
+        }
+
+        // Offset every edge inward by the same perpendicular distance.
+        // The diagonal's x+y intercept moves by sqrt(2)*edge; subtract 2*edge
+        // because Inset() also moves the new rectangle's origin on both axes.
+        const float innerCut = std::max(0.0f, cut + (std::sqrt(2.0f) - 2.0f) * edge);
+        const auto inner = CutCornerPoints(Inset(r, edge), innerCut);
+    
+        const Color light{0.72f, 0.75f, 0.74f};
+        const Color shadow{0.17f, 0.22f, 0.24f};
+
+        // Five joined strips form a continuous frame, with no overlaps or
+        // gaps at the two new corners. Top/left/diagonal catch the light.
+        for (std::size_t i = 0; i < outer.size(); ++i)
+        {
+            const std::size_t next = (i + 1) % outer.size();
+            const Color color = (i == 1 || i == 2) ? shadow : light;
+            const auto vertex = [=](Point p) { return UiVertex{p.x, p.y, color.r, color.g, color.b, 1.0f}; };
+            const UiVertex a = vertex(outer[i]), b = vertex(outer[next]);
+            const UiVertex c = vertex(inner[next]), d = vertex(inner[i]);
+
+            vertices.insert(vertices.end(), {a, b, c, a, c, d});
+        }
+    }
 
     void Quad(std::vector<UiVertex>& vertices, UiRect r, Color top, Color bottom)
     {
@@ -147,9 +229,8 @@ std::vector<UiVertex> BuildUiBackground(const UiLayout& layout)
         Solid(vertices, {layout.zoneDemand.x + 8 * s + i * cell, layout.zoneDemand.y + layout.zoneDemand.h - 8 * s,cell - 3 * s, 3 * s}, zoneColors[i]);
     }
 
-    // Minimap background polygon.
-    Quad(vertices, layout.minimapPanel, panelTop, panelBottom);
-    Frame(vertices, layout.minimapPanel, 2 * s, false);
+    // Minimap background and frame share the same five-sided outline.
+    MinimapPanel(vertices, layout, panelTop, panelBottom);
 
     return vertices;
 }

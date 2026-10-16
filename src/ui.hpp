@@ -22,6 +22,12 @@ struct UiLayout
     UiRect world, bottomBar, toolbar, minimapPanel;
     UiRect newsTicker, cityName, population, funds, date, zoneDemand;
     UiRect toolbarContent, minimapContent;
+
+    // minimapPanel remains the bounding rectangle. These describe its
+    // actual five-sided outline, including the upper-left corner cut.
+    float GetMinimapCornerCut() const;
+
+    bool IsMinimapPanelPoint(float x, float y) const;
     bool IsWorldPoint(float x, float y) const;
 };
 

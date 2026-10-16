@@ -513,9 +513,9 @@ private:
             return true;
         }
 
-        // Reserve the entire panel for UI, including future minimap buttons.
-        // Clicking outside the diamond must never become a world click.
-        return minimap.GetBounds().Contains(event.button.x, event.button.y);
+        // Reserve the visible panel for UI, including future minimap buttons.
+        // The removed upper-left corner belongs to the world again.
+        return layout.IsMinimapPanelPoint(event.button.x, event.button.y);
     }
 
     void StopMousePan()
