@@ -16,7 +16,7 @@ namespace
 
     // Accept floating-point rounding at the edges, far less than one pixel.
     constexpr float EdgeTolerance = 0.00001f;
-    constexpr float ViewOutlineThickness = 1.0f; // Logical window units.
+    constexpr float ViewOutlineThickness = 2.0f; // Logical window units.
 
     void AppendClippedRedRectangle(std::vector<UiVertex>& vertices, UiRect rect, UiRect diamond)
     {
@@ -29,7 +29,7 @@ namespace
         const float halfHeight = diamond.h * 0.5f;
         const float centerX = diamond.x + halfWidth;
         const float centerY = diamond.y + halfHeight;
-    
+
         const auto normalized = [=](float x, float y)
         {
             return MinimapScreenPoint{(x - centerX) / halfWidth, (y - centerY) / halfHeight};
@@ -45,11 +45,9 @@ namespace
         std::vector<MinimapScreenPoint> clipped;
         clipped.reserve(8);
 
-        /**
-          * Sutherland-Hodgman clipping against the diamond's four half-planes.
-          * Clip the filled stroke, not just its centerline, so its thickness
-          * cannot leak outside a sloped edge.
-          */
+        // Sutherland-Hodgman clipping against the diamond's four half-planes.
+        // Clip the filled stroke, not just its centerline, so its thickness
+        // cannot leak outside a sloped edge.
         constexpr MinimapScreenPoint normals[] = {{1, 1}, {1, -1}, {-1, 1}, {-1, -1}};
 
         for (const auto normal : normals)
@@ -58,7 +56,7 @@ namespace
             {
                 return;
             }
-
+    
             clipped.clear();
 
             const auto distance = [normal](MinimapScreenPoint p)
@@ -68,7 +66,7 @@ namespace
 
             auto previous = polygon.back();
             float previousDistance = distance(previous);
-    
+
             for (const auto current : polygon)
             {
                 const float currentDistance = distance(current);
@@ -79,7 +77,7 @@ namespace
     
                     clipped.push_back({previous.x + (current.x - previous.x) * t, previous.y + (current.y - previous.y) * t});
                 }
-    
+
                 if (currentDistance >= 0.0f) 
                 {
                     clipped.push_back(current);
@@ -88,7 +86,7 @@ namespace
                 previous = current;
                 previousDistance = currentDistance;
             }
-    
+
             polygon.swap(clipped);
         }
 
@@ -101,7 +99,7 @@ namespace
         {
             return UiVertex{centerX + p.x * halfWidth, centerY + p.y * halfHeight, 1, 0, 0, 1};
         };
-    
+
         const UiVertex first = vertex(polygon[0]);
 
         for (std::size_t i = 1; i + 1 < polygon.size(); ++i)
@@ -109,7 +107,7 @@ namespace
             const UiVertex b = vertex(polygon[i]);
             const UiVertex c = vertex(polygon[i + 1]);
             const float area = (b.x - first.x) * (c.y - first.y) - (b.y - first.y) * (c.x - first.x);
-    
+
             if (area > 0.0f) 
             {
                 vertices.insert(vertices.end(), {first, b, c});
@@ -147,7 +145,6 @@ const UiRect& UiMinimap::GetDiamondBounds() const
 bool UiMinimap::Contains(float x, float y) const
 {
     float mapX = 0.0f, mapZ = 0.0f;
-
     return TryScreenToMap(x, y, mapX, mapZ);
 }
 
@@ -210,10 +207,7 @@ void UiMinimap::AppendGeometry(std::vector<UiVertex>& vertices) const
 
 UiRect UiMinimap::GetViewBounds(const MinimapView& view) const
 {
-    if (diamondBounds.w <= 0.0f || diamondBounds.h <= 0.0f ||
-        !std::isfinite(view.centerX) || !std::isfinite(view.centerZ) ||
-        !std::isfinite(view.halfHeight) || !std::isfinite(view.aspect) || !std::isfinite(view.mapExtent) ||
-        view.halfHeight <= 0.0f || view.aspect <= 0.0f || view.mapExtent <= 0.0f)
+    if (diamondBounds.w <= 0.0f || diamondBounds.h <= 0.0f || !std::isfinite(view.centerX) || !std::isfinite(view.centerZ) || !std::isfinite(view.halfHeight) || !std::isfinite(view.aspect) || !std::isfinite(view.mapExtent) || view.halfHeight <= 0.0f || view.aspect <= 0.0f || view.mapExtent <= 0.0f)
     {
         return {};
     }
@@ -224,6 +218,7 @@ UiRect UiMinimap::GetViewBounds(const MinimapView& view) const
     const GroundPan upperLeft = ScreenToGroundPan(-halfWidth, -view.halfHeight);
     const GroundPan lowerRight = ScreenToGroundPan(halfWidth, view.halfHeight);
     const auto topLeft = MapToScreen((view.centerX + upperLeft.x) / view.mapExtent, (view.centerZ + upperLeft.z) / view.mapExtent);
+
     const auto bottomRight = MapToScreen((view.centerX + lowerRight.x) / view.mapExtent, (view.centerZ + lowerRight.z) / view.mapExtent);
     const UiRect box{topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y};
 

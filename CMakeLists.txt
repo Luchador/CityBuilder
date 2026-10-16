@@ -31,6 +31,8 @@ add_executable(CityBuilder src/main.cpp src/terrain.cpp src/terrain.hpp src/shad
     src/pan.cpp src/pan.hpp src/pan_overlay.cpp src/pan_overlay.hpp
     src/texture.cpp src/texture.hpp src/text.cpp src/text.hpp src/text_shaders.hpp
     src/ui_text.cpp src/ui_text.hpp
+    src/ui_button.cpp src/ui_button.hpp src/ui_buttons.cpp src/ui_buttons.hpp src/ui_buttons_draw.cpp
+    src/ui_image.cpp src/ui_image.hpp src/ui_image_shaders.hpp
 	src/ui_minimap.cpp src/ui_minimap.hpp)
 target_compile_features(CityBuilder PRIVATE cxx_std_20)
 target_compile_definitions(CityBuilder PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
@@ -50,6 +52,21 @@ add_custom_target(copy_assets
 add_dependencies(CityBuilder copy_assets)
 
 option(CITY_BUILD_TESTS "Build terrain, camera panning, and texture manager tests" OFF)
+option(CITY_BUILD_BUTTON_TESTS "Build standalone UI button and image renderer tests" OFF)
+if(CITY_BUILD_TESTS OR CITY_BUILD_BUTTON_TESTS)
+    enable_testing()
+    add_executable(CityButtonTests tests/button_tests.cpp src/ui_button.cpp src/ui_buttons.cpp src/ui.cpp)
+    target_compile_features(CityButtonTests PRIVATE cxx_std_20)
+    target_include_directories(CityButtonTests PRIVATE src)
+    add_test(NAME CityButtonTests COMMAND CityButtonTests)
+
+    add_executable(CityImageTests tests/ui_image_tests.cpp src/ui_image.cpp src/ui_buttons_draw.cpp
+                   src/ui_button.cpp src/ui_buttons.cpp src/ui.cpp src/pan_overlay.cpp src/pan.cpp)
+    target_compile_features(CityImageTests PRIVATE cxx_std_20)
+    target_include_directories(CityImageTests PRIVATE src)
+    target_link_libraries(CityImageTests PRIVATE SDL3::Headers)
+    add_test(NAME CityImageTests COMMAND CityImageTests)
+endif()
 option(CITY_BUILD_MINIMAP_TESTS "Build the standalone minimap geometry and picking tests" OFF)
 if(CITY_BUILD_TESTS OR CITY_BUILD_MINIMAP_TESTS)
     enable_testing()

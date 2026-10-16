@@ -24,6 +24,9 @@
 #include "text_shaders.hpp"
 #include "ui_minimap.hpp"
 #include "ui_text.hpp"
+#include "ui_buttons.hpp"
+#include "ui_image.hpp"
+#include "ui_image_shaders.hpp"
 
 [[noreturn]] static void Fail(const char* operation)
 {
@@ -168,6 +171,7 @@ class Application
 public:
     ~Application()
     {
+        CancelButtonInteraction();
         StopMousePan();
         if (device) 
         {
@@ -176,9 +180,11 @@ public:
             if (textVertexShader) SDL_ReleaseGPUShader(device, textVertexShader);
             if (textFragmentShader) SDL_ReleaseGPUShader(device, textFragmentShader);
             panOverlay.Release();
+            uiButtons.Clear();
+            imageRenderer.Release();
             textures.Release();
-            if (panVertexShader) SDL_ReleaseGPUShader(device, panVertexShader);
-            if (panFragmentShader) SDL_ReleaseGPUShader(device, panFragmentShader);
+            if (imageVertexShader) SDL_ReleaseGPUShader(device, imageVertexShader);
+            if (imageFragmentShader) SDL_ReleaseGPUShader(device, imageFragmentShader);
             if (terrainPipeline) SDL_ReleaseGPUGraphicsPipeline(device, terrainPipeline);
             if (skirtPipeline) SDL_ReleaseGPUGraphicsPipeline(device, skirtPipeline);
             if (skirtVertexShader) SDL_ReleaseGPUShader(device, skirtVertexShader);
@@ -255,10 +261,12 @@ public:
         textRenderer.Initialize(device, textVertexShader, textFragmentShader,
                                 SDL_GetGPUSwapchainTextureFormat(device, window));
         bottomBarText.Initialize(textRenderer);
-        panVertexShader = CompileShader(device, PanVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
-        panFragmentShader = CompileShader(device, PanFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
-        panOverlay.Initialize(device, textures, panVertexShader, panFragmentShader,
-                              SDL_GetGPUSwapchainTextureFormat(device, window));
+        imageVertexShader = CompileShader(device, UiImageVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
+        imageFragmentShader = CompileShader(device, UiImageFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
+        imageRenderer.Initialize(device, imageVertexShader, imageFragmentShader,
+                                 SDL_GetGPUSwapchainTextureFormat(device, window));
+        panOverlay.Initialize(textures);
+        CreateUiButtons();
 
         terrainSettings.seed = SDL_rand_bits(); // Use a fixed number here to replay a landscape.
         SDL_Log("Terrain seed: %u", static_cast<unsigned int>(terrainSettings.seed));
@@ -303,6 +311,7 @@ public:
 
             while (SDL_PollEvent(&event)) 
             {
+                if (HandleButtonEvent(event)) continue;
                 if (HandleMinimapEvent(event)) continue;
                 HandlePanEvent(event);
                 if (event.type == SDL_EVENT_QUIT) 
@@ -385,6 +394,98 @@ public:
     }
 
 private:
+    void CreateUiButtons()
+    {
+        // Load skins and add buttons here once their artwork/actions are ready.
+        // See docs/ui-buttons.md for a complete three-texture toolbar example.
+    }
+
+    void LayoutUiButtons(const UiLayout& layout)
+    {
+        // Set each button's logical bounds from layout here. Called before
+        // pointer events and after layout changes, including the first frame.
+        (void)layout;
+    }
+
+    void OnUiButtonClicked(UiButtonId id)
+    {
+        // Assign actions and selection changes here; a completed click arrives
+        // once, after pointer ownership has been released. Adding/removing
+        // buttons from this function is safe.
+        (void)id;
+    }
+
+    void CancelButtonInteraction()
+    {
+        if (uiButtons.HasCapture()) SDL_CaptureMouse(false);
+        uiButtons.CancelInteraction();
+    }
+
+    bool HandleButtonEvent(const SDL_Event& event)
+    {
+        if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_WINDOW_MINIMIZED ||
+            event.type == SDL_EVENT_WINDOW_HIDDEN || event.type == SDL_EVENT_WINDOW_RESIZED ||
+            event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
+        {
+            CancelButtonInteraction();
+            return false; // Camera panning also needs to receive these events.
+        }
+        if (event.type == SDL_EVENT_WINDOW_MOUSE_LEAVE && !uiButtons.HasCapture())
+            uiButtons.CancelInteraction();
+
+        const bool pointerEvent = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
+                                  event.type == SDL_EVENT_MOUSE_MOTION || event.type == SDL_EVENT_MOUSE_WHEEL;
+        if (!pointerEvent || !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) return false;
+        int width = 0, height = 0;
+        if (SDL_GetWindowSize(window, &width, &height))
+            LayoutUiButtons(CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings));
+
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
+        {
+            if (event.button.button != SDL_BUTTON_LEFT)
+                return uiButtons.HasCapture() || uiButtons.BlocksPointer(event.button.x, event.button.y);
+            const auto result = uiButtons.PointerDown(event.button.x, event.button.y);
+            if (result.consumed)
+            {
+                StopMousePan();
+                if (!SDL_CaptureMouse(true)) SDL_Log("Button mouse capture: %s", SDL_GetError());
+            }
+            return result.consumed;
+        }
+        if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT)
+        {
+            const bool hadCapture = uiButtons.HasCapture();
+            const auto result = uiButtons.PointerUp(event.button.x, event.button.y);
+            if (hadCapture) SDL_CaptureMouse(false);
+            if (result.clicked) OnUiButtonClicked(*result.clicked);
+            return result.consumed;
+        }
+        if (event.type == SDL_EVENT_MOUSE_MOTION)
+        {
+            uiButtons.PointerMove(event.motion.x, event.motion.y);
+            return uiButtons.HasCapture();
+        }
+        if (event.type == SDL_EVENT_MOUSE_WHEEL)
+            return uiButtons.HasCapture() || uiButtons.BlocksPointer(event.wheel.mouse_x, event.wheel.mouse_y);
+        return false; // In particular, let right-button releases stop panning.
+    }
+
+    void UpdateButtonPointer()
+    {
+        const auto flags = SDL_GetWindowFlags(window);
+        if (!(flags & SDL_WINDOW_INPUT_FOCUS) || mousePan.Active() ||
+            (!(flags & SDL_WINDOW_MOUSE_FOCUS) && !uiButtons.HasCapture()))
+        {
+            CancelButtonInteraction();
+            return;
+        }
+        float x = 0, y = 0;
+        const auto buttons = SDL_GetMouseState(&x, &y);
+        const bool hadCapture = uiButtons.HasCapture();
+        uiButtons.SyncPointer(x, y, (buttons & SDL_BUTTON_LMASK) != 0);
+        if (hadCapture && !uiButtons.HasCapture()) SDL_CaptureMouse(false);
+    }
+
     bool HandleMinimapEvent(const SDL_Event& event)
     {
         if (event.type != SDL_EVENT_MOUSE_BUTTON_DOWN || event.button.button != SDL_BUTTON_LEFT)
@@ -558,6 +659,7 @@ private:
         uiVertexCount = static_cast<Uint32>(mesh.size());
         uiLayout = next;
         bottomBarText.SetLayout(uiLayout);
+        LayoutUiButtons(uiLayout);
         minimapOutlineDirty = true;
     }
 
@@ -853,6 +955,7 @@ private:
         // Static UI geometry is uploaded only when layout dimensions change.
         // Do this before acquiring the presentation command buffer.
         EnsureUi();
+        UpdateButtonPointer();
 
         // Font atlas uploads must be submitted before this frame's render commands.
         // Rasterize at drawable resolution, then place glyphs in logical UI units.
@@ -1017,7 +1120,8 @@ private:
             SDL_DrawGPUPrimitives(pass, minimapOutlineVertexCount, 1, 0, 0);
         }
         textRenderer.Draw(commands, pass, uiLayout.width, uiLayout.height, width, height);
-        panOverlay.Draw(commands, pass, uiLayout.width, uiLayout.height, mousePan, panSettings);
+        uiButtons.Draw(imageRenderer, commands, pass, uiLayout.width, uiLayout.height);
+        panOverlay.Draw(imageRenderer, commands, pass, uiLayout.width, uiLayout.height, mousePan, panSettings);
         SDL_EndGPURenderPass(pass);
 
         if (!SDL_SubmitGPUCommandBuffer(commands)) 
@@ -1056,14 +1160,16 @@ private:
     AnchoredPan mousePan;
     PanSettings panSettings;
     TextureManager textures;
+    UiImageRenderer imageRenderer;
+    UiButtons uiButtons;
     TextRenderer textRenderer;
     BottomBarText bottomBarText;
     SDL_GPUShader* textVertexShader = nullptr;
     SDL_GPUShader* textFragmentShader = nullptr;
     PanOverlay panOverlay;
     bool restoreCursor = false;
-    SDL_GPUShader* panVertexShader = nullptr;
-    SDL_GPUShader* panFragmentShader = nullptr;
+    SDL_GPUShader* imageVertexShader = nullptr;
+    SDL_GPUShader* imageFragmentShader = nullptr;
     UiSettings uiSettings;
     UiLayout uiLayout;
     UiMinimap minimap;
