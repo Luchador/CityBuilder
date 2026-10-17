@@ -1,4 +1,4 @@
-#include "pan.hpp"
+#include "camera.hpp"
 #include "ui.hpp"
 
 #include <cmath>

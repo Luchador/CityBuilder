@@ -18,7 +18,6 @@
 #include "water.hpp"
 #include "water_shaders.hpp"
 #include "ui.hpp"
-#include "pan.hpp"
 #include "pan_overlay.hpp"
 #include "texture.hpp"
 #include "text.hpp"
@@ -346,7 +345,7 @@ public:
                     if (event.key.key == SDLK_HOME) 
                     {
                         StopMousePan();
-                        centerX = centerZ = MapExtent * 0.5f;
+                        camera.SetPosition(MapExtent * 0.5f, MapExtent * 0.5f);
                         camera.ResetZoom();
                     }
                 }
@@ -385,14 +384,14 @@ public:
 
             if (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) 
             {
-                if (mousePan.Active())
+                if (camera.IsMousePanning())
                 {
                     float x = 0, y = 0;
                     const SDL_MouseButtonFlags buttons = SDL_GetMouseState(&x, &y);
 
                     if (buttons & SDL_BUTTON_RMASK) 
                     {
-                        mousePan.Move(x, y);
+                        camera.MoveMousePan(x, y);
                     }
                     else 
                     {
@@ -411,7 +410,7 @@ public:
     }
 
 private:
-    Camera camera;
+    Camera camera{MapExtent};
 
     static constexpr UiButtonId ZoomInButton = 1;
     static constexpr UiButtonId ZoomOutButton = 2;
@@ -618,7 +617,7 @@ private:
     {
         const auto flags = SDL_GetWindowFlags(window);
 
-        if (!(flags & SDL_WINDOW_INPUT_FOCUS) || mousePan.Active() || (!(flags & SDL_WINDOW_MOUSE_FOCUS) && !uiButtons.HasCapture()))
+        if (!(flags & SDL_WINDOW_INPUT_FOCUS) || camera.IsMousePanning() || (!(flags & SDL_WINDOW_MOUSE_FOCUS) && !uiButtons.HasCapture()))
         {
             CancelButtonInteraction();
             return;
@@ -667,8 +666,7 @@ private:
         {
             StopMousePan();
     
-            centerX = mapX * MapExtent;
-            centerZ = mapZ * MapExtent;
+            camera.SetPosition(mapX * MapExtent, mapZ * MapExtent);
 
             return true;
         }
@@ -680,12 +678,12 @@ private:
 
     void StopMousePan()
     {
-        if (!mousePan.Active()) 
+        if (!camera.IsMousePanning()) 
         {
             return;
         }
 
-        mousePan.End();
+        camera.EndMousePan();
 
         SDL_CaptureMouse(false);
 
@@ -712,7 +710,7 @@ private:
             // Avoid stale screen anchors after a resize or loss of focus.
             StopMousePan();
         }
-        else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_RIGHT && !mousePan.Active())
+        else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_RIGHT && !camera.IsMousePanning())
         {
             int width = 0, height = 0;
         
@@ -733,7 +731,7 @@ private:
                 return;
             }
     
-            mousePan.Begin(event.button.x, event.button.y);
+            camera.BeginMousePan(event.button.x, event.button.y);
             restoreCursor = SDL_CursorVisible();
     
             if (restoreCursor)
@@ -750,7 +748,7 @@ private:
         }
         else if (event.type == SDL_EVENT_MOUSE_MOTION)
         {
-            mousePan.Move(event.motion.x, event.motion.y);
+           camera.MoveMousePan(event.motion.x, event.motion.y);
         }
     }
 
@@ -1110,48 +1108,22 @@ private:
 
     void PanCamera(float dt)
     {
-        if (mousePan.Active())
-        {
-            const PanMotion motion = mousePan.Motion(panSettings);
-            int width = 0, height = 0;
-    
-            if (!SDL_GetWindowSize(window, &width, &height)) 
-            {
-                return;
-            }
-    
-            const auto layout = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
+        int width = 0, height = 0;
 
-            // Keep visual scroll speed stable at different zoom levels.
-            const float screenToWorld = 2.0f * camera.GetHalfHeight() / std::max(1.0f, layout.world.h);
-
-            MoveCamera(motion.x * dt * screenToWorld, motion.y * dt * screenToWorld);
-
-            return; // The dead zone remains stationary even if keys are held.
-        }
-
-        const bool* keys = SDL_GetKeyboardState(nullptr);
-        float horizontal = static_cast<float>(keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT]) - static_cast<float>(keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT]);
-        float vertical = static_cast<float>(keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP]) - static_cast<float>(keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN]);
-        const float length = std::sqrt(horizontal * horizontal + vertical * vertical);
-
-        if (length == 0.0f) 
+        if (!SDL_GetWindowSize(window, &width, &height))
         {
             return;
         }
 
-        const float speed = camera.GetHalfHeight() * dt;
-        horizontal *= speed / length;
-        vertical *= speed / length;
+        const auto layout = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
 
-        MoveCamera(horizontal, -vertical);
-    }
+        const bool* keys = SDL_GetKeyboardState(nullptr);
 
-    void MoveCamera(float right, float down)
-    {
-        const GroundPan movement = ScreenToGroundPan(right, down);
-        centerX = std::clamp(centerX + movement.x, 0.0f, MapExtent);
-        centerZ = std::clamp(centerZ + movement.z, 0.0f, MapExtent);
+        const float right = static_cast<float>(keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT]) - static_cast<float>(keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT]);
+
+        const float down = static_cast<float>(keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN]) - static_cast<float>(keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP]);
+
+        camera.UpdatePan(right, down, dt, layout.world.h);
     }
 
     void Render()
@@ -1231,7 +1203,7 @@ private:
         const int worldWidth = std::max(1, static_cast<int>(std::lround(uiLayout.world.w * static_cast<float>(width) / uiLayout.width)));
         const int worldHeight = std::max(1, static_cast<int>(std::lround(uiLayout.world.h * static_cast<float>(height) / uiLayout.height)));
     
-        Uniforms view{centerX, centerZ, camera.GetHalfHeight(), static_cast<float>(worldWidth) / static_cast<float>(worldHeight), 1.0f, 1.0f, 1.0f, 0.0f};
+        Uniforms view{camera.GetCenterX(), camera.GetCenterZ(), camera.GetHalfHeight(), static_cast<float>(worldWidth) / static_cast<float>(worldHeight), 1.0f, 1.0f, 1.0f, 0.0f};
 
         // Use exactly the same camera and rounded pixel aspect as the world
         // pass. Copy the small dynamic outline before any render pass begins.
@@ -1332,7 +1304,7 @@ private:
 
         textRenderer.Draw(commands, pass, uiLayout.width, uiLayout.height, width, height);
         uiButtons.Draw(imageRenderer, commands, pass, uiLayout.width, uiLayout.height);
-        panOverlay.Draw(imageRenderer, commands, pass, uiLayout.width, uiLayout.height, mousePan, panSettings);
+        panOverlay.Draw(imageRenderer, commands, pass, uiLayout.width, uiLayout.height, camera.GetMousePan(), camera.GetPanSettings());
         SDL_EndGPURenderPass(pass);
 
         if (!SDL_SubmitGPUCommandBuffer(commands)) 
@@ -1368,8 +1340,6 @@ private:
     SDL_GPUTexture* depth = nullptr;
     TerrainSettings terrainSettings;
     TerrainHeightmap terrain;
-    AnchoredPan mousePan;
-    PanSettings panSettings;
     TextureManager textures;
     UiImageRenderer imageRenderer;
     UiButtons uiButtons;
@@ -1398,7 +1368,6 @@ private:
     Uint32 depthWidth = 0, depthHeight = 0;
     Uint32 indexCount = 0, lineVertexCount = 0;
     bool showGrid = true;
-    float centerX = MapExtent * 0.5f, centerZ = MapExtent * 0.5f;
 };
 
 int main(int argc, char* argv[])

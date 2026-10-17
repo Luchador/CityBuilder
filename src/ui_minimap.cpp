@@ -1,5 +1,5 @@
 #include "ui_minimap.hpp"
-#include "pan.hpp"
+#include "camera.hpp"
 
 #include <algorithm>
 #include <cmath>
