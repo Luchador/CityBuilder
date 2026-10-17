@@ -360,6 +360,13 @@ public:
                         camera.SetPosition(MapExtent * 0.5f, MapExtent * 0.5f);
                         camera.ResetZoom();
                     }
+
+                    const bool altEnter = event.key.key == SDLK_RETURN && (event.key.mod & SDL_KMOD_ALT) != 0;
+
+                    if (event.key.key == SDLK_F11 || altEnter)
+                    {
+                        ToggleFullscreen();
+                    }
                 }
 
                 if (event.type == SDL_EVENT_MOUSE_WHEEL) 
@@ -459,7 +466,20 @@ private:
                 &textures.Load("ui/btn_rotate_ccw_pressed.png")
             });
         rotateCounterClockwise.SetShape(UiButtonShape::Rectangle);
-        
+    }
+
+    void ToggleFullscreen()
+    {
+        // Cancel interactions whose screen coordinates may change.
+        StopMousePan();
+        CancelButtonInteraction();
+
+        const bool isFullscreen = (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
+
+        if (!SDL_SetWindowFullscreen(window, !isFullscreen))
+        {
+            SDL_Log("Could not change fullscreen mode: %s", SDL_GetError());
+        }
     }
 
     void LayoutUiButtons(const UiLayout& layout)
