@@ -10,6 +10,7 @@
 #include <stdexcept>
 #include <string>
 
+#include "camera.hpp"
 #include "terrain.hpp"
 #include "terrain_skirt.hpp"
 #include "terrain_skirt_shaders.hpp"
@@ -410,6 +411,8 @@ public:
     }
 
 private:
+    Camera camera;
+
     static constexpr UiButtonId ZoomInButton = 1;
     static constexpr UiButtonId ZoomOutButton = 2;
     static constexpr UiButtonId RotateClockwiseButton = 3;
