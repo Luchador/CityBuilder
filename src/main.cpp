@@ -258,16 +258,17 @@ public:
         uiPipeline = MakeUiPipeline();
         textVertexShader = CompileShader(device, TextVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
         textFragmentShader = CompileShader(device, TextFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
-        textRenderer.Initialize(device, textVertexShader, textFragmentShader,
-                                SDL_GetGPUSwapchainTextureFormat(device, window));
+        textRenderer.Initialize(device, textVertexShader, textFragmentShader, SDL_GetGPUSwapchainTextureFormat(device, window));
         bottomBarText.Initialize(textRenderer);
         imageVertexShader = CompileShader(device, UiImageVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
         imageFragmentShader = CompileShader(device, UiImageFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
-        imageRenderer.Initialize(device, imageVertexShader, imageFragmentShader,
-                                 SDL_GetGPUSwapchainTextureFormat(device, window));
+        imageRenderer.Initialize(device, imageVertexShader, imageFragmentShader, SDL_GetGPUSwapchainTextureFormat(device, window));
         panOverlay.Initialize(textures);
+
+        // UI
         CreateUiButtons();
 
+        // Terrain
         terrainSettings.seed = SDL_rand_bits(); // Use a fixed number here to replay a landscape.
         SDL_Log("Terrain seed: %u", static_cast<unsigned int>(terrainSettings.seed));
         terrain = GenerateTerrain(terrainSettings);
@@ -279,21 +280,22 @@ public:
         indexCount = static_cast<Uint32>(mesh.indices.size());
         lineVertexCount = static_cast<Uint32>(mesh.lines.size());
 
+        // Terrain Skirt
         const TerrainSkirtMesh skirt = BuildTerrainSkirt(terrain, skirtSettings);
         skirtUniforms = MakeTerrainSkirtUniforms(skirtSettings, terrainSettings.seed);
         skirtVertices = UploadBuffer(device, skirt.vertices.data(), static_cast<Uint32>(skirt.vertices.size() * sizeof(TerrainSkirtVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
         skirtIndices = UploadBuffer(device, skirt.indices.data(), static_cast<Uint32>(skirt.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
         skirtIndexCount = static_cast<Uint32>(skirt.indices.size());
 
+        // Water
         const WaterMesh water = BuildWater(terrain);
         waterIndexCount = static_cast<Uint32>(water.indices.size());
+
         if (waterIndexCount > 0)
         {
             waterVertices = UploadBuffer(device, water.vertices.data(), static_cast<Uint32>(water.vertices.size() * sizeof(WaterVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
             waterIndices = UploadBuffer(device, water.indices.data(), static_cast<Uint32>(water.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
         }
-        SDL_Log("Water tiles: %u / %u", static_cast<unsigned int>(waterIndexCount / 6),
-                static_cast<unsigned int>(MapSize * MapSize));
     }
 
     void Run()
@@ -394,17 +396,77 @@ public:
     }
 
 private:
+    static constexpr UiButtonId ZoomInButton = 1;
+    static constexpr UiButtonId ZoomOutButton = 2;
+    static constexpr UiButtonId RotateClockwiseButton = 3;
+    static constexpr UiButtonId RotateCounterClockwiseButton = 4;
+
     void CreateUiButtons()
     {
-        // Load skins and add buttons here once their artwork/actions are ready.
-        // See docs/ui-buttons.md for a complete three-texture toolbar example.
+        auto& zoomIn = uiButtons.Add(ZoomInButton, {
+            &textures.Load("ui/btn_zoom_in_normal.png"),
+            &textures.Load("ui/btn_zoom_in_hov.png"),
+            &textures.Load("ui/btn_zoom_in_pressed.png")
+        });
+        zoomIn.SetShape(UiButtonShape::Circle);
+
+        auto& zoomOut = uiButtons.Add(ZoomOutButton, {
+            &textures.Load("ui/btn_zoom_out_normal.png"),
+            &textures.Load("ui/btn_zoom_out_hov.png"),
+            &textures.Load("ui/btn_zoom_out_pressed.png")
+        });
+        zoomOut.SetShape(UiButtonShape::Circle);
+
+        auto& rotateClockwise = uiButtons.Add(RotateClockwiseButton, {
+            &textures.Load("ui/btn_rotate_cw_normal.png"),
+            &textures.Load("ui/btn_rotate_cw_hov.png"),
+            &textures.Load("ui/btn_rotate_cw_pressed.png")
+        });
+        rotateClockwise.SetShape(UiButtonShape::Rectangle);
+
+        auto& rotateCounterClockwise =
+            uiButtons.Add(RotateCounterClockwiseButton, {
+                &textures.Load("ui/btn_rotate_ccw_normal.png"),
+                &textures.Load("ui/btn_rotate_ccw_hov.png"),
+                &textures.Load("ui/btn_rotate_ccw_pressed.png")
+            });
+        rotateCounterClockwise.SetShape(UiButtonShape::Rectangle);
+        
     }
 
     void LayoutUiButtons(const UiLayout& layout)
     {
-        // Set each button's logical bounds from layout here. Called before
-        // pointer events and after layout changes, including the first frame.
-        (void)layout;
+        const UiRect& panel = layout.minimapPanel;
+
+        // Keep buttons at their normal size on larger minimaps,
+        // but shrink them if the minimap becomes smaller.
+        const float scale = std::min(layout.scale, panel.w / 224.0f);
+
+        const float size = 32.0f * scale;
+        const float padding = 8.0f * scale;
+        const float gap = 4.0f * scale;
+        const float hitInset = size * (3.0f / 64.0f);
+
+        // A small local helper for positioning one button.
+        const auto place = [&](UiButtonId id, float x, float y)
+        {
+            if (auto* button = uiButtons.Find(id))
+            {
+                button->SetBounds({x, y, size, size});
+                button->SetHitInsets({hitInset, hitInset, hitInset, hitInset});
+            }
+        };
+
+        const float left = panel.x + padding;
+        const float right = panel.x + panel.w - padding - size;
+        const float top = panel.y + padding;
+        const float bottom = panel.y + panel.h - padding - size;
+
+        place(ZoomInButton, right, top);
+        place(ZoomOutButton, right, top + size + gap);
+
+        place(RotateCounterClockwiseButton, left, bottom);
+        place(RotateClockwiseButton, right, bottom);
     }
 
     void OnUiButtonClicked(UiButtonId id)
