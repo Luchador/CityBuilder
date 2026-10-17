@@ -373,9 +373,7 @@ public:
                         amount = -amount;
                     }
         
-                    amount = std::clamp(amount, -10.0f, 10.0f);
-    
-                    halfHeight = std::clamp(halfHeight * std::pow(0.85f, amount), 4.0f, 200.0f);
+                    ZoomCamera(amount);
                 }
             }
 
@@ -510,12 +508,32 @@ private:
         place(RotateCounterClockwiseButton, 1.0f, 0.65f);
     }
 
+    void ZoomCamera(float steps)
+    {
+        constexpr float ZoomFactor = 0.85f;
+        constexpr float MinHalfHeight = 4.0f;
+        constexpr float MaxHalfHeight = 200.0f;
+
+        steps = std::clamp(steps, -10.0f, 10.0f);
+
+        halfHeight = std::clamp(halfHeight * std::pow(ZoomFactor, steps), MinHalfHeight, MaxHalfHeight);
+    }
+
     void OnUiButtonClicked(UiButtonId id)
     {
-        // Assign actions and selection changes here; a completed click arrives
-        // once, after pointer ownership has been released. Adding/removing
-        // buttons from this function is safe.
-        (void)id;
+        switch(id)
+        {
+            case ZoomInButton:
+                ZoomCamera(1.0f);
+                break;
+
+            case ZoomOutButton:
+                ZoomCamera(-1.0f);
+                break;
+
+            default:
+                break;
+        }
     }
 
     void CancelButtonInteraction()
