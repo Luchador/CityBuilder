@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
+set(CMAKE_NINJA_CMCLDEPS_RC OFF)
 project(CityBuilder LANGUAGES C CXX)
 
 if(NOT WIN32)
