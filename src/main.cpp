@@ -222,7 +222,7 @@ public:
 
     void Initialize()
     {
-        window = SDL_CreateWindow("City Builder", 1280, 720, SDL_WINDOW_RESIZABLE);
+        window = SDL_CreateWindow("Cities Unlimited", 1280, 720, SDL_WINDOW_RESIZABLE);
 
         if (!window) 
         {   
