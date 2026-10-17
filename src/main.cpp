@@ -313,9 +313,18 @@ public:
 
             while (SDL_PollEvent(&event)) 
             {
-                if (HandleButtonEvent(event)) continue;
-                if (HandleMinimapEvent(event)) continue;
+                if (HandleButtonEvent(event)) 
+                {
+                    continue;
+                }
+
+                if (HandleMinimapEvent(event)) 
+                {
+                    continue;
+                }
+
                 HandlePanEvent(event);
+
                 if (event.type == SDL_EVENT_QUIT) 
                 {
                     running = false;
@@ -381,8 +390,15 @@ public:
                 {
                     float x = 0, y = 0;
                     const SDL_MouseButtonFlags buttons = SDL_GetMouseState(&x, &y);
-                    if (buttons & SDL_BUTTON_RMASK) mousePan.Move(x, y);
-                    else StopMousePan(); // Protect against a missed release event.
+
+                    if (buttons & SDL_BUTTON_RMASK) 
+                    {
+                        mousePan.Move(x, y);
+                    }
+                    else 
+                    {
+                        StopMousePan(); // Protect against a missed release event.
+                    }
                 }
                 PanCamera(dt);
             }
@@ -591,17 +607,23 @@ private:
     void UpdateButtonPointer()
     {
         const auto flags = SDL_GetWindowFlags(window);
-        if (!(flags & SDL_WINDOW_INPUT_FOCUS) || mousePan.Active() ||
-            (!(flags & SDL_WINDOW_MOUSE_FOCUS) && !uiButtons.HasCapture()))
+
+        if (!(flags & SDL_WINDOW_INPUT_FOCUS) || mousePan.Active() || (!(flags & SDL_WINDOW_MOUSE_FOCUS) && !uiButtons.HasCapture()))
         {
             CancelButtonInteraction();
             return;
         }
+
         float x = 0, y = 0;
         const auto buttons = SDL_GetMouseState(&x, &y);
         const bool hadCapture = uiButtons.HasCapture();
+
         uiButtons.SyncPointer(x, y, (buttons & SDL_BUTTON_LMASK) != 0);
-        if (hadCapture && !uiButtons.HasCapture()) SDL_CaptureMouse(false);
+
+        if (hadCapture && !uiButtons.HasCapture()) 
+        {
+            SDL_CaptureMouse(false);
+        }
     }
 
     bool HandleMinimapEvent(const SDL_Event& event)
@@ -611,10 +633,17 @@ private:
             return false;
         }
 
-        if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) return false;
+        if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) 
+        {
+            return false;
+        }
 
         int width = 0, height = 0;
-        if (!SDL_GetWindowSize(window, &width, &height)) return false;
+
+        if (!SDL_GetWindowSize(window, &width, &height)) 
+        {
+            return false;
+        }
 
         // A click can arrive before the first render, or immediately after a
         // resize. Recalculate the CPU layout instead of using stale bounds.
@@ -627,8 +656,10 @@ private:
         if (minimap.TryScreenToMap(event.button.x, event.button.y, mapX, mapZ))
         {
             StopMousePan();
+    
             centerX = mapX * MapExtent;
             centerZ = mapZ * MapExtent;
+
             return true;
         }
 
@@ -639,10 +670,20 @@ private:
 
     void StopMousePan()
     {
-        if (!mousePan.Active()) return;
+        if (!mousePan.Active()) 
+        {
+            return;
+        }
+
         mousePan.End();
+
         SDL_CaptureMouse(false);
-        if (restoreCursor) SDL_ShowCursor();
+
+        if (restoreCursor) 
+        {
+            SDL_ShowCursor();
+        }
+
         restoreCursor = false;
     }
 
@@ -784,17 +825,22 @@ private:
 
     void UpdateMinimapOutline(SDL_GPUCommandBuffer* commands, const MinimapView& view)
     {
-        if (!minimapOutlineDirty && view == minimapOutlineView) return;
+        if (!minimapOutlineDirty && view == minimapOutlineView) 
+        {
+            return;
+        }
 
         minimapOutlineMesh.clear();
         minimapOutlineMesh.reserve(MaxMinimapOutlineVertices);
         minimap.AppendViewOutline(minimapOutlineMesh, view);
+
         if (minimapOutlineMesh.size() > MaxMinimapOutlineVertices)
         {
             throw std::runtime_error("Minimap outline exceeds its vertex buffer capacity.");
         }
 
         const auto count = static_cast<Uint32>(minimapOutlineMesh.size());
+
         if (count > 0)
         {
             // Each rectangular stroke clipped by a diamond has at most eight
@@ -808,6 +854,7 @@ private:
                 minimapOutlineVertices = SDL_CreateGPUBuffer(device, &info);
                 if (!minimapOutlineVertices) Fail("Create minimap outline buffer");
             }
+
             if (!minimapOutlineTransfer)
             {
                 SDL_GPUTransferBufferCreateInfo info{};
@@ -819,12 +866,22 @@ private:
 
             const Uint32 bytes = count * static_cast<Uint32>(sizeof(UiVertex));
             void* mapped = SDL_MapGPUTransferBuffer(device, minimapOutlineTransfer, true);
-            if (!mapped) Fail("Map minimap outline transfer buffer");
+
+            if (!mapped) 
+            {
+                Fail("Map minimap outline transfer buffer");
+            }
+
             std::memcpy(mapped, minimapOutlineMesh.data(), bytes);
             SDL_UnmapGPUTransferBuffer(device, minimapOutlineTransfer);
 
             SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
-            if (!copy) Fail("Begin minimap outline upload");
+
+            if (!copy) 
+            {
+                Fail("Begin minimap outline upload");
+            }
+
             const SDL_GPUTransferBufferLocation source{minimapOutlineTransfer, 0};
             const SDL_GPUBufferRegion destination{minimapOutlineVertices, 0, bytes};
             SDL_UploadToGPUBuffer(copy, &source, &destination, true);
@@ -951,7 +1008,12 @@ private:
         info.target_info.has_depth_stencil_target = true;
         info.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
         SDL_GPUGraphicsPipeline* pipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
-        if (!pipeline) Fail("Create terrain skirt pipeline");
+
+        if (!pipeline) 
+        {
+            Fail("Create terrain skirt pipeline");
+        }
+
         return pipeline;
     }
 
@@ -992,7 +1054,12 @@ private:
         info.target_info.has_depth_stencil_target = true;
         info.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
         SDL_GPUGraphicsPipeline* pipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
-        if (!pipeline) Fail("Create water pipeline");
+
+        if (!pipeline) 
+        {
+            Fail("Create water pipeline");
+        }
+
         return pipeline;
     }
 
@@ -1037,11 +1104,19 @@ private:
         {
             const PanMotion motion = mousePan.Motion(panSettings);
             int width = 0, height = 0;
-            if (!SDL_GetWindowSize(window, &width, &height)) return;
+    
+            if (!SDL_GetWindowSize(window, &width, &height)) 
+            {
+                return;
+            }
+    
             const auto layout = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
+
             // Keep visual scroll speed stable at different zoom levels.
             const float screenToWorld = 2.0f * halfHeight / std::max(1.0f, layout.world.h);
+
             MoveCamera(motion.x * dt * screenToWorld, motion.y * dt * screenToWorld);
+
             return; // The dead zone remains stationary even if keys are held.
         }
 
@@ -1079,11 +1154,15 @@ private:
         // Font atlas uploads must be submitted before this frame's render commands.
         // Rasterize at drawable resolution, then place glyphs in logical UI units.
         int pixelWidth = 0, pixelHeight = 0;
-        if (!SDL_GetWindowSizeInPixels(window, &pixelWidth, &pixelHeight)) Fail("Get text pixel scale");
+
+        if (!SDL_GetWindowSizeInPixels(window, &pixelWidth, &pixelHeight)) 
+        {
+            Fail("Get text pixel scale");
+        }
+
         if (pixelWidth > 0 && pixelHeight > 0)
         {
-            textRenderer.Prepare(std::max(static_cast<float>(pixelWidth) / uiLayout.width,
-                                          static_cast<float>(pixelHeight) / uiLayout.height));
+            textRenderer.Prepare(std::max(static_cast<float>(pixelWidth) / uiLayout.width, static_cast<float>(pixelHeight) / uiLayout.height));
         }
 
         SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device);
@@ -1109,6 +1188,7 @@ private:
             {
                 Fail("Submit minimized frame");
             }
+
             SDL_Delay(16);
 
             return;
@@ -1232,12 +1312,14 @@ private:
         const float screen[4] = {uiLayout.width, uiLayout.height, 0, 0};
         SDL_PushGPUVertexUniformData(commands, 0, screen, sizeof(screen));
         SDL_DrawGPUPrimitives(pass, uiVertexCount, 1, 0, 0);
+
         if (minimapOutlineVertexCount > 0)
         {
             const SDL_GPUBufferBinding outlineBinding{minimapOutlineVertices, 0};
             SDL_BindGPUVertexBuffers(pass, 0, &outlineBinding, 1);
             SDL_DrawGPUPrimitives(pass, minimapOutlineVertexCount, 1, 0, 0);
         }
+
         textRenderer.Draw(commands, pass, uiLayout.width, uiLayout.height, width, height);
         uiButtons.Draw(imageRenderer, commands, pass, uiLayout.width, uiLayout.height);
         panOverlay.Draw(imageRenderer, commands, pass, uiLayout.width, uiLayout.height, mousePan, panSettings);
