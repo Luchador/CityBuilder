@@ -6,10 +6,6 @@
 
 namespace
 {
-    // Height / width of the minimap diamond. Its display proportions can
-    // differ from the terrain projection without changing map coverage.
-    constexpr float DiamondHeightRatio = 1.0f;
-
     constexpr float DiamondRed = 0.30f;
     constexpr float DiamondGreen = 0.58f;
     constexpr float DiamondBlue = 0.28f;
@@ -121,8 +117,8 @@ void UiMinimap::SetLayout(const UiLayout& layout)
     bounds = layout.minimapPanel;
     contentBounds = layout.minimapContent;
 
-    const float width = std::min(std::max(0.0f, contentBounds.w), std::max(0.0f, contentBounds.h) / DiamondHeightRatio);
-    const float height = width * DiamondHeightRatio;
+    const float width = std::min(std::max(0.0f, contentBounds.w), std::max(0.0f, contentBounds.h));
+    const float height = width;
 
     diamondBounds = {contentBounds.x + (contentBounds.w - width) * 0.5f, contentBounds.y + (contentBounds.h - height) * 0.5f, width, height};
 }

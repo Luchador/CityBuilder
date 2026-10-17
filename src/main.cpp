@@ -436,37 +436,62 @@ private:
 
     void LayoutUiButtons(const UiLayout& layout)
     {
-        const UiRect& panel = layout.minimapPanel;
+        // Refresh the diamond's bounds before positioning its buttons.
+        minimap.SetLayout(layout);
 
-        // Keep buttons at their normal size on larger minimaps,
-        // but shrink them if the minimap becomes smaller.
-        const float scale = std::min(layout.scale, panel.w / 224.0f);
+        const UiRect& diamond = minimap.GetDiamondBounds();
+
+        if (diamond.w <= 0.0f || diamond.h <= 0.0f)
+        {
+            return;
+        }
+
+        const float scale = std::min(layout.scale, layout.minimapPanel.w / 224.0f);
 
         const float size = 32.0f * scale;
-        const float padding = 8.0f * scale;
         const float gap = 4.0f * scale;
-        const float hitInset = size * (3.0f / 64.0f);
+        const float hitInset = size / 64.0f;
 
-        // A small local helper for positioning one button.
-        const auto place = [&](UiButtonId id, float x, float y)
+        const float halfWidth = diamond.w * 0.5f;
+        const float halfHeight = diamond.h * 0.5f;
+        const float centerX = diamond.x + halfWidth;
+        const float centerY = diamond.y + halfHeight;
+
+        // A direction perpendicular to either lower edge, pointing outward.
+        const float edgeLength = std::hypot(halfWidth, halfHeight);
+        const float outwardX = halfHeight / edgeLength;
+        const float outwardY = halfWidth / edgeLength;
+
+        // Leave room for the full button rectangle, including its corners.
+        const float distance = size * 0.5f * (outwardX + outwardY) + gap;
+
+        const float offsetX = outwardX * distance;
+        const float offsetY = outwardY * distance;
+
+        // side: -1 = left, +1 = right.
+        // alongEdge: 0 = side corner, 1 = bottom corner.
+        const auto place = [&](UiButtonId id, float side, float alongEdge)
         {
             if (auto* button = uiButtons.Find(id))
             {
-                button->SetBounds({x, y, size, size});
+                const float x = centerX + side * (halfWidth * (1.0f - alongEdge) + offsetX);
+
+                const float y = centerY + halfHeight * alongEdge + offsetY;
+
+                // Convert the button's center into its upper-left corner.
+                button->SetBounds({x - size * 0.5f, y - size * 0.5f, size, size});
+
                 button->SetHitInsets({hitInset, hitInset, hitInset, hitInset});
             }
         };
 
-        const float left = panel.x + padding;
-        const float right = panel.x + panel.w - padding - size;
-        const float top = panel.y + padding;
-        const float bottom = panel.y + panel.h - padding - size;
+        // Left side: zoom in, followed by clockwise rotation.
+        place(ZoomInButton, -1.0f, 0.35f);
+        place(RotateClockwiseButton, -1.0f, 0.65f);
 
-        place(ZoomInButton, right, top);
-        place(ZoomOutButton, right, top + size + gap);
-
-        place(RotateCounterClockwiseButton, left, bottom);
-        place(RotateClockwiseButton, right, bottom);
+        // Right side: zoom out, followed by counter-clockwise rotation.
+        place(ZoomOutButton, 1.0f, 0.35f);
+        place(RotateCounterClockwiseButton, 1.0f, 0.65f);
     }
 
     void OnUiButtonClicked(UiButtonId id)
@@ -479,7 +504,11 @@ private:
 
     void CancelButtonInteraction()
     {
-        if (uiButtons.HasCapture()) SDL_CaptureMouse(false);
+        if (uiButtons.HasCapture()) 
+        {
+            SDL_CaptureMouse(false);
+        }
+
         uiButtons.CancelInteraction();
     }
 
@@ -492,34 +521,57 @@ private:
             CancelButtonInteraction();
             return false; // Camera panning also needs to receive these events.
         }
+    
         if (event.type == SDL_EVENT_WINDOW_MOUSE_LEAVE && !uiButtons.HasCapture())
+        {
             uiButtons.CancelInteraction();
+        }
 
-        const bool pointerEvent = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
-                                  event.type == SDL_EVENT_MOUSE_MOTION || event.type == SDL_EVENT_MOUSE_WHEEL;
-        if (!pointerEvent || !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) return false;
+        const bool pointerEvent = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP || event.type == SDL_EVENT_MOUSE_MOTION || event.type == SDL_EVENT_MOUSE_WHEEL;
+
+        if (!pointerEvent || !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) 
+        {
+            return false;
+        }
+
         int width = 0, height = 0;
+
         if (SDL_GetWindowSize(window, &width, &height))
+        {
             LayoutUiButtons(CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings));
+        }
 
         if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
         {
             if (event.button.button != SDL_BUTTON_LEFT)
+            {
                 return uiButtons.HasCapture() || uiButtons.BlocksPointer(event.button.x, event.button.y);
+            }
+        
             const auto result = uiButtons.PointerDown(event.button.x, event.button.y);
+    
             if (result.consumed)
             {
                 StopMousePan();
-                if (!SDL_CaptureMouse(true)) SDL_Log("Button mouse capture: %s", SDL_GetError());
             }
+
             return result.consumed;
         }
         if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT)
         {
             const bool hadCapture = uiButtons.HasCapture();
             const auto result = uiButtons.PointerUp(event.button.x, event.button.y);
-            if (hadCapture) SDL_CaptureMouse(false);
-            if (result.clicked) OnUiButtonClicked(*result.clicked);
+
+            if (hadCapture) 
+            {
+                SDL_CaptureMouse(false);
+            }
+    
+            if (result.clicked) 
+            {
+                OnUiButtonClicked(*result.clicked);
+            }
+
             return result.consumed;
         }
         if (event.type == SDL_EVENT_MOUSE_MOTION)
@@ -527,8 +579,12 @@ private:
             uiButtons.PointerMove(event.motion.x, event.motion.y);
             return uiButtons.HasCapture();
         }
+    
         if (event.type == SDL_EVENT_MOUSE_WHEEL)
+        {
             return uiButtons.HasCapture() || uiButtons.BlocksPointer(event.wheel.mouse_x, event.wheel.mouse_y);
+        }
+
         return false; // In particular, let right-button releases stop panning.
     }
 
@@ -567,6 +623,7 @@ private:
         minimap.SetLayout(layout);
 
         float mapX = 0.0f, mapZ = 0.0f;
+
         if (minimap.TryScreenToMap(event.button.x, event.button.y, mapX, mapZ))
         {
             StopMousePan();

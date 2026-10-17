@@ -13,7 +13,7 @@ struct UiSettings
     // Height of the bottom bar, or width of the toolbar.
     float barSlimDimension = 92.0f;
 
-    float minimapSize = 224.0f;
+    float minimapSize = 288.0f;
 };
 
 struct UiLayout
