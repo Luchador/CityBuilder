@@ -11,6 +11,7 @@ struct SDL_GPUCommandBuffer;
 struct SDL_GPURenderPass;
 
 using UiButtonId = std::uint32_t;
+
 struct UiButtonResult
 {
     bool consumed = false;
@@ -37,8 +38,7 @@ public:
     void SyncPointer(float x, float y, bool leftButtonDown);
     void CancelInteraction();
 
-    void Draw(UiImageRenderer& renderer, SDL_GPUCommandBuffer* commands,
-              SDL_GPURenderPass* pass, float width, float height) const;
+    void Draw(UiImageRenderer& renderer, SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, float width, float height) const;
 
 private:
     struct Entry { UiButtonId id; std::unique_ptr<UiButton> button; };
