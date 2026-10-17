@@ -347,7 +347,7 @@ public:
                     {
                         StopMousePan();
                         centerX = centerZ = MapExtent * 0.5f;
-                        halfHeight = 120.0f;
+                        camera.ResetZoom();
                     }
                 }
 
@@ -374,7 +374,7 @@ public:
                         amount = -amount;
                     }
         
-                    ZoomCamera(amount);
+                    camera.Zoom(amount);
                 }
             }
 
@@ -511,27 +511,16 @@ private:
         place(RotateCounterClockwiseButton, 1.0f, 0.65f);
     }
 
-    void ZoomCamera(float steps)
-    {
-        constexpr float ZoomFactor = 0.85f;
-        constexpr float MinHalfHeight = 4.0f;
-        constexpr float MaxHalfHeight = 200.0f;
-
-        steps = std::clamp(steps, -10.0f, 10.0f);
-
-        halfHeight = std::clamp(halfHeight * std::pow(ZoomFactor, steps), MinHalfHeight, MaxHalfHeight);
-    }
-
     void OnUiButtonClicked(UiButtonId id)
     {
         switch(id)
         {
             case ZoomInButton:
-                ZoomCamera(1.0f);
+                camera.Zoom(1.0f);
                 break;
 
             case ZoomOutButton:
-                ZoomCamera(-1.0f);
+                camera.Zoom(-1.0f);
                 break;
 
             default:
@@ -1134,7 +1123,7 @@ private:
             const auto layout = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
 
             // Keep visual scroll speed stable at different zoom levels.
-            const float screenToWorld = 2.0f * halfHeight / std::max(1.0f, layout.world.h);
+            const float screenToWorld = 2.0f * camera.GetHalfHeight() / std::max(1.0f, layout.world.h);
 
             MoveCamera(motion.x * dt * screenToWorld, motion.y * dt * screenToWorld);
 
@@ -1151,7 +1140,7 @@ private:
             return;
         }
 
-        const float speed = halfHeight * dt;
+        const float speed = camera.GetHalfHeight() * dt;
         horizontal *= speed / length;
         vertical *= speed / length;
 
@@ -1242,7 +1231,7 @@ private:
         const int worldWidth = std::max(1, static_cast<int>(std::lround(uiLayout.world.w * static_cast<float>(width) / uiLayout.width)));
         const int worldHeight = std::max(1, static_cast<int>(std::lround(uiLayout.world.h * static_cast<float>(height) / uiLayout.height)));
     
-        Uniforms view{centerX, centerZ, halfHeight, static_cast<float>(worldWidth) / static_cast<float>(worldHeight), 1.0f, 1.0f, 1.0f, 0.0f};
+        Uniforms view{centerX, centerZ, camera.GetHalfHeight(), static_cast<float>(worldWidth) / static_cast<float>(worldHeight), 1.0f, 1.0f, 1.0f, 0.0f};
 
         // Use exactly the same camera and rounded pixel aspect as the world
         // pass. Copy the small dynamic outline before any render pass begins.
@@ -1410,7 +1399,6 @@ private:
     Uint32 indexCount = 0, lineVertexCount = 0;
     bool showGrid = true;
     float centerX = MapExtent * 0.5f, centerZ = MapExtent * 0.5f;
-    float halfHeight = 120.0f;
 };
 
 int main(int argc, char* argv[])
