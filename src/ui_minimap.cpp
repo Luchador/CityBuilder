@@ -164,8 +164,8 @@ bool UiMinimap::TryScreenToMap(float x, float y, float& mapX, float& mapZ) const
         return false;
     }
 
-    // Inverse of MapToScreen. Match the terrain: +X goes down-right,
-    // +Z goes down-left, and the origin is the top corner.
+    // Inverse of MapToScreen. The minimap keeps a fixed orientation even
+    // when the main camera rotates: the origin remains at the top corner.
     mapX = std::clamp((1.0f + dy + dx) * 0.5f, 0.0f, 1.0f);
     mapZ = std::clamp((1.0f + dy - dx) * 0.5f, 0.0f, 1.0f);
 
@@ -211,12 +211,33 @@ UiRect UiMinimap::GetViewBounds(const MinimapView& view) const
     // Invert the same sea-level projection used for camera panning. Do not
     // clamp these world coordinates: that would shrink the camera footprint.
     const float halfWidth = view.halfHeight * view.aspect;
-    const GroundPan upperLeft = ScreenToGroundPan(-halfWidth, -view.halfHeight);
-    const GroundPan lowerRight = ScreenToGroundPan(halfWidth, view.halfHeight);
-    const auto topLeft = MapToScreen((view.centerX + upperLeft.x) / view.mapExtent, (view.centerZ + upperLeft.z) / view.mapExtent);
+    const auto projectCorner = [&](float right, float down)
+    {
+        const GroundPan offset = ScreenToGroundPan(right, down, view.quarterTurns);
+        return MapToScreen((view.centerX + offset.x) / view.mapExtent,
+                           (view.centerZ + offset.z) / view.mapExtent);
+    };
 
-    const auto bottomRight = MapToScreen((view.centerX + lowerRight.x) / view.mapExtent, (view.centerZ + lowerRight.z) / view.mapExtent);
-    const UiRect box{topLeft.x, topLeft.y, bottomRight.x - topLeft.x, bottomRight.y - topLeft.y};
+    const MinimapScreenPoint corners[] = {
+        projectCorner(-halfWidth, -view.halfHeight),
+        projectCorner( halfWidth, -view.halfHeight),
+        projectCorner( halfWidth,  view.halfHeight),
+        projectCorner(-halfWidth,  view.halfHeight)
+    };
+
+    // Quarter turns keep the footprint axis-aligned on this minimap, but
+    // change which viewport corner becomes its top-left corner.
+    float minX = corners[0].x, maxX = corners[0].x;
+    float minY = corners[0].y, maxY = corners[0].y;
+    for (const auto corner : corners)
+    {
+        minX = std::min(minX, corner.x);
+        maxX = std::max(maxX, corner.x);
+        minY = std::min(minY, corner.y);
+        maxY = std::max(maxY, corner.y);
+    }
+
+    const UiRect box{minX, minY, maxX - minX, maxY - minY};
 
     if (!std::isfinite(box.x) || !std::isfinite(box.y) || !std::isfinite(box.w) || !std::isfinite(box.h))
     {

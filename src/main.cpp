@@ -162,9 +162,11 @@ struct Uniforms
 {
     float centerX, centerZ, halfHeight, aspect;
     float red, green, blue, depthOffset;
+    CameraOrientation orientation;
 };
 
-static_assert(sizeof(Uniforms) == 32);
+static_assert(offsetof(Uniforms, orientation) == 32);
+static_assert(sizeof(Uniforms) == 48);
 
 class Application 
 {
@@ -341,6 +343,16 @@ public:
                     {
                         showGrid = !showGrid;
                     }
+
+                    if (event.key.key == SDLK_COMMA)
+                    {
+                        RotateCamera(true);
+                    }
+
+                    if (event.key.key == SDLK_PERIOD)
+                    {
+                        RotateCamera(false);
+                    }
     
                     if (event.key.key == SDLK_HOME) 
                     {
@@ -510,6 +522,21 @@ private:
         place(RotateCounterClockwiseButton, 1.0f, 0.65f);
     }
 
+    void RotateCamera(bool clockwise)
+    {
+        // Release capture and restore the cursor before changing direction.
+        StopMousePan();
+
+        if (clockwise)
+        {
+            camera.RotateClockwise();
+        }
+        else
+        {
+            camera.RotateCounterClockwise();
+        }
+    }
+
     void OnUiButtonClicked(UiButtonId id)
     {
         switch(id)
@@ -520,6 +547,14 @@ private:
 
             case ZoomOutButton:
                 camera.Zoom(-1.0f);
+                break;
+
+            case RotateClockwiseButton:
+                RotateCamera(true);
+                break;
+
+            case RotateCounterClockwiseButton:
+                RotateCamera(false);
                 break;
 
             default:
@@ -1203,13 +1238,13 @@ private:
         const int worldWidth = std::max(1, static_cast<int>(std::lround(uiLayout.world.w * static_cast<float>(width) / uiLayout.width)));
         const int worldHeight = std::max(1, static_cast<int>(std::lround(uiLayout.world.h * static_cast<float>(height) / uiLayout.height)));
     
-        Uniforms view{camera.GetCenterX(), camera.GetCenterZ(), camera.GetHalfHeight(), static_cast<float>(worldWidth) / static_cast<float>(worldHeight), 1.0f, 1.0f, 1.0f, 0.0f};
+        Uniforms view{camera.GetCenterX(), camera.GetCenterZ(), camera.GetHalfHeight(), static_cast<float>(worldWidth) / static_cast<float>(worldHeight), 1.0f, 1.0f, 1.0f, 0.0f, camera.GetOrientation()};
 
         // Use exactly the same camera and rounded pixel aspect as the world
         // pass. Copy the small dynamic outline before any render pass begins.
         try
         {
-            UpdateMinimapOutline(commands, {view.centerX, view.centerZ, view.halfHeight, view.aspect, MapExtent});
+            UpdateMinimapOutline(commands, {view.centerX, view.centerZ, view.halfHeight, view.aspect, MapExtent, camera.GetQuarterTurns()});
         }
         catch (...)
         {

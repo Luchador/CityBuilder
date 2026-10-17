@@ -1,22 +1,27 @@
 #pragma once
 
 // Shader Model 5.1 / DXBC 
-// Shared by terrain and water so both use exactly the same camera/depth math.
+// Shared by terrain, grid, water, and skirt for identical camera/depth math.
 inline constexpr char WorldViewShaderSource[] = R"hlsl(
 cbuffer View : register(b0, space1)
 {
     float4 camera; // center X, center Z, vertical half-span, aspect ratio
     float4 style;  // RGB tint, depth offset
+    float4 orientation; // cos(yaw), sin(yaw), sin(pitch), cos(pitch)
 };
 
 float4 ProjectWorldPosition(float3 position)
 {
     float3 p = position - float3(camera.x, 0.0, camera.y);
 
-    // Orthographic camera: 45-degree yaw, 33-degree pitch.
-    float right = dot(p, float3(0.70710678, 0.0, -0.70710678));
-    float up = dot(p, float3(-0.38511795, 0.83867057, -0.38511795));
-    float towardCamera = dot(p, float3(0.59302965, 0.54463904, 0.59302965));
+    // Camera supplies one of four yaw orientations and the fixed pitch.
+    float cosYaw = orientation.x;
+    float sinYaw = orientation.y;
+    float sinPitch = orientation.z;
+    float cosPitch = orientation.w;
+    float right = dot(p, float3(cosYaw, 0.0, -sinYaw));
+    float up = dot(p, float3(-sinPitch * sinYaw, cosPitch, -sinPitch * cosYaw));
+    float towardCamera = dot(p, float3(cosPitch * sinYaw, sinPitch, cosPitch * cosYaw));
 
     return float4(right / (camera.z * camera.w), up / camera.z, 0.5 - towardCamera / 2048.0 + style.w, 1.0);
 }

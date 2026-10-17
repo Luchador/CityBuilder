@@ -14,6 +14,7 @@ struct MinimapView
     float centerX = 0.0f, centerZ = 0.0f;
     float halfHeight = 0.0f, aspect = 1.0f;
     float mapExtent = 0.0f;
+    unsigned int quarterTurns = 0;
 
     bool operator==(const MinimapView&) const = default;
 };

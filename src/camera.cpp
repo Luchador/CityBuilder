@@ -28,6 +28,16 @@ float Camera::GetHalfHeight() const
     return halfHeight;
 }
 
+void Camera::RotateClockwise()
+{
+    quarterTurns = (quarterTurns + 1) % 4;
+}
+
+void Camera::RotateCounterClockwise()
+{
+    quarterTurns = (quarterTurns + 3) % 4;
+}
+
 void Camera::SetPosition(float x, float z)
 {
     centerX = std::clamp(x, 0.0f, mapExtent);
@@ -36,7 +46,7 @@ void Camera::SetPosition(float x, float z)
 
 void Camera::MoveScreen(float right, float down)
 {
-    const GroundPan movement = ScreenToGroundPan(right, down);
+    const GroundPan movement = ScreenToGroundPan(right, down, quarterTurns);
 
     SetPosition(centerX + movement.x, centerZ + movement.z);
 }
@@ -134,7 +144,26 @@ PanMotion AnchoredPan::Motion(const PanSettings& settings) const
     return motion;
 }
 
-GroundPan ScreenToGroundPan(float right, float down)
+CameraOrientation GetCameraOrientation(unsigned int quarterTurns)
 {
-    return {0.70710678f * right + 1.29830353f * down, -0.70710678f * right + 1.29830353f * down};
+    // Exact quarter-turn choices avoid accumulated angle/rounding drift.
+    // The initial yaw is 45 degrees; each clockwise map turn adds 90.
+    constexpr float diagonal = 0.70710678f;
+    constexpr CameraOrientation orientations[] = {
+        { diagonal,  diagonal},
+        {-diagonal,  diagonal},
+        {-diagonal, -diagonal},
+        { diagonal, -diagonal}
+    };
+
+    return orientations[quarterTurns % 4];
+}
+
+GroundPan ScreenToGroundPan(float right, float down, unsigned int quarterTurns)
+{
+    const CameraOrientation orientation = GetCameraOrientation(quarterTurns);
+    const float forward = down / orientation.sinPitch;
+
+    return {orientation.cosYaw * right + orientation.sinYaw * forward,
+           -orientation.sinYaw * right + orientation.cosYaw * forward};
 }

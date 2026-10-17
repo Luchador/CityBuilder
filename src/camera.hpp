@@ -36,8 +36,19 @@ private:
 };
 
 struct GroundPan { float x, z; };
-// Convert screen displacement (Y down) to the current isometric ground plane.
-GroundPan ScreenToGroundPan(float right, float down);
+
+// Sent to the world shader as one float4. Pitch stays at 33 degrees.
+struct CameraOrientation
+{
+    float cosYaw, sinYaw;
+    float sinPitch = 0.54463904f;
+    float cosPitch = 0.83867057f;
+};
+
+CameraOrientation GetCameraOrientation(unsigned int quarterTurns);
+
+// Convert screen displacement (Y down) to the rotated ground plane.
+GroundPan ScreenToGroundPan(float right, float down, unsigned int quarterTurns = 0);
 
 class Camera
 {
@@ -47,6 +58,12 @@ public:
     void Zoom(float steps);
     void ResetZoom();
     float GetHalfHeight() const;
+
+    // Clockwise turns the displayed map clockwise around the camera center.
+    void RotateClockwise();
+    void RotateCounterClockwise();
+    unsigned int GetQuarterTurns() const { return quarterTurns; }
+    CameraOrientation GetOrientation() const { return GetCameraOrientation(quarterTurns); }
 
     void SetPosition(float x, float z);
     float GetCenterX() const { return centerX; }
@@ -71,6 +88,7 @@ private:
     float mapExtent;
     float centerX, centerZ;
     float halfHeight = DefaultHalfHeight;
+    unsigned int quarterTurns = 0; // Four views: 0, 1, 2, 3.
 
     AnchoredPan mousePan;
     PanSettings panSettings;
