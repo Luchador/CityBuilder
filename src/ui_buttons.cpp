@@ -1,7 +1,9 @@
 #include "ui_buttons.hpp"
 
 #include <algorithm>
+#include <cmath>
 #include <stdexcept>
+#include <utility>
 
 UiButton& UiButtons::Add(UiButtonId id, UiButtonTextures textures)
 {
@@ -53,7 +55,12 @@ bool UiButtons::Remove(UiButtonId id)
     if (capturing && capturedId == id) 
     {
         found->button->CancelPress();
+        capturedId.reset();
     }
+
+    // Keep other children hidden if their trigger is removed. The definition
+    // remains until Clear(), so reusing that stable trigger ID restores it.
+    if (openFlyout == id) openFlyout.reset();
 
     entries.erase(found);
 
@@ -65,6 +72,7 @@ void UiButtons::Clear()
 {
     CancelInteraction();
     entries.clear();
+    flyouts.clear();
     onlyShown.reset();
 }
 
@@ -80,9 +88,72 @@ void UiButtons::ShowOnly(std::optional<UiButtonId> id)
     onlyShown = id;
 }
 
+void UiButtons::AddFlyout(UiButtonId trigger, std::span<const UiButtonId> children)
+{
+    if (!Find(trigger) || FindFlyout(trigger) || children.empty())
+        throw std::invalid_argument("Flyout requires a unique existing trigger and existing child buttons.");
+
+    std::vector<UiButtonId> checked;
+    for (UiButtonId child : children)
+    {
+        if (child == trigger || !Find(child) || FindFlyout(child) ||
+            std::find(checked.begin(), checked.end(), child) != checked.end())
+            throw std::invalid_argument("Flyout children must be unique and cannot be triggers.");
+        for (const auto& menu : flyouts)
+        {
+            if (std::find(menu.children.begin(), menu.children.end(), child) != menu.children.end() ||
+                std::find(menu.children.begin(), menu.children.end(), trigger) != menu.children.end())
+                throw std::invalid_argument("A button can belong to only one first-level flyout.");
+        }
+        checked.push_back(child);
+    }
+    flyouts.push_back({trigger, std::move(checked), {}});
+}
+
+void UiButtons::SetFlyoutBounds(UiButtonId trigger, UiRect bounds)
+{
+    if (!std::isfinite(bounds.x) || !std::isfinite(bounds.y) || !std::isfinite(bounds.w) ||
+        !std::isfinite(bounds.h) || bounds.w < 0 || bounds.h < 0)
+        throw std::invalid_argument("Flyout bounds must be finite and nonnegative in size.");
+    for (auto& menu : flyouts)
+    {
+        if (menu.trigger == trigger) { menu.bounds = bounds; return; }
+    }
+    throw std::invalid_argument("Flyout trigger does not exist.");
+}
+
+const UiButtons::Flyout* UiButtons::FindFlyout(UiButtonId trigger) const
+{
+    for (const auto& menu : flyouts)
+        if (menu.trigger == trigger) return &menu;
+    return nullptr;
+}
+
+const UiButtons::Flyout* UiButtons::ActiveFlyout() const
+{
+    if (!openFlyout || onlyShown) return nullptr;
+    const auto* trigger = Find(*openFlyout);
+    return trigger && trigger->IsVisible() && trigger->IsEnabled() ? FindFlyout(*openFlyout) : nullptr;
+}
+
+bool UiButtons::HasOpenFlyout() const { return ActiveFlyout() != nullptr; }
+
+bool UiButtons::IsInActiveFlyout(UiButtonId id) const
+{
+    const auto* menu = ActiveFlyout();
+    return menu && (menu->trigger == id ||
+        std::find(menu->children.begin(), menu->children.end(), id) != menu->children.end());
+}
+
 bool UiButtons::IsShown(const Entry& entry) const
 {
-    return entry.button->IsVisible() && (!onlyShown || entry.id == *onlyShown);
+    if (!entry.button->IsVisible() || (onlyShown && entry.id != *onlyShown)) return false;
+    for (const auto& menu : flyouts)
+    {
+        if (std::find(menu.children.begin(), menu.children.end(), entry.id) != menu.children.end())
+            return ActiveFlyout() == &menu;
+    }
+    return true;
 }
 
 const UiButtons::Entry* UiButtons::TopButton(float x, float y) const
@@ -99,12 +170,33 @@ const UiButtons::Entry* UiButtons::TopButton(float x, float y) const
 
 bool UiButtons::BlocksPointer(float x, float y) const
 {
-    return TopButton(x, y) != nullptr;
+    const auto* menu = ActiveFlyout();
+    return TopButton(x, y) != nullptr || (menu && menu->bounds.Contains(x, y));
 }
 
 void UiButtons::PointerMove(float x, float y)
 {
+    if (openFlyout && !ActiveFlyout())
+    {
+        // A trigger may have been hidden/disabled/removed while held. Keep the
+        // release owned by UI, but never turn it into a stale button click.
+        for (const auto& entry : entries) entry.button->CancelPress();
+        openFlyout.reset();
+        capturedId.reset();
+        flyoutGesture = false;
+    }
     const auto* top = TopButton(x, y);
+
+    // Only a menu gesture may transfer a held press to another button. Ordinary
+    // buttons keep their original capture and release-outside cancellation.
+    if (capturing && flyoutGesture && top && IsInActiveFlyout(top->id) &&
+        top->button->IsEnabled() && capturedId != top->id)
+    {
+        if (capturedId)
+            if (auto* previous = Find(*capturedId)) previous->CancelPress();
+        capturedId = top->id;
+        top->button->PointerDown(x, y);
+    }
 
     for (const auto& entry : entries)
     {
@@ -130,6 +222,28 @@ UiButtonResult UiButtons::PointerDown(float x, float y)
 
     const auto* top = TopButton(x, y);
 
+    if (const auto* menu = ActiveFlyout(); menu && (!top || !IsInActiveFlyout(top->id)))
+    {
+        if (!menu->bounds.Contains(x, y))
+        {
+            CancelInteraction();
+            if (!top)
+            {
+                // The outside click dismisses the menu; its release must not
+                // become a world/minimap click or a later button activation.
+                capturing = true;
+                return {true, {}};
+            }
+        }
+        else if (!top)
+        {
+            capturing = true;
+            capturedId.reset();
+            flyoutGesture = true;
+            return {true, {}};
+        }
+    }
+
     if (!top) 
     { 
         PointerMove(x, y); 
@@ -138,6 +252,9 @@ UiButtonResult UiButtons::PointerDown(float x, float y)
 
     capturing = true;
     capturedId = top->id;
+
+    if (top->button->IsEnabled() && FindFlyout(top->id)) openFlyout = top->id;
+    flyoutGesture = IsInActiveFlyout(top->id);
 
     top->button->PointerDown(x, y);
     PointerMove(x, y);
@@ -151,7 +268,9 @@ UiButtonResult UiButtons::PointerUp(float x, float y)
 
     UiButtonResult result{true, {}};
 
-    auto* target = Find(capturedId);
+    // A release can carry a new position even if no motion event was received.
+    PointerMove(x, y);
+    auto* target = capturedId ? Find(*capturedId) : nullptr;
     const auto* top = TopButton(x, y);
 
     if (target)
@@ -159,11 +278,14 @@ UiButtonResult UiButtons::PointerUp(float x, float y)
         const bool clicked = target->PointerUp(x, y);
         if (clicked && top && top->id == capturedId) 
         {
-            result.clicked = capturedId;
+            result.clicked = *capturedId;
         }
     }
 
     capturing = false;
+    capturedId.reset();
+    if (flyoutGesture && !result.clicked) openFlyout.reset();
+    flyoutGesture = false;
     PointerMove(x, y);
 
     return result;
@@ -182,6 +304,9 @@ void UiButtons::SyncPointer(float x, float y, bool leftButtonDown)
 void UiButtons::CancelInteraction()
 {
     capturing = false;
+    capturedId.reset();
+    openFlyout.reset();
+    flyoutGesture = false;
 
     for (const auto& entry : entries) 
     {

@@ -253,8 +253,7 @@ public:
 
         claimed = true;
         textures.Initialize(device);
-        terrainMaterial.Initialize(device, textures,
-            "materials/ground/grass01_basecolor.png", "materials/ground/grass01_normal.png");
+        terrainMaterial.Initialize(device, textures, "materials/ground/grass01_basecolor.png", "materials/ground/grass01_normal.png");
 
         const std::string worldPreamble = std::string(WorldViewShaderSource) + WorldLightingShaderSource;
         vertexShader = CompileShader(device, VertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, worldPreamble.c_str());

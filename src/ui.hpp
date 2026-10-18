@@ -26,6 +26,11 @@ namespace UiButtonIds
     inline constexpr UiButtonId UtilitiesButton = 103;
     inline constexpr UiButtonId GovernmentButton = 104;
     inline constexpr UiButtonId DisastersButton = 105;
+
+    inline constexpr UiButtonId ResidentialButton = 200;
+    inline constexpr UiButtonId CommercialButton = 201;
+    inline constexpr UiButtonId IndustrialButton = 202;
+    inline constexpr UiButtonId DezoneButton = 203;
 }
 
 struct UiRect

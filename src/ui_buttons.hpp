@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <vector>
 
 class UiImageRenderer;
@@ -31,6 +32,13 @@ public:
     // Individual visibility/enabled/selected states are preserved.
     void ShowOnly(std::optional<UiButtonId> id);
 
+    // First-level flyouts open on trigger press. Add children last so they draw
+    // on top. Their individual visible/enabled/selected settings are preserved.
+    void AddFlyout(UiButtonId trigger, std::span<const UiButtonId> children);
+    // Includes gaps and the connection to the trigger, preventing click-through.
+    void SetFlyoutBounds(UiButtonId trigger, UiRect bounds);
+    bool HasOpenFlyout() const;
+
     bool BlocksPointer(float x, float y) const;
     bool HasCapture() const { return capturing; }
     UiButtonResult PointerDown(float x, float y);
@@ -44,10 +52,22 @@ public:
 
 private:
     struct Entry { UiButtonId id; std::unique_ptr<UiButton> button; };
+    struct Flyout
+    {
+        UiButtonId trigger;
+        std::vector<UiButtonId> children;
+        UiRect bounds{};
+    };
+    const Flyout* FindFlyout(UiButtonId trigger) const;
+    const Flyout* ActiveFlyout() const;
+    bool IsInActiveFlyout(UiButtonId id) const;
     const Entry* TopButton(float x, float y) const;
     bool IsShown(const Entry& entry) const;
     std::vector<Entry> entries;
+    std::vector<Flyout> flyouts;
+    std::optional<UiButtonId> openFlyout;
     std::optional<UiButtonId> onlyShown;
     bool capturing = false;
-    UiButtonId capturedId = 0;
+    std::optional<UiButtonId> capturedId;
+    bool flyoutGesture = false;
 };

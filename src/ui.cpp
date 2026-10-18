@@ -17,6 +17,7 @@ namespace
         UiButtonId id;
         const char* imageStem; // Relative to assets/, without state suffix or .png.
         UiButtonShape shape = UiButtonShape::Rectangle;
+        const char* hoverSuffix = "_hov.png";
     };
 
     constexpr std::array<ButtonDefinition, 5> MinimapButtons{{
@@ -41,13 +42,24 @@ namespace
     constexpr float ToolbarButtonHeight = 50.0f;
     constexpr float ToolbarButtonGap = 8.0f;
 
+    // Nearest the toolbar first, extending to the left. These are placeholders;
+    // IDs are returned on release, ready for tool actions or more menus later.
+    constexpr std::array<ButtonDefinition, 4> ZoningButtons{{
+        {UiButtonIds::ResidentialButton, "ui/toolbar/btn_res", UiButtonShape::Circle, "_hover.png"},
+        {UiButtonIds::CommercialButton, "ui/toolbar/btn_com", UiButtonShape::Circle},
+        {UiButtonIds::IndustrialButton, "ui/toolbar/btn_ind", UiButtonShape::Circle},
+        {UiButtonIds::DezoneButton, "ui/toolbar/btn_dezone", UiButtonShape::Circle}
+    }};
+    constexpr float ZoningButtonSize = 48.0f;
+    constexpr float ZoningButtonGap = 8.0f;
+
     void AddButton(UiButtons& buttons, TextureManager& textures, const ButtonDefinition& definition)
     {
         const std::string stem = definition.imageStem;
     
         auto& button = buttons.Add(definition.id, {
             &textures.Load(stem + "_normal.png"),
-            &textures.Load(stem + "_hov.png"),
+            &textures.Load(stem + definition.hoverSuffix),
             &textures.Load(stem + "_pressed.png")
         });
     
@@ -77,17 +89,54 @@ namespace
             y += height + gap;
         }
     }
+
+    void LayoutZoningButtons(UiButtons& buttons, const UiLayout& layout)
+    {
+        const auto* trigger = buttons.Find(UiButtonIds::ZonesButton);
+        if (!trigger) return;
+        const UiRect& anchor = trigger->GetBounds();
+        constexpr float count = static_cast<float>(ZoningButtons.size());
+        constexpr float rowWidth = count * (ZoningButtonSize + ZoningButtonGap);
+        const float margin = 4.0f * layout.scale;
+        // Short windows shrink the toolbar buttons horizontally as well. Keep
+        // every submenu icon outside the toolbar, not in that extra side margin.
+        const float attachmentX = std::min(anchor.x, layout.toolbar.x);
+        const float scale = std::max(0.0f, std::min(anchor.h / ToolbarButtonHeight,
+                                                   (attachmentX - margin) / rowWidth));
+        const float size = ZoningButtonSize * scale;
+        const float gap = ZoningButtonGap * scale;
+        const float y = anchor.y + (anchor.h - size) * 0.5f;
+        float x = attachmentX - gap - size;
+        float left = anchor.x;
+        for (const auto& definition : ZoningButtons)
+        {
+            if (auto* button = buttons.Find(definition.id)) button->SetBounds({x, y, size, size});
+            left = x;
+            x -= size + gap;
+        }
+        // A continuous hit area includes the spaces between circular buttons.
+        buttons.SetFlyoutBounds(UiButtonIds::ZonesButton,
+            {left, anchor.y, anchor.x + anchor.w - left, anchor.h});
+    }
 }
 
 void CreateUiButtons(UiButtons& buttons, TextureManager& textures)
 {
     for (const auto& definition : MinimapButtons) AddButton(buttons, textures, definition);
     for (const auto& definition : ToolbarButtons) AddButton(buttons, textures, definition);
+    std::array<UiButtonId, ZoningButtons.size()> children{};
+    for (std::size_t i = 0; i < ZoningButtons.size(); ++i)
+    {
+        AddButton(buttons, textures, ZoningButtons[i]);
+        children[i] = ZoningButtons[i].id;
+    }
+    buttons.AddFlyout(UiButtonIds::ZonesButton, children);
 }
 
 void LayoutUiButtons(UiButtons& buttons, UiMinimap& minimap, const UiLayout& layout)
 {
     LayoutToolbarButtons(buttons, layout);
+    LayoutZoningButtons(buttons, layout);
 
     // Refresh the diamond's bounds before positioning its buttons.
     minimap.SetLayout(layout);
@@ -175,6 +224,11 @@ void SetUiMinimized(UiSettings& settings, UiButtons& buttons, bool minimized)
 UiButtonResult HandleUiButtonEvent(SDL_Window* window, const SDL_Event& event,
                                    const UiSettings& settings, UiButtons& buttons, UiMinimap& minimap)
 {
+    if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_ESCAPE && buttons.HasOpenFlyout())
+    {
+        if (!event.key.repeat) CancelUiButtonInteraction(buttons);
+        return {true, {}}; // Dismiss the menu before Escape can quit the game.
+    }
     if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_WINDOW_MINIMIZED ||
         event.type == SDL_EVENT_WINDOW_HIDDEN || event.type == SDL_EVENT_WINDOW_RESIZED ||
         event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
@@ -209,7 +263,9 @@ UiButtonResult HandleUiButtonEvent(SDL_Window* window, const SDL_Event& event,
     {
         if (event.button.button != SDL_BUTTON_LEFT)
         {
-            return {buttons.HasCapture() || buttons.BlocksPointer(event.button.x, event.button.y), {}};
+            const bool blocked = buttons.HasCapture() || buttons.BlocksPointer(event.button.x, event.button.y);
+            if (!blocked && buttons.HasOpenFlyout()) CancelUiButtonInteraction(buttons);
+            return {blocked, {}};
         }
     
         return buttons.PointerDown(event.button.x, event.button.y);
@@ -230,7 +286,8 @@ UiButtonResult HandleUiButtonEvent(SDL_Window* window, const SDL_Event& event,
     if (event.type == SDL_EVENT_MOUSE_MOTION)
     {
         buttons.PointerMove(event.motion.x, event.motion.y);
-        return {buttons.HasCapture(), {}};
+        return {buttons.HasCapture() || (buttons.HasOpenFlyout() &&
+            buttons.BlocksPointer(event.motion.x, event.motion.y)), {}};
     }
     if (event.type == SDL_EVENT_MOUSE_WHEEL)
     {
