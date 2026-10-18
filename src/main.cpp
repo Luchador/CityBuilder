@@ -12,6 +12,7 @@
 
 #include "camera.hpp"
 #include "city.hpp"
+#include "simulation.hpp"
 #include "sound.hpp"
 #include "terrain.hpp"
 #include "terrain_material.hpp"
@@ -465,6 +466,7 @@ public:
 private:
     Camera camera{MapExtent};
     City city;
+    Simulation simulation;
 
     SoundEffect zoomInSound;
     SoundEffect zoomOutSound;
