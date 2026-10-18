@@ -563,6 +563,18 @@ private:
         // Right side: zoom out, followed by counter-clockwise rotation.
         place(ZoomOutButton, 1.0f, 0.35f);
         place(RotateCounterClockwiseButton, 1.0f, 0.65f);
+
+        // Anchor the minimize button to the minimap panel's bottom-right corner.
+        if (auto* button = uiButtons.Find(MinimizeUIButton))
+        {
+            const UiRect& panel = layout.minimapPanel;
+            const float padding = 8.0f * scale;
+
+            button->SetBounds({panel.x + panel.w - padding - size / 1.5f, panel.y + panel.h - padding - size / 1.5f, size / 1.5f, size / 1.5f});
+
+            // The 32x32 images have a one-pixel transparent border.
+            button->SetHitInsets({scale, scale, scale, scale});
+        }
     }
 
     void RotateCamera(bool clockwise)
