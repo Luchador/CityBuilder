@@ -31,6 +31,13 @@ namespace UiButtonIds
     inline constexpr UiButtonId CommercialButton = 201;
     inline constexpr UiButtonId IndustrialButton = 202;
     inline constexpr UiButtonId DezoneButton = 203;
+
+    inline constexpr UiButtonId TickerPauseButton = 300;
+    inline constexpr UiButtonId TickerSpeedButton1 = 301;
+    inline constexpr UiButtonId TickerSpeedButton2 = 302;
+    inline constexpr UiButtonId TickerSpeedButton3 = 303;
+    inline constexpr UiButtonId TickerSpeedButton4 = 304;
+    inline constexpr UiButtonId TickerPlayButton = 305;
 }
 
 struct UiRect
