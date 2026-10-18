@@ -1,6 +1,8 @@
 #include "ui_text.hpp"
 
 #include <algorithm>
+#include <chrono>
+#include <format>
 
 void BottomBarText::Initialize(TextRenderer& renderer, City city)
 {
@@ -17,13 +19,14 @@ void BottomBarText::Initialize(TextRenderer& renderer, City city)
     UpdateText(city);
 }
 
-void BottomBarText::UpdateText(City city)
+void BottomBarText::UpdateText(const City& city)
 {
     news->SetText("Temp");
-    values[0]->SetText("Name");
-    values[1]->SetText("Pop");
-    values[2]->SetText("funds");
-    values[3]->SetText("date");
+
+    values[0]->SetText(city.name);
+    values[1]->SetText(std::format("{}", city.population));
+    values[2]->SetText(std::format("${}", city.funds));
+    values[3]->SetText(std::format("{:%b %d, %Y}", city.date));
 }
 
 void BottomBarText::SetLayout(const UiLayout& layout)

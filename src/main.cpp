@@ -319,6 +319,8 @@ public:
             waterIndices = UploadBuffer(device, water.indices.data(), static_cast<Uint32>(water.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
         }
 
+        city.name = "New City";
+
         const int startingYear = 1950;
 
         city.date = std::chrono::sys_days {std::chrono::year{startingYear} / std::chrono::January / 1 };
