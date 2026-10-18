@@ -1,8 +1,7 @@
 #include "ui_minimap.hpp"
 #include "ui_image.hpp"
 
-void UiMinimap::DrawMap(UiImageRenderer& renderer, SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
-                       const Texture& image, float windowWidth, float windowHeight) const
+void UiMinimap::DrawMap(UiImageRenderer& renderer, SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, const Texture& image, float windowWidth, float windowHeight) const
 {
     if (diamondBounds.w <= 0 || diamondBounds.h <= 0)
     {
@@ -16,5 +15,6 @@ void UiMinimap::DrawMap(UiImageRenderer& renderer, SDL_GPUCommandBuffer* command
         0.5f, -0.5f * diamondBounds.w / diamondBounds.h,
         0.5f * diamondBounds.h / diamondBounds.w, 0.5f
     };
+
     renderer.Draw(commands, pass, image, diamondBounds, windowWidth, windowHeight, {}, transform);
 }

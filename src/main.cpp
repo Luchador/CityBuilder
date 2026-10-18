@@ -445,10 +445,11 @@ private:
     SoundEffect zoomOutSound;
     SoundEffect rotateSound;
 
-    static constexpr UiButtonId ZoomInButton = 1;
-    static constexpr UiButtonId ZoomOutButton = 2;
-    static constexpr UiButtonId RotateClockwiseButton = 3;
+    static constexpr UiButtonId ZoomInButton                 = 1;
+    static constexpr UiButtonId ZoomOutButton                = 2;
+    static constexpr UiButtonId RotateClockwiseButton        = 3;
     static constexpr UiButtonId RotateCounterClockwiseButton = 4;
+    static constexpr UiButtonId MinimizeUIButton             = 5;
 
     void CreateUiButtons()
     {
@@ -480,6 +481,14 @@ private:
                 &textures.Load("ui/btn_rotate_ccw_pressed.png")
             });
         rotateCounterClockwise.SetShape(UiButtonShape::Rectangle);
+
+        auto& minimizeUI =
+            uiButtons.Add(MinimizeUIButton, {
+                &textures.Load("ui/btn_minimize_normal.png"),
+                &textures.Load("ui/btn_minimize_hov.png"),
+                &textures.Load("ui/btn_minimize_pressed.png")
+            });
+        minimizeUI.SetShape(UiButtonShape::Rectangle);
     }
 
     void ToggleFullscreen()
