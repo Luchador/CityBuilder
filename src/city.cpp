@@ -1,5 +1,6 @@
 #include "city.hpp"
 
+
 unsigned int City::GetPopulation()
 {
     return population;

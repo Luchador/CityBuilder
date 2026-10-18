@@ -11,6 +11,7 @@
 #include <string>
 
 #include "camera.hpp"
+#include "city.hpp"
 #include "sound.hpp"
 #include "terrain.hpp"
 #include "terrain_material.hpp"
@@ -317,6 +318,10 @@ public:
             waterVertices = UploadBuffer(device, water.vertices.data(), static_cast<Uint32>(water.vertices.size() * sizeof(WaterVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
             waterIndices = UploadBuffer(device, water.indices.data(), static_cast<Uint32>(water.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
         }
+
+        const int startingYear = 1950;
+
+        city.date = std::chrono::sys_days {std::chrono::year{startingYear} / std::chrono::January / 1 };
     }
 
     void Run()
@@ -331,6 +336,8 @@ public:
 
             previous = now;
             SDL_Event event;
+
+            city.date += std::chrono::days{1};
 
             while (SDL_PollEvent(&event)) 
             {
@@ -454,6 +461,7 @@ public:
 
 private:
     Camera camera{MapExtent};
+    City city;
 
     SoundEffect zoomInSound;
     SoundEffect zoomOutSound;

@@ -5,12 +5,15 @@
 void BottomBarText::Initialize(TextRenderer& renderer)
 {
     news = &renderer.CreateLabel("");
+
     const char* names[] = {"CITY", "POPULATION", "FUNDS", "DATE"};
+
     for (std::size_t i = 0; i < captions.size(); ++i)
     {
         captions[i] = &renderer.CreateLabel(names[i]);
         values[i] = &renderer.CreateLabel("");
     }
+
     SetValues(CityStatusText{});
 }
 
@@ -31,8 +34,7 @@ void BottomBarText::SetLayout(const UiLayout& layout)
     ticker.size = 15.0f * s;
     ticker.color = {0.92f, 0.91f, 0.75f, 1.0f};
     news->SetStyle(ticker);
-    news->SetBounds({layout.newsTicker.x + padding, layout.newsTicker.y + s,
-                     std::max(0.0f, layout.newsTicker.w - 2 * padding), layout.newsTicker.h - 2 * s});
+    news->SetBounds({layout.newsTicker.x + padding, layout.newsTicker.y + s, std::max(0.0f, layout.newsTicker.w - 2 * padding), layout.newsTicker.h - 2 * s});
 
     TextStyle caption;
     caption.size = 11.0f * s;
@@ -41,17 +43,18 @@ void BottomBarText::SetLayout(const UiLayout& layout)
     value.fontAsset = "fonts/SourceSans3-Semibold.ttf";
     value.size = 17.0f * s;
     const UiRect panels[] = {layout.cityName, layout.population, layout.funds, layout.date};
+
     for (std::size_t i = 0; i < captions.size(); ++i)
     {
         const UiRect panel = panels[i];
         const float width = std::max(0.0f, panel.w - 2 * padding);
+    
         // Accommodate shorter custom bars by dividing the available panel height.
         const float innerHeight = std::max(0.0f, panel.h - 4 * s);
         const float captionHeight = std::min(14.0f * s, innerHeight * 0.4f);
         captions[i]->SetStyle(caption);
         captions[i]->SetBounds({panel.x + padding, panel.y + 2 * s, width, captionHeight});
         values[i]->SetStyle(value);
-        values[i]->SetBounds({panel.x + padding, panel.y + 2 * s + captionHeight,
-                              width, innerHeight - captionHeight});
+        values[i]->SetBounds({panel.x + padding, panel.y + 2 * s + captionHeight, width, innerHeight - captionHeight});
     }
 }
