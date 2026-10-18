@@ -10,8 +10,6 @@ class UiImageRenderer;
 struct SDL_GPUCommandBuffer;
 struct SDL_GPURenderPass;
 
-using UiButtonId = std::uint32_t;
-
 struct UiButtonResult
 {
     bool consumed = false;

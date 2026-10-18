@@ -1,239 +1,236 @@
 #include "ui.hpp"
 
+#include "texture.hpp"
+#include "ui_buttons.hpp"
+#include "ui_minimap.hpp"
+
+#include <SDL3/SDL.h>
 #include <algorithm>
 #include <array>
 #include <cmath>
-
-bool UiRect::Contains(float px, float py) const
-{
-    return px >= x && py >= y && px < x + w && py < y + h;
-}
-
-/**
- * Remove the upper left corner of the minimap panel with a 45 degree cut.
- */
-float UiLayout::GetMinimapCornerCut() const
-{
-    const float padding = std::max(0.0f, minimapContent.x - minimapPanel.x);
-
-    return std::max(0.0f, std::min(minimapPanel.w, minimapPanel.h) * 0.5f - (std::sqrt(2.0f) - 1.0f) * padding);
-}
-
-bool UiLayout::IsMinimapPanelPoint(float x, float y) const
-{
-    return !minimized && minimapPanel.Contains(x, y) && (x - minimapPanel.x) + (y - minimapPanel.y) >= GetMinimapCornerCut();
-}
-
-bool UiLayout::IsWorldPoint(float x, float y) const
-{
-    return world.Contains(x, y) && !IsMinimapPanelPoint(x, y);
-}
+#include <string>
 
 namespace
 {
-    UiRect Inset(UiRect r, float amount)
+    struct ButtonDefinition
     {
-        return {r.x + amount, r.y + amount, std::max(0.0f, r.w - 2 * amount), std::max(0.0f, r.h - 2 * amount)};
+        UiButtonId id;
+        const char* imageStem; // Relative to assets/, without state suffix or .png.
+        UiButtonShape shape = UiButtonShape::Rectangle;
+    };
+
+    constexpr std::array<ButtonDefinition, 5> MinimapButtons{{
+        {UiButtonIds::ZoomInButton, "ui/btn_zoom_in", UiButtonShape::Circle},
+        {UiButtonIds::ZoomOutButton, "ui/btn_zoom_out", UiButtonShape::Circle},
+        {UiButtonIds::RotateClockwiseButton, "ui/btn_rotate_cw"},
+        {UiButtonIds::RotateCounterClockwiseButton, "ui/btn_rotate_ccw"},
+        {UiButtonIds::MinimizeUIButton, "ui/btn_minimize"}
+    }};
+
+    // Display order, top to bottom. These buttons have no game actions yet.
+    constexpr std::array<ButtonDefinition, 6> ToolbarButtons{{
+        {UiButtonIds::TerrainButton, "ui/toolbar/btn_terrain"},
+        {UiButtonIds::ZonesButton, "ui/toolbar/btn_zones"},
+        {UiButtonIds::InfrastructureButton, "ui/toolbar/btn_infra"},
+        {UiButtonIds::UtilitiesButton, "ui/toolbar/btn_util"},
+        {UiButtonIds::GovernmentButton, "ui/toolbar/btn_gov"},
+        {UiButtonIds::DisastersButton, "ui/toolbar/btn_disaster"}
+    }};
+
+    constexpr float ToolbarButtonWidth = 84.0f;
+    constexpr float ToolbarButtonHeight = 50.0f;
+    constexpr float ToolbarButtonGap = 8.0f;
+
+    void AddButton(UiButtons& buttons, TextureManager& textures, const ButtonDefinition& definition)
+    {
+        const std::string stem = definition.imageStem;
+        auto& button = buttons.Add(definition.id, {
+            &textures.Load(stem + "_normal.png"),
+            &textures.Load(stem + "_hov.png"),
+            &textures.Load(stem + "_pressed.png")
+        });
+        button.SetShape(definition.shape);
     }
 
-    struct Color { float r, g, b; };
-    struct Point { float x, y; };
-
-    std::array<Point, 5> CutCornerPoints(UiRect r, float cut)
+    void LayoutToolbarButtons(UiButtons& buttons, const UiLayout& layout)
     {
-        // Clockwise in screen coordinates, starting at the shortened top edge.
-        return {{{r.x + cut, r.y}, {r.x + r.w, r.y}, {r.x + r.w, r.y + r.h}, {r.x, r.y + r.h}, {r.x, r.y + cut}}};
-    }
+        const UiRect& area = layout.toolbarContent;
+        constexpr float count = static_cast<float>(ToolbarButtons.size());
+        constexpr float stackHeight = count * ToolbarButtonHeight + (count - 1.0f) * ToolbarButtonGap;
+        // Preserve the art's proportions and fit the whole stack above the map.
+        const float scale = std::max(0.0f, std::min({layout.scale,
+            area.w / ToolbarButtonWidth, area.h / stackHeight}));
+        const float width = ToolbarButtonWidth * scale;
+        const float height = ToolbarButtonHeight * scale;
+        const float gap = ToolbarButtonGap * scale;
+        const float x = area.x + (area.w - width) * 0.5f;
+        float y = area.y;
 
-    void MinimapPanel(std::vector<UiVertex>& vertices, const UiLayout& layout, Color top, Color bottom)
-    {
-        const UiRect r = layout.minimapPanel;
-
-        if (r.w <= 0.0f || r.h <= 0.0f) 
+        for (const auto& definition : ToolbarButtons)
         {
-            return;
+            if (auto* button = buttons.Find(definition.id))
+                button->SetBounds({x, y, width, height});
+            y += height + gap;
         }
-
-        const float cut = layout.GetMinimapCornerCut();
-        const auto outer = CutCornerPoints(r, cut);
-
-        const auto gradientVertex = [=](Point p)
-        {
-            const float t = (p.y - r.y) / r.h;
-            return UiVertex{p.x, p.y,
-                top.r + (bottom.r - top.r) * t,
-                top.g + (bottom.g - top.g) * t,
-                top.b + (bottom.b - top.b) * t, 1.0f};
-        };
-
-        // A convex pentagon needs three triangles. Its removed corner has
-        // no geometry, allowing the already-rendered world to show through.
-        for (std::size_t i = 1; i + 1 < outer.size(); ++i)
-        {
-            vertices.insert(vertices.end(), {gradientVertex(outer[0]), gradientVertex(outer[i]), gradientVertex(outer[i + 1])});
-        }
-
-        const float edge = std::min(2.0f * layout.scale, std::min(r.w, r.h) * 0.125f);
-
-        if (edge <= 0.0f) 
-        {
-            return;
-        }
-
-        // Offset every edge inward by the same perpendicular distance.
-        // The diagonal's x+y intercept moves by sqrt(2)*edge; subtract 2*edge
-        // because Inset() also moves the new rectangle's origin on both axes.
-        const float innerCut = std::max(0.0f, cut + (std::sqrt(2.0f) - 2.0f) * edge);
-        const auto inner = CutCornerPoints(Inset(r, edge), innerCut);
-    
-        const Color light{0.72f, 0.75f, 0.74f};
-        const Color shadow{0.17f, 0.22f, 0.24f};
-
-        // Five joined strips form a continuous frame, with no overlaps or
-        // gaps at the two new corners. Top/left/diagonal catch the light.
-        for (std::size_t i = 0; i < outer.size(); ++i)
-        {
-            const std::size_t next = (i + 1) % outer.size();
-            const Color color = (i == 1 || i == 2) ? shadow : light;
-            const auto vertex = [=](Point p) { return UiVertex{p.x, p.y, color.r, color.g, color.b, 1.0f}; };
-            const UiVertex a = vertex(outer[i]), b = vertex(outer[next]);
-            const UiVertex c = vertex(inner[next]), d = vertex(inner[i]);
-
-            vertices.insert(vertices.end(), {a, b, c, a, c, d});
-        }
-    }
-
-    void Quad(std::vector<UiVertex>& vertices, UiRect r, Color top, Color bottom)
-    {
-        if (r.w <= 0 || r.h <= 0) 
-        {
-            return;
-        }
-    
-        const UiVertex a{r.x, r.y, top.r, top.g, top.b, 1};
-        const UiVertex b{r.x + r.w, r.y, top.r, top.g, top.b, 1};
-        const UiVertex c{r.x, r.y + r.h, bottom.r, bottom.g, bottom.b, 1};
-        const UiVertex d{r.x + r.w, r.y + r.h, bottom.r, bottom.g, bottom.b, 1};
-
-        vertices.insert(vertices.end(), {a, b, c, b, d, c});
-    }
-
-    void Solid(std::vector<UiVertex>& vertices, UiRect r, Color color)
-    {
-        Quad(vertices, r, color, color);
-    }
-
-    void Frame(std::vector<UiVertex>& vertices, UiRect r, float edge, bool recessed)
-    {
-        const Color light{0.72f, 0.75f, 0.74f};
-        const Color shadow{0.17f, 0.22f, 0.24f};
-        const Color top = recessed ? shadow : light;
-        const Color bottom = recessed ? light : shadow;
-        Solid(vertices, {r.x, r.y, r.w, edge}, top);
-        Solid(vertices, {r.x, r.y + edge, edge, r.h - edge}, top);
-        Solid(vertices, {r.x, r.y + r.h - edge, r.w, edge}, bottom);
-        Solid(vertices, {r.x + r.w - edge, r.y, edge, r.h}, bottom);
-    }
-
-    void Well(std::vector<UiVertex>& vertices, UiRect r, float scale)
-    {
-        Quad(vertices, r, {0.12f, 0.17f, 0.19f}, {0.17f, 0.23f, 0.25f});
-        Frame(vertices, r, scale, true);
     }
 }
 
-UiLayout CalculateUiLayout(float width, float height, const UiSettings& settings)
+void CreateUiButtons(UiButtons& buttons, TextureManager& textures)
 {
-    UiLayout layout;
-
-    layout.width = std::max(width, 1.0f);
-    layout.height = std::max(height, 1.0f);
-    layout.minimized = settings.minimized;
-
-    // Normally 1. Window minimum size is 800x480; retain safe geometry even
-    // if a platform temporarily reports a smaller non-minimized window.
-    const float s = std::min({1.0f, layout.width / 800.0f, layout.height / 480.0f});
-    layout.scale = s;
-    const float bottom = std::clamp(settings.barSlimDimension, 72.0f, 128.0f) * s;
-
-    // Make the toolbar width the same as the bottom bar height.
-    const float right = bottom;
-
-    // Reserve useful space for city information and toolbar controls.
-    const float maxMap = std::min({512.0f * s, layout.width - 480.0f * s, layout.height - 220.0f * s});
-    const float map = std::clamp(settings.minimapSize * s, 128.0f * s, maxMap);
-
-    layout.world = settings.minimized ? UiRect{0, 0, layout.width, layout.height} : UiRect{0, 0, layout.width - right, layout.height - bottom};
-    layout.bottomBar = {0, layout.height - bottom, layout.width, bottom};
-    layout.toolbar = {layout.width - right, 0, right, layout.height - bottom};
-    layout.minimapPanel = {layout.width - map, layout.height - map, map, map};
-
-    const float gap = 8.0f * s;
-    // Both the bar and toolbar stop their content before the minimap frame.
-    const float contentWidth = std::min(layout.minimapPanel.x, layout.toolbar.x) - 2 * gap;
-    const float demandW = 80.0f * s;
-
-    // Preserve the wide RCI gap at the normal window size, but give the four
-    // information panels priority when the window narrows or the minimap grows.
-    const float demandGap = std::clamp(contentWidth - demandW - 640.0f * s, gap, 200.0f * s);
-
-    const float tickerWidth = contentWidth - demandW - demandGap;
-
-    layout.newsTicker = {gap, layout.bottomBar.y + gap, tickerWidth, 28.0f * s};
-
-    const float rowY = layout.newsTicker.y + layout.newsTicker.h + gap;
-    const float rowH = layout.height - gap - rowY;
-    const float statsW = tickerWidth - 3.0f * gap;
-
-    layout.cityName = {gap, rowY, statsW * 0.32f, rowH};
-    layout.population = {layout.cityName.x + layout.cityName.w + gap, rowY, statsW * 0.22f, rowH};
-    layout.funds = {layout.population.x + layout.population.w + gap, rowY, statsW * 0.24f, rowH};
-    layout.date = {layout.funds.x + layout.funds.w + gap, rowY, statsW * 0.22f, rowH};
-    layout.zoneDemand = {gap + contentWidth - demandW, layout.bottomBar.y + gap, demandW, layout.bottomBar.h - 2.0f * gap};
-    layout.toolbarContent = {layout.toolbar.x + gap, gap, right - 2 * gap, std::min(layout.minimapPanel.y, layout.world.h) - 2 * gap};
-    layout.minimapContent = Inset(layout.minimapPanel, gap);
-
-    return layout;
+    for (const auto& definition : MinimapButtons) AddButton(buttons, textures, definition);
+    for (const auto& definition : ToolbarButtons) AddButton(buttons, textures, definition);
 }
 
-std::vector<UiVertex> BuildUiBackground(const UiLayout& layout)
+void LayoutUiButtons(UiButtons& buttons, UiMinimap& minimap, const UiLayout& layout)
 {
-    std::vector<UiVertex> vertices;
+    LayoutToolbarButtons(buttons, layout);
 
-    vertices.reserve(600);
-    const float s = layout.scale;
-    const Color panelTop{0.47f, 0.53f, 0.54f};
-    const Color panelBottom{0.32f, 0.39f, 0.42f};
+    // Refresh the diamond's bounds before positioning its buttons.
+    minimap.SetLayout(layout);
 
-    // Fixed dock backgrounds, followed by recessed areas for future content.
-    Quad(vertices, layout.bottomBar, panelTop, panelBottom);
-    Frame(vertices, layout.bottomBar, 2 * s, false);
+    const UiRect& diamond = minimap.GetDiamondBounds();
 
-    // Toolbar.
-    Quad(vertices, layout.toolbar, panelTop, panelTop);
-    Frame(vertices, layout.toolbar, 2 * s, false);
-
-    // News Ticker.
-    Solid(vertices, layout.newsTicker, {0.0f, 0.0f, 0.0f});
-    Frame(vertices, layout.newsTicker, s, true);
-
-    Well(vertices, layout.cityName, s);
-    Well(vertices, layout.population, s);
-    Well(vertices, layout.funds, s);
-    Well(vertices, layout.date, s);
-    Well(vertices, layout.zoneDemand, s);
-
-    // RCI indicator.
-    const Color zoneColors[] = {{0.25f, 0.66f, 0.30f}, {0.25f, 0.51f, 0.83f}, {0.87f, 0.72f, 0.27f}};
-
-    for (int i = 0; i < 3; ++i)
+    if (diamond.w <= 0.0f || diamond.h <= 0.0f)
     {
-        const float cell = (layout.zoneDemand.w - 16 * s) / 3;
-        Solid(vertices, {layout.zoneDemand.x + 8 * s + i * cell, layout.zoneDemand.y + layout.zoneDemand.h - 8 * s,cell - 3 * s, 3 * s}, zoneColors[i]);
+        return;
     }
 
-    // Minimap background and frame share the same five-sided outline.
-    MinimapPanel(vertices, layout, panelTop, panelBottom);
+    const float scale = std::min(layout.scale, layout.minimapPanel.w / 224.0f);
 
-    return vertices;
+    const float size = 32.0f * scale;
+    const float gap = 4.0f * scale;
+    const float hitInset = size / 64.0f;
+
+    const float halfWidth = diamond.w * 0.5f;
+    const float halfHeight = diamond.h * 0.5f;
+    const float centerX = diamond.x + halfWidth;
+    const float centerY = diamond.y + halfHeight;
+
+    // A direction perpendicular to either lower edge, pointing outward.
+    const float edgeLength = std::hypot(halfWidth, halfHeight);
+    const float outwardX = halfHeight / edgeLength;
+    const float outwardY = halfWidth / edgeLength;
+
+    // Leave room for the full button rectangle, including its corners.
+    const float distance = size * 0.5f * (outwardX + outwardY) + gap;
+
+    const float offsetX = outwardX * distance;
+    const float offsetY = outwardY * distance;
+
+    // side: -1 = left, +1 = right.
+    // alongEdge: 0 = side corner, 1 = bottom corner.
+    const auto place = [&](UiButtonId id, float side, float alongEdge)
+    {
+        if (auto* button = buttons.Find(id))
+        {
+            const float x = centerX + side * (halfWidth * (1.0f - alongEdge) + offsetX);
+
+            const float y = centerY + halfHeight * alongEdge + offsetY;
+
+            // Convert the button's center into its upper-left corner.
+            button->SetBounds({x - size * 0.5f, y - size * 0.5f, size, size});
+
+            button->SetHitInsets({hitInset, hitInset, hitInset, hitInset});
+        }
+    };
+
+    // Left side: zoom in, followed by clockwise rotation.
+    place(UiButtonIds::ZoomInButton, -1.0f, 0.35f);
+    place(UiButtonIds::RotateClockwiseButton, -1.0f, 0.65f);
+
+    // Right side: zoom out, followed by counter-clockwise rotation.
+    place(UiButtonIds::ZoomOutButton, 1.0f, 0.35f);
+    place(UiButtonIds::RotateCounterClockwiseButton, 1.0f, 0.65f);
+
+    // Anchor the minimize button to the minimap panel's bottom-right corner.
+    if (auto* button = buttons.Find(UiButtonIds::MinimizeUIButton))
+    {
+        const UiRect& panel = layout.minimapPanel;
+        const float padding = 8.0f * scale;
+
+        button->SetBounds({panel.x + panel.w - padding - size / 1.5f, panel.y + panel.h - padding - size / 1.5f, size / 1.5f, size / 1.5f});
+
+        // The 32x32 images have a one-pixel transparent border.
+        button->SetHitInsets({scale, scale, scale, scale});
+    }
+}
+
+void CancelUiButtonInteraction(UiButtons& buttons)
+{
+    if (buttons.HasCapture()) SDL_CaptureMouse(false);
+    buttons.CancelInteraction();
+}
+
+void SetUiMinimized(UiSettings& settings, UiButtons& buttons, bool minimized)
+{
+    CancelUiButtonInteraction(buttons);
+    buttons.ShowOnly(minimized ? std::optional<UiButtonId>{UiButtonIds::MinimizeUIButton} : std::nullopt);
+    settings.minimized = minimized;
+}
+
+UiButtonResult HandleUiButtonEvent(SDL_Window* window, const SDL_Event& event,
+                                   const UiSettings& settings, UiButtons& buttons, UiMinimap& minimap)
+{
+    if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_WINDOW_MINIMIZED ||
+        event.type == SDL_EVENT_WINDOW_HIDDEN || event.type == SDL_EVENT_WINDOW_RESIZED ||
+        event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
+    {
+        CancelUiButtonInteraction(buttons);
+        return {}; // Let camera panning also receive these events.
+    }
+
+    if (event.type == SDL_EVENT_WINDOW_MOUSE_LEAVE && !buttons.HasCapture())
+        buttons.CancelInteraction();
+
+    const bool pointerEvent = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
+        event.type == SDL_EVENT_MOUSE_BUTTON_UP || event.type == SDL_EVENT_MOUSE_MOTION ||
+        event.type == SDL_EVENT_MOUSE_WHEEL;
+    if (!pointerEvent || !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) return {};
+
+    int width = 0, height = 0;
+    if (SDL_GetWindowSize(window, &width, &height))
+    {
+        // Mouse events can arrive before the first frame or immediately after resize.
+        LayoutUiButtons(buttons, minimap, CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), settings));
+    }
+
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
+    {
+        if (event.button.button != SDL_BUTTON_LEFT)
+            return {buttons.HasCapture() || buttons.BlocksPointer(event.button.x, event.button.y), {}};
+        return buttons.PointerDown(event.button.x, event.button.y);
+    }
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT)
+    {
+        const bool hadCapture = buttons.HasCapture();
+        const auto result = buttons.PointerUp(event.button.x, event.button.y);
+        if (hadCapture) SDL_CaptureMouse(false);
+        return result;
+    }
+    if (event.type == SDL_EVENT_MOUSE_MOTION)
+    {
+        buttons.PointerMove(event.motion.x, event.motion.y);
+        return {buttons.HasCapture(), {}};
+    }
+    if (event.type == SDL_EVENT_MOUSE_WHEEL)
+        return {buttons.HasCapture() || buttons.BlocksPointer(event.wheel.mouse_x, event.wheel.mouse_y), {}};
+
+    return {}; // Right-button releases must still stop camera panning.
+}
+
+void UpdateUiButtonPointer(SDL_Window* window, UiButtons& buttons, bool mousePanning)
+{
+    const auto flags = SDL_GetWindowFlags(window);
+    if (!(flags & SDL_WINDOW_INPUT_FOCUS) || mousePanning ||
+        (!(flags & SDL_WINDOW_MOUSE_FOCUS) && !buttons.HasCapture()))
+    {
+        CancelUiButtonInteraction(buttons);
+        return;
+    }
+
+    float x = 0, y = 0;
+    const auto mouseButtons = SDL_GetMouseState(&x, &y);
+    const bool hadCapture = buttons.HasCapture();
+    buttons.SyncPointer(x, y, (mouseButtons & SDL_BUTTON_LMASK) != 0);
+    if (hadCapture && !buttons.HasCapture()) SDL_CaptureMouse(false);
 }

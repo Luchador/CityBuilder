@@ -1,6 +1,32 @@
 #pragma once
 
+#include <cstdint>
 #include <vector>
+
+class TextureManager;
+class UiButtons;
+class UiMinimap;
+struct UiButtonResult;
+struct SDL_Window;
+union SDL_Event;
+
+using UiButtonId = std::uint32_t;
+
+namespace UiButtonIds
+{
+    inline constexpr UiButtonId ZoomInButton = 1;
+    inline constexpr UiButtonId ZoomOutButton = 2;
+    inline constexpr UiButtonId RotateClockwiseButton = 3;
+    inline constexpr UiButtonId RotateCounterClockwiseButton = 4;
+    inline constexpr UiButtonId MinimizeUIButton = 5;
+
+    inline constexpr UiButtonId TerrainButton = 100;
+    inline constexpr UiButtonId ZonesButton = 101;
+    inline constexpr UiButtonId InfrastructureButton = 102;
+    inline constexpr UiButtonId UtilitiesButton = 103;
+    inline constexpr UiButtonId GovernmentButton = 104;
+    inline constexpr UiButtonId DisastersButton = 105;
+}
 
 struct UiRect
 {
@@ -46,3 +72,14 @@ static_assert(sizeof(UiVertex) == 24);
 
 UiLayout CalculateUiLayout(float width, float height, const UiSettings& settings);
 std::vector<UiVertex> BuildUiBackground(const UiLayout& layout);
+
+// Application-level UI composition. TextureManager must outlive the buttons.
+void CreateUiButtons(UiButtons& buttons, TextureManager& textures);
+void LayoutUiButtons(UiButtons& buttons, UiMinimap& minimap, const UiLayout& layout);
+void SetUiMinimized(UiSettings& settings, UiButtons& buttons, bool minimized);
+void CancelUiButtonInteraction(UiButtons& buttons);
+
+// Returns UI intent; the application handles camera actions and sounds.
+UiButtonResult HandleUiButtonEvent(SDL_Window* window, const SDL_Event& event,
+                                   const UiSettings& settings, UiButtons& buttons, UiMinimap& minimap);
+void UpdateUiButtonPointer(SDL_Window* window, UiButtons& buttons, bool mousePanning);

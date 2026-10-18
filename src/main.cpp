@@ -7,7 +7,6 @@
 #include <cstddef>
 #include <cstring>
 #include <memory>
-#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -178,7 +177,7 @@ class Application
 public:
     ~Application()
     {
-        CancelButtonInteraction();
+        CancelUiButtonInteraction(uiButtons);
         StopMousePan();
         if (device) 
         {
@@ -282,7 +281,7 @@ public:
         panOverlay.Initialize(textures);
 
         // UI
-        CreateUiButtons();
+        CreateUiButtons(uiButtons, textures);
 
         // Load sound effects.
         zoomInSound.Load("sfx/ui/sfx_zoom_in.wav");
@@ -461,146 +460,24 @@ private:
     SoundEffect zoomOutSound;
     SoundEffect rotateSound;
 
-    static constexpr UiButtonId ZoomInButton                 = 1;
-    static constexpr UiButtonId ZoomOutButton                = 2;
-    static constexpr UiButtonId RotateClockwiseButton        = 3;
-    static constexpr UiButtonId RotateCounterClockwiseButton = 4;
-    static constexpr UiButtonId MinimizeUIButton             = 5;
-
-    void CreateUiButtons()
-    {
-        auto& zoomIn = uiButtons.Add(ZoomInButton, {
-            &textures.Load("ui/btn_zoom_in_normal.png"),
-            &textures.Load("ui/btn_zoom_in_hov.png"),
-            &textures.Load("ui/btn_zoom_in_pressed.png")
-        });
-        zoomIn.SetShape(UiButtonShape::Circle);
-
-        auto& zoomOut = uiButtons.Add(ZoomOutButton, {
-            &textures.Load("ui/btn_zoom_out_normal.png"),
-            &textures.Load("ui/btn_zoom_out_hov.png"),
-            &textures.Load("ui/btn_zoom_out_pressed.png")
-        });
-        zoomOut.SetShape(UiButtonShape::Circle);
-
-        auto& rotateClockwise = uiButtons.Add(RotateClockwiseButton, {
-            &textures.Load("ui/btn_rotate_cw_normal.png"),
-            &textures.Load("ui/btn_rotate_cw_hov.png"),
-            &textures.Load("ui/btn_rotate_cw_pressed.png")
-        });
-        rotateClockwise.SetShape(UiButtonShape::Rectangle);
-
-        auto& rotateCounterClockwise =
-            uiButtons.Add(RotateCounterClockwiseButton, {
-                &textures.Load("ui/btn_rotate_ccw_normal.png"),
-                &textures.Load("ui/btn_rotate_ccw_hov.png"),
-                &textures.Load("ui/btn_rotate_ccw_pressed.png")
-            });
-        rotateCounterClockwise.SetShape(UiButtonShape::Rectangle);
-
-        auto& minimizeUI =
-            uiButtons.Add(MinimizeUIButton, {
-                &textures.Load("ui/btn_minimize_normal.png"),
-                &textures.Load("ui/btn_minimize_hov.png"),
-                &textures.Load("ui/btn_minimize_pressed.png")
-            });
-        minimizeUI.SetShape(UiButtonShape::Rectangle);
-    }
-
     void ToggleUi()
     {
         // A layout change invalidates mouse-pan anchors and in-progress clicks.
         StopMousePan();
-        CancelButtonInteraction();
-
-        uiSettings.minimized = !uiSettings.minimized;
-        uiButtons.ShowOnly(uiSettings.minimized
-            ? std::optional<UiButtonId>{MinimizeUIButton} : std::nullopt);
+        SetUiMinimized(uiSettings, uiButtons, !uiSettings.minimized);
     }
 
     void ToggleFullscreen()
     {
         // Cancel interactions whose screen coordinates may change.
         StopMousePan();
-        CancelButtonInteraction();
+        CancelUiButtonInteraction(uiButtons);
 
         const bool isFullscreen = (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
 
         if (!SDL_SetWindowFullscreen(window, !isFullscreen))
         {
             SDL_Log("Could not change fullscreen mode: %s", SDL_GetError());
-        }
-    }
-
-    void LayoutUiButtons(const UiLayout& layout)
-    {
-        // Refresh the diamond's bounds before positioning its buttons.
-        minimap.SetLayout(layout);
-
-        const UiRect& diamond = minimap.GetDiamondBounds();
-
-        if (diamond.w <= 0.0f || diamond.h <= 0.0f)
-        {
-            return;
-        }
-
-        const float scale = std::min(layout.scale, layout.minimapPanel.w / 224.0f);
-
-        const float size = 32.0f * scale;
-        const float gap = 4.0f * scale;
-        const float hitInset = size / 64.0f;
-
-        const float halfWidth = diamond.w * 0.5f;
-        const float halfHeight = diamond.h * 0.5f;
-        const float centerX = diamond.x + halfWidth;
-        const float centerY = diamond.y + halfHeight;
-
-        // A direction perpendicular to either lower edge, pointing outward.
-        const float edgeLength = std::hypot(halfWidth, halfHeight);
-        const float outwardX = halfHeight / edgeLength;
-        const float outwardY = halfWidth / edgeLength;
-
-        // Leave room for the full button rectangle, including its corners.
-        const float distance = size * 0.5f * (outwardX + outwardY) + gap;
-
-        const float offsetX = outwardX * distance;
-        const float offsetY = outwardY * distance;
-
-        // side: -1 = left, +1 = right.
-        // alongEdge: 0 = side corner, 1 = bottom corner.
-        const auto place = [&](UiButtonId id, float side, float alongEdge)
-        {
-            if (auto* button = uiButtons.Find(id))
-            {
-                const float x = centerX + side * (halfWidth * (1.0f - alongEdge) + offsetX);
-
-                const float y = centerY + halfHeight * alongEdge + offsetY;
-
-                // Convert the button's center into its upper-left corner.
-                button->SetBounds({x - size * 0.5f, y - size * 0.5f, size, size});
-
-                button->SetHitInsets({hitInset, hitInset, hitInset, hitInset});
-            }
-        };
-
-        // Left side: zoom in, followed by clockwise rotation.
-        place(ZoomInButton, -1.0f, 0.35f);
-        place(RotateClockwiseButton, -1.0f, 0.65f);
-
-        // Right side: zoom out, followed by counter-clockwise rotation.
-        place(ZoomOutButton, 1.0f, 0.35f);
-        place(RotateCounterClockwiseButton, 1.0f, 0.65f);
-
-        // Anchor the minimize button to the minimap panel's bottom-right corner.
-        if (auto* button = uiButtons.Find(MinimizeUIButton))
-        {
-            const UiRect& panel = layout.minimapPanel;
-            const float padding = 8.0f * scale;
-
-            button->SetBounds({panel.x + panel.w - padding - size / 1.5f, panel.y + panel.h - padding - size / 1.5f, size / 1.5f, size / 1.5f});
-
-            // The 32x32 images have a one-pixel transparent border.
-            button->SetHitInsets({scale, scale, scale, scale});
         }
     }
 
@@ -625,139 +502,43 @@ private:
     {
         switch(id)
         {
-            case ZoomInButton:
+            case UiButtonIds::ZoomInButton:
                 camera.Zoom(1.0f);
                 zoomInSound.Play();
                 break;
 
-            case ZoomOutButton:
+            case UiButtonIds::ZoomOutButton:
                 camera.Zoom(-1.0f);
                 zoomOutSound.Play();
                 break;
 
-            case RotateClockwiseButton:
+            case UiButtonIds::RotateClockwiseButton:
                 RotateCamera(true);
                 break;
 
-            case RotateCounterClockwiseButton:
+            case UiButtonIds::RotateCounterClockwiseButton:
                 RotateCamera(false);
                 break;
 
-            case MinimizeUIButton:
+            case UiButtonIds::MinimizeUIButton:
                 ToggleUi();
                 break;
 
             default:
+                // Toolbar placeholders have no game actions yet.
                 break;
         }
     }
 
-    void CancelButtonInteraction()
-    {
-        if (uiButtons.HasCapture()) 
-        {
-            SDL_CaptureMouse(false);
-        }
-
-        uiButtons.CancelInteraction();
-    }
-
     bool HandleButtonEvent(const SDL_Event& event)
     {
-        if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_WINDOW_MINIMIZED ||
-            event.type == SDL_EVENT_WINDOW_HIDDEN || event.type == SDL_EVENT_WINDOW_RESIZED ||
-            event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED)
+        const auto result = HandleUiButtonEvent(window, event, uiSettings, uiButtons, minimap);
+        if (result.consumed && event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT)
         {
-            CancelButtonInteraction();
-            return false; // Camera panning also needs to receive these events.
+            StopMousePan();
         }
-    
-        if (event.type == SDL_EVENT_WINDOW_MOUSE_LEAVE && !uiButtons.HasCapture())
-        {
-            uiButtons.CancelInteraction();
-        }
-
-        const bool pointerEvent = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP || event.type == SDL_EVENT_MOUSE_MOTION || event.type == SDL_EVENT_MOUSE_WHEEL;
-
-        if (!pointerEvent || !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) 
-        {
-            return false;
-        }
-
-        int width = 0, height = 0;
-
-        if (SDL_GetWindowSize(window, &width, &height))
-        {
-            LayoutUiButtons(CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings));
-        }
-
-        if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
-        {
-            if (event.button.button != SDL_BUTTON_LEFT)
-            {
-                return uiButtons.HasCapture() || uiButtons.BlocksPointer(event.button.x, event.button.y);
-            }
-        
-            const auto result = uiButtons.PointerDown(event.button.x, event.button.y);
-    
-            if (result.consumed)
-            {
-                StopMousePan();
-            }
-
-            return result.consumed;
-        }
-        if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT)
-        {
-            const bool hadCapture = uiButtons.HasCapture();
-            const auto result = uiButtons.PointerUp(event.button.x, event.button.y);
-
-            if (hadCapture) 
-            {
-                SDL_CaptureMouse(false);
-            }
-    
-            if (result.clicked) 
-            {
-                OnUiButtonClicked(*result.clicked);
-            }
-
-            return result.consumed;
-        }
-        if (event.type == SDL_EVENT_MOUSE_MOTION)
-        {
-            uiButtons.PointerMove(event.motion.x, event.motion.y);
-            return uiButtons.HasCapture();
-        }
-    
-        if (event.type == SDL_EVENT_MOUSE_WHEEL)
-        {
-            return uiButtons.HasCapture() || uiButtons.BlocksPointer(event.wheel.mouse_x, event.wheel.mouse_y);
-        }
-
-        return false; // In particular, let right-button releases stop panning.
-    }
-
-    void UpdateButtonPointer()
-    {
-        const auto flags = SDL_GetWindowFlags(window);
-
-        if (!(flags & SDL_WINDOW_INPUT_FOCUS) || camera.IsMousePanning() || (!(flags & SDL_WINDOW_MOUSE_FOCUS) && !uiButtons.HasCapture()))
-        {
-            CancelButtonInteraction();
-            return;
-        }
-
-        float x = 0, y = 0;
-        const auto buttons = SDL_GetMouseState(&x, &y);
-        const bool hadCapture = uiButtons.HasCapture();
-
-        uiButtons.SyncPointer(x, y, (buttons & SDL_BUTTON_LMASK) != 0);
-
-        if (hadCapture && !uiButtons.HasCapture()) 
-        {
-            SDL_CaptureMouse(false);
-        }
+        if (result.clicked) OnUiButtonClicked(*result.clicked);
+        return result.consumed;
     }
 
     bool HandleMinimapEvent(const SDL_Event& event)
@@ -953,7 +734,7 @@ private:
         uiVertexCount = static_cast<Uint32>(mesh.size());
         uiLayout = next;
         bottomBarText.SetLayout(uiLayout);
-        LayoutUiButtons(uiLayout);
+        LayoutUiButtons(uiButtons, minimap, uiLayout);
         minimapOutlineDirty = true;
     }
 
@@ -1266,7 +1047,7 @@ private:
         // Static UI geometry is uploaded only when the layout or visibility changes.
         // Do this before acquiring the presentation command buffer.
         EnsureUi();
-        UpdateButtonPointer();
+        UpdateUiButtonPointer(window, uiButtons, camera.IsMousePanning());
 
         // Font atlas uploads must be submitted before this frame's render commands.
         // Rasterize at drawable resolution, then place glyphs in logical UI units.
