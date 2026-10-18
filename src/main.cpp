@@ -232,14 +232,14 @@ public:
 
     void Initialize()
     {
-        window = SDL_CreateWindow("Cities Unlimited", 1280, 720, SDL_WINDOW_RESIZABLE);
+        window = SDL_CreateWindow("Cities Unlimited", 1920, 1080, SDL_WINDOW_RESIZABLE);
 
         if (!window) 
         {   
             Fail("Create window");
         }
 
-        if (!SDL_SetWindowMinimumSize(window, 800, 480)) Fail("Set minimum window size");
+        if (!SDL_SetWindowMinimumSize(window, 1024, 768)) Fail("Set minimum window size");
 
         device = SDL_CreateGPUDevice(SDL_GPU_SHADERFORMAT_DXBC, false, "direct3d12");
 

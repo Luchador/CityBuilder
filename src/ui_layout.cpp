@@ -175,7 +175,7 @@ UiLayout CalculateUiLayout(float width, float height, const UiSettings& settings
 
     // Preserve the wide RCI gap at the normal window size, but give the four
     // information panels priority when the window narrows or the minimap grows.
-    const float demandGap = std::clamp(contentWidth - demandW - 640.0f * s, gap, 200.0f * s);
+    const float demandGap = std::clamp(contentWidth - demandW - 640.0f * s, gap, 400.0f * s);
 
     const float tickerWidth = contentWidth - demandW - demandGap;
 
