@@ -5,5 +5,5 @@
 class Simulation 
 {
 public:
-    void Update(City& city, double elapsedSeconds);
+    void Update(City& city, double elapsedMilliseconds);
 };

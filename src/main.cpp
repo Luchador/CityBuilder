@@ -335,13 +335,15 @@ public:
         while (running) 
         {
             const Uint64 now = SDL_GetTicksNS();
-            const float dt = std::min(static_cast<float>((now - previous) / 1.0e9), 0.05f);
+
+            // Collect elapsed milliseconds for game simulation logic.
+            const double elapsedMilliseconds = static_cast<double>(now - previous) / 1'000'000.0;
 
             previous = now;
-            SDL_Event event;
 
-            city.date += std::chrono::days{1};
-            bottomBarText.UpdateText(city);
+            const float dt = std::min(static_cast<float>(elapsedMilliseconds / 1000.0), 0.05f);
+
+            SDL_Event event;
 
             while (SDL_PollEvent(&event)) 
             {
@@ -435,6 +437,12 @@ public:
             {
                 break;
             }
+
+            // Main simulation logic
+            simulation.Update(city, elapsedMilliseconds);
+
+            // Keep the bottom bar text updated with the latest logic.
+            bottomBarText.UpdateText(city);
 
             if (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) 
             {
