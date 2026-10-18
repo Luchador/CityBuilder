@@ -44,11 +44,13 @@ namespace
     void AddButton(UiButtons& buttons, TextureManager& textures, const ButtonDefinition& definition)
     {
         const std::string stem = definition.imageStem;
+    
         auto& button = buttons.Add(definition.id, {
             &textures.Load(stem + "_normal.png"),
             &textures.Load(stem + "_hov.png"),
             &textures.Load(stem + "_pressed.png")
         });
+    
         button.SetShape(definition.shape);
     }
 
@@ -57,9 +59,9 @@ namespace
         const UiRect& area = layout.toolbarContent;
         constexpr float count = static_cast<float>(ToolbarButtons.size());
         constexpr float stackHeight = count * ToolbarButtonHeight + (count - 1.0f) * ToolbarButtonGap;
+
         // Preserve the art's proportions and fit the whole stack above the map.
-        const float scale = std::max(0.0f, std::min({layout.scale,
-            area.w / ToolbarButtonWidth, area.h / stackHeight}));
+        const float scale = std::max(0.0f, std::min({layout.scale, area.w / ToolbarButtonWidth, area.h / stackHeight}));
         const float width = ToolbarButtonWidth * scale;
         const float height = ToolbarButtonHeight * scale;
         const float gap = ToolbarButtonGap * scale;
@@ -69,7 +71,9 @@ namespace
         for (const auto& definition : ToolbarButtons)
         {
             if (auto* button = buttons.Find(definition.id))
+            {
                 button->SetBounds({x, y, width, height});
+            }
             y += height + gap;
         }
     }
@@ -180,14 +184,21 @@ UiButtonResult HandleUiButtonEvent(SDL_Window* window, const SDL_Event& event,
     }
 
     if (event.type == SDL_EVENT_WINDOW_MOUSE_LEAVE && !buttons.HasCapture())
+    {
         buttons.CancelInteraction();
+    }
 
     const bool pointerEvent = event.type == SDL_EVENT_MOUSE_BUTTON_DOWN ||
         event.type == SDL_EVENT_MOUSE_BUTTON_UP || event.type == SDL_EVENT_MOUSE_MOTION ||
         event.type == SDL_EVENT_MOUSE_WHEEL;
-    if (!pointerEvent || !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) return {};
+
+    if (!pointerEvent || !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) 
+    {
+        return {};
+    }
 
     int width = 0, height = 0;
+
     if (SDL_GetWindowSize(window, &width, &height))
     {
         // Mouse events can arrive before the first frame or immediately after resize.
@@ -197,14 +208,23 @@ UiButtonResult HandleUiButtonEvent(SDL_Window* window, const SDL_Event& event,
     if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN)
     {
         if (event.button.button != SDL_BUTTON_LEFT)
+        {
             return {buttons.HasCapture() || buttons.BlocksPointer(event.button.x, event.button.y), {}};
+        }
+    
         return buttons.PointerDown(event.button.x, event.button.y);
     }
+
     if (event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT)
     {
         const bool hadCapture = buttons.HasCapture();
         const auto result = buttons.PointerUp(event.button.x, event.button.y);
-        if (hadCapture) SDL_CaptureMouse(false);
+    
+        if (hadCapture) 
+        {
+            SDL_CaptureMouse(false);
+        }
+
         return result;
     }
     if (event.type == SDL_EVENT_MOUSE_MOTION)
@@ -213,7 +233,9 @@ UiButtonResult HandleUiButtonEvent(SDL_Window* window, const SDL_Event& event,
         return {buttons.HasCapture(), {}};
     }
     if (event.type == SDL_EVENT_MOUSE_WHEEL)
+    {
         return {buttons.HasCapture() || buttons.BlocksPointer(event.wheel.mouse_x, event.wheel.mouse_y), {}};
+    }
 
     return {}; // Right-button releases must still stop camera panning.
 }
@@ -221,8 +243,7 @@ UiButtonResult HandleUiButtonEvent(SDL_Window* window, const SDL_Event& event,
 void UpdateUiButtonPointer(SDL_Window* window, UiButtons& buttons, bool mousePanning)
 {
     const auto flags = SDL_GetWindowFlags(window);
-    if (!(flags & SDL_WINDOW_INPUT_FOCUS) || mousePanning ||
-        (!(flags & SDL_WINDOW_MOUSE_FOCUS) && !buttons.HasCapture()))
+    if (!(flags & SDL_WINDOW_INPUT_FOCUS) || mousePanning || (!(flags & SDL_WINDOW_MOUSE_FOCUS) && !buttons.HasCapture()))
     {
         CancelUiButtonInteraction(buttons);
         return;
@@ -232,5 +253,9 @@ void UpdateUiButtonPointer(SDL_Window* window, UiButtons& buttons, bool mousePan
     const auto mouseButtons = SDL_GetMouseState(&x, &y);
     const bool hadCapture = buttons.HasCapture();
     buttons.SyncPointer(x, y, (mouseButtons & SDL_BUTTON_LMASK) != 0);
-    if (hadCapture && !buttons.HasCapture()) SDL_CaptureMouse(false);
+
+    if (hadCapture && !buttons.HasCapture()) 
+    {
+        SDL_CaptureMouse(false);
+    }
 }
