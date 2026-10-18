@@ -280,10 +280,13 @@ void TextRenderer::Prepare(float pixelsPerUnit)
     dirty = false;
 }
 
-void TextRenderer::Draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
-                        float logicalWidth, float logicalHeight, Uint32 pixelWidth, Uint32 pixelHeight) const
+void TextRenderer::Draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, float logicalWidth, float logicalHeight, Uint32 pixelWidth, Uint32 pixelHeight) const
 {
-    if (!vertices || batches.empty() || dirty) return;
+    if (!vertices || batches.empty() || dirty) 
+    {
+        return;
+    }
+
     SDL_BindGPUGraphicsPipeline(pass, pipeline);
     SDL_GPUBufferBinding binding{vertices, 0};
     SDL_BindGPUVertexBuffers(pass, 0, &binding, 1);
@@ -291,19 +294,26 @@ void TextRenderer::Draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
     SDL_PushGPUVertexUniformData(commands, 0, screen, sizeof(screen));
     const float sx = static_cast<float>(pixelWidth) / logicalWidth;
     const float sy = static_cast<float>(pixelHeight) / logicalHeight;
+
     for (const auto& batch : batches)
     {
         const int left = static_cast<int>(std::clamp(std::ceil(batch.clip.x * sx), 0.0f, static_cast<float>(pixelWidth)));
         const int top = static_cast<int>(std::clamp(std::ceil(batch.clip.y * sy), 0.0f, static_cast<float>(pixelHeight)));
         const int right = static_cast<int>(std::clamp(std::floor((batch.clip.x + batch.clip.w) * sx), 0.0f, static_cast<float>(pixelWidth)));
         const int bottom = static_cast<int>(std::clamp(std::floor((batch.clip.y + batch.clip.h) * sy), 0.0f, static_cast<float>(pixelHeight)));
-        if (right <= left || bottom <= top) continue;
+
+        if (right <= left || bottom <= top) 
+        {
+            continue;
+        }
+
         SDL_Rect scissor{left, top, right - left, bottom - top};
         SDL_SetGPUScissor(pass, &scissor);
         SDL_GPUTextureSamplerBinding image{batch.atlas, sampler};
         SDL_BindGPUFragmentSamplers(pass, 0, &image, 1);
         SDL_DrawGPUPrimitives(pass, batch.count, 1, batch.first, 0);
     }
+
     SDL_Rect full{0, 0, static_cast<int>(pixelWidth), static_cast<int>(pixelHeight)};
     SDL_SetGPUScissor(pass, &full); // The pan overlay is drawn after the text.
 }
@@ -312,13 +322,39 @@ void TextRenderer::Release() noexcept
 {
     labels.clear();
     batches.clear();
-    if (vertices) SDL_ReleaseGPUBuffer(device, vertices);
-    if (sampler) SDL_ReleaseGPUSampler(device, sampler);
-    if (pipeline) SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
-    if (engine) TTF_DestroyGPUTextEngine(engine);
-    for (const auto& [key, font] : fonts) TTF_CloseFont(font);
+
+    if (vertices) 
+    {
+        SDL_ReleaseGPUBuffer(device, vertices);
+    }
+
+    if (sampler) 
+    {
+        SDL_ReleaseGPUSampler(device, sampler);
+    }
+
+    if (pipeline) 
+    {
+        SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
+    }
+
+    if (engine) 
+    {
+        TTF_DestroyGPUTextEngine(engine);
+    }
+
+    for (const auto& [key, font] : fonts) 
+    {
+        TTF_CloseFont(font);
+    }
+
     fonts.clear();
-    if (ttfInitialized) TTF_Quit();
+
+    if (ttfInitialized) 
+    {
+        TTF_Quit();
+    }
+
     vertices = nullptr;
     sampler = nullptr;
     pipeline = nullptr;
