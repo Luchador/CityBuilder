@@ -45,7 +45,7 @@ namespace
     // Nearest the toolbar first, extending to the left. These are placeholders;
     // IDs are returned on release, ready for tool actions or more menus later.
     constexpr std::array<ButtonDefinition, 4> ZoningButtons{{
-        {UiButtonIds::ResidentialButton, "ui/toolbar/btn_res", UiButtonShape::Circle, "_hover.png"},
+        {UiButtonIds::ResidentialButton, "ui/toolbar/btn_res", UiButtonShape::Circle},
         {UiButtonIds::CommercialButton, "ui/toolbar/btn_com", UiButtonShape::Circle},
         {UiButtonIds::IndustrialButton, "ui/toolbar/btn_ind", UiButtonShape::Circle},
         {UiButtonIds::DezoneButton, "ui/toolbar/btn_dezone", UiButtonShape::Circle}
