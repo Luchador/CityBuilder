@@ -119,6 +119,8 @@ void UiManager::PrepareFrame(bool mousePanning)
 {
     RefreshLayout();
     UpdateUiButtonPointer(window, buttons, mousePanning);
+    // Poll the pointer first so hover follows resize, focus, and capture changes.
+    UpdateTickerHover();
     if (layout.minimized) return;
     EnsureGeometry();
 

@@ -20,6 +20,8 @@ int liveShaders=0,livePipelines=0,liveBuffers=0,liveTransfers=0,shaderAttempts=0
 int geometryUploads=0,mapUploads=0,outlineUploads=0,textPrepares=0;
 float textScale=0;
 Uint64 clockMilliseconds=0;
+float pointerX=20,pointerY=20;
+SDL_MouseButtonFlags pointerButtons=0;
 std::vector<std::string> draws;
 std::unordered_map<const Texture*,std::string> imageNames;
 std::unordered_map<const TextLabel*,std::string> labelValues;
@@ -32,7 +34,7 @@ SDL_WindowFlags SDLCALL SDL_GetWindowFlags(SDL_Window* w){return w->flags;}
 bool SDLCALL SDL_GetWindowSize(SDL_Window* w,int* x,int* y){*x=w->width;*y=w->height;return true;}
 bool SDLCALL SDL_GetWindowSizeInPixels(SDL_Window* w,int* x,int* y){*x=w->width*w->scale;*y=w->height*w->scale;return true;}
 bool SDLCALL SDL_CaptureMouse(bool){return true;}
-SDL_MouseButtonFlags SDLCALL SDL_GetMouseState(float* x,float* y){*x=20;*y=20;return 0;}
+SDL_MouseButtonFlags SDLCALL SDL_GetMouseState(float* x,float* y){*x=pointerX;*y=pointerY;return pointerButtons;}
 SDL_GPUTextureFormat SDLCALL SDL_GetGPUSwapchainTextureFormat(SDL_GPUDevice*,SDL_Window*){return SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM;}
 SDL_GPUShader* CompileShader(SDL_GPUDevice*,const char*,SDL_GPUShaderStage,Uint32,const char*,Uint32){
  if(++shaderAttempts==failShaderAt)throw std::runtime_error("injected shader failure");
@@ -113,6 +115,8 @@ namespace
 
         Fixture()
         {
+            pointerX = pointerY = 20;
+            pointerButtons = 0;
             UiActions actions;
             actions.zoomCamera = [this](float steps) { zoomTotal += steps; };
             actions.rotateCamera = [this](bool clockwise) { rotations.push_back(clockwise); };
@@ -143,6 +147,10 @@ namespace
 
         bool Mouse(Uint32 type, std::array<float, 2> point, Uint8 button = SDL_BUTTON_LEFT)
         {
+            pointerX = point[0];
+            pointerY = point[1];
+            if (type == SDL_EVENT_MOUSE_BUTTON_DOWN) pointerButtons |= SDL_BUTTON_MASK(button);
+            if (type == SDL_EVENT_MOUSE_BUTTON_UP) pointerButtons &= ~SDL_BUTTON_MASK(button);
             SDL_Event event{};
             event.type = type;
             if (type == SDL_EVENT_MOUSE_MOTION)
@@ -320,6 +328,7 @@ namespace
 
     std::vector<std::string> DrawTicker(Fixture& f)
     {
+        f.ui.PrepareFrame(f.camera.IsMousePanning());
         SDL_GPUCommandBuffer commands;
         SDL_GPUTexture target;
         draws.clear();
@@ -332,17 +341,19 @@ namespace
         return ticker;
     }
 
-    void ExpectTicker(Fixture& f, bool play, bool pause, std::array<bool, 4> squares)
+    void ExpectTicker(Fixture& f, bool play, bool pause, std::array<bool, 4> squares,
+                      int hoverSquares = 0, UiButtonId hoverControl = 0)
     {
         std::vector<std::string> expected;
-        const auto add = [&](const char* name, bool pressed)
+        const auto add = [&](const char* name, bool pressed, bool hover)
         {
             expected.push_back(std::string("ui/ticker/btn_") + name +
-                               (pressed ? "_pressed.png" : "_normal.png"));
+                               (hover ? "_hov.png" : pressed ? "_pressed.png" : "_normal.png"));
         };
-        add("pause", pause);
-        for (bool lit : squares) add("tickersquare", lit);
-        add("play", play);
+        add("pause", pause, hoverControl == UiButtonIds::TickerPauseButton);
+        for (std::size_t i = 0; i < squares.size(); ++i)
+            add("tickersquare", squares[i], static_cast<int>(i) < hoverSquares);
+        add("play", play, hoverControl == UiButtonIds::TickerPlayButton);
         Check(DrawTicker(f) == expected, "ticker drew incorrect state textures");
     }
 
@@ -389,20 +400,22 @@ namespace
         f.ui.Update(f.city, 0);
         const auto pause = f.Center(UiButtonIds::TickerPauseButton);
         f.Mouse(SDL_EVENT_MOUSE_MOTION, pause);
-        ExpectTicker(f, false, false, {false, false, false, false});
+        ExpectTicker(f, false, false, {false, false, false, false}, 0, UiButtonIds::TickerPauseButton);
         Check(f.Mouse(SDL_EVENT_MOUSE_BUTTON_DOWN, pause), "pause press not accepted");
-        ExpectTicker(f, false, false, {false, false, false, false});
+        ExpectTicker(f, false, false, {false, false, false, false}, 0, UiButtonIds::TickerPauseButton);
         f.Mouse(SDL_EVENT_MOUSE_BUTTON_UP, pause);
         Check(f.speedRequests == std::vector<int>{0}, "flashing pause stopped accepting clicks");
         f.ui.Update(f.city, 0);
-        ExpectTicker(f, false, false, {false, false, false, false});
+        ExpectTicker(f, false, false, {false, false, false, false}, 0, UiButtonIds::TickerPauseButton);
 
         const auto speed4 = f.Center(UiButtonIds::TickerSpeedButton4);
         f.Mouse(SDL_EVENT_MOUSE_BUTTON_DOWN, speed4);
-        ExpectTicker(f, false, false, {false, false, false, false});
+        ExpectTicker(f, false, false, {false, false, false, false}, 4);
         f.Mouse(SDL_EVENT_MOUSE_BUTTON_UP, speed4);
         Check(f.speedRequests == std::vector<int>{0, 4}, "speed square stopped accepting clicks");
         f.ui.Update(f.city, 4);
+        ExpectTicker(f, true, false, {true, true, true, true}, 4);
+        f.Mouse(SDL_EVENT_MOUSE_MOTION, {20, 20});
         ExpectTicker(f, true, false, {true, true, true, true});
 
         f.ui.SetMinimized(true);
@@ -423,6 +436,71 @@ namespace
         Check(zoom->GetState() == UiButtonState::Highlighted, "ordinary hover feedback changed");
         zoom->PointerDown(point[0], point[1]);
         Check(zoom->GetState() == UiButtonState::Pressed, "ordinary press feedback changed");
+    }
+
+    void TickerHover()
+    {
+        Fixture f;
+        clockMilliseconds = 20000;
+        f.ui.Update(f.city, 3);
+        f.Mouse(SDL_EVENT_MOUSE_MOTION, f.Center(UiButtonIds::TickerSpeedButton1));
+        ExpectTicker(f, true, false, {true, true, true, false}, 1);
+        f.Mouse(SDL_EVENT_MOUSE_MOTION, f.Center(UiButtonIds::TickerSpeedButton2));
+        ExpectTicker(f, true, false, {true, true, true, false}, 2);
+        f.Mouse(SDL_EVENT_MOUSE_MOTION, f.Center(UiButtonIds::TickerSpeedButton3));
+        ExpectTicker(f, true, false, {true, true, true, false}, 3);
+        f.Mouse(SDL_EVENT_MOUSE_MOTION, f.Center(UiButtonIds::TickerSpeedButton4));
+        ExpectTicker(f, true, false, {true, true, true, false}, 4);
+        // Moving left must remove the extra highlights immediately.
+        f.Mouse(SDL_EVENT_MOUSE_MOTION, f.Center(UiButtonIds::TickerSpeedButton2));
+        ExpectTicker(f, true, false, {true, true, true, false}, 2);
+        f.Mouse(SDL_EVENT_MOUSE_MOTION, {20, 20});
+        ExpectTicker(f, true, false, {true, true, true, false});
+
+        f.Mouse(SDL_EVENT_MOUSE_MOTION, f.Center(UiButtonIds::TickerPlayButton));
+        ExpectTicker(f, true, false, {true, true, true, false}, 0, UiButtonIds::TickerPlayButton);
+        f.Mouse(SDL_EVENT_MOUSE_MOTION, f.Center(UiButtonIds::TickerPauseButton));
+        ExpectTicker(f, true, false, {true, true, true, false}, 0, UiButtonIds::TickerPauseButton);
+        f.ui.Update(f.city, 0);
+        ExpectTicker(f, false, true, {false, false, false, false}, 0, UiButtonIds::TickerPauseButton);
+        clockMilliseconds = 20500;
+        f.ui.Update(f.city, 0);
+        ExpectTicker(f, false, false, {false, false, false, false}, 0, UiButtonIds::TickerPauseButton);
+        f.Mouse(SDL_EVENT_MOUSE_MOTION, {20, 20});
+        ExpectTicker(f, false, false, {false, false, false, false});
+        clockMilliseconds = 21000;
+        f.ui.Update(f.city, 0);
+        ExpectTicker(f, false, true, {false, false, false, false});
+        f.Mouse(SDL_EVENT_MOUSE_MOTION, f.Center(UiButtonIds::TickerPlayButton));
+        ExpectTicker(f, false, true, {false, false, false, false}, 0, UiButtonIds::TickerPlayButton);
+        f.Mouse(SDL_EVENT_MOUSE_MOTION, f.Center(UiButtonIds::TickerSpeedButton3));
+        ExpectTicker(f, false, true, {false, false, false, false}, 3);
+        Check(f.speedRequests.empty() && f.resumeRequests == 0, "hover invoked a game action");
+
+        SDL_Event event{};
+        event.type = SDL_EVENT_WINDOW_FOCUS_LOST;
+        f.window.flags &= ~SDL_WINDOW_INPUT_FOCUS;
+        f.ui.HandleEvent(event);
+        ExpectTicker(f, false, true, {false, false, false, false});
+        f.window.flags |= SDL_WINDOW_INPUT_FOCUS;
+        // Polling restores hover even if focus returns without a motion event.
+        ExpectTicker(f, false, true, {false, false, false, false}, 3);
+        f.camera.BeginMousePan(20, 20);
+        ExpectTicker(f, false, true, {false, false, false, false});
+        f.camera.EndMousePan();
+        ExpectTicker(f, false, true, {false, false, false, false}, 3);
+        f.ui.SetMinimized(true);
+        Check(DrawTicker(f).empty(), "hover left hidden ticker visible");
+        f.ui.SetMinimized(false);
+        ExpectTicker(f, false, true, {false, false, false, false}, 3);
+
+        // Recalculate the hovered prefix using the resized button bounds.
+        f.window.width = 1024;
+        f.window.height = 768;
+        event.type = SDL_EVENT_WINDOW_RESIZED;
+        f.ui.HandleEvent(event);
+        f.Mouse(SDL_EVENT_MOUSE_MOTION, f.Center(UiButtonIds::TickerSpeedButton2));
+        ExpectTicker(f, false, true, {false, false, false, false}, 2);
     }
 
     void InitializationFailure()
@@ -458,10 +536,11 @@ int main()
         Check(NoGpuObjects(), "input fixture leaked");
         RenderingAndLifetime();
         TickerState();
+        TickerHover();
         InitializationFailure();
         Check(imageNames.empty() && labelValues.empty(), "references survived owners");
         std::cout << "PASS: UI manager input, callbacks, resize, DPI, render order, "
-                     "minimized pan, ticker states/flashing, cleanup and initialization failure\n";
+                     "minimized pan, ticker states/flashing/hover, cleanup and initialization failure\n";
     }
     catch (const std::exception& error)
     {

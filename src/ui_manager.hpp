@@ -67,6 +67,7 @@ private:
     void RefreshLayout();
     void OnUiButtonClicked(UiButtonId id);
     void UpdateTicker(int simulationSpeed);
+    void UpdateTickerHover();
     bool HandleMinimapEvent(const SDL_Event& event);
     SDL_GPUGraphicsPipeline* MakePipeline();
     void EnsureGeometry();

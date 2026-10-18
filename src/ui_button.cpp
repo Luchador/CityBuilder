@@ -169,6 +169,7 @@ bool UiButton::PointerUp(float x, float y)
 void UiButton::CancelPress()
 {
     pressed = hovered = false;
+    highlighted = false;
 }
 
 UiButtonState UiButton::GetState() const
@@ -176,6 +177,11 @@ UiButtonState UiButton::GetState() const
     if (!enabled) 
     {
         return UiButtonState::Normal;
+    }
+
+    if (highlighted)
+    {
+        return UiButtonState::Highlighted;
     }
 
     if (selected || (interactionFeedback && pressed && hovered))

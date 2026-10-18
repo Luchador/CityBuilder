@@ -43,6 +43,9 @@ public:
     void SetEnabled(bool value);
     void SetVisible(bool value);
     void SetSelected(bool value) { selected = value; }
+    // A visual highlight can include other buttons in a group. It takes priority
+    // over selection without changing the button's actual pointer/click state.
+    void SetHighlighted(bool value) { highlighted = value; }
     // Turn off hover/held artwork for buttons whose selection displays game state.
     // Hit testing, capture, and click handling still work normally.
     void SetInteractionFeedbackEnabled(bool value) { interactionFeedback = value; }
@@ -72,4 +75,5 @@ private:
     bool enabled = true, visible = true, selected = false;
     bool hovered = false, pressed = false;
     bool interactionFeedback = true;
+    bool highlighted = false;
 };

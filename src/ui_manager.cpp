@@ -6,6 +6,14 @@
 #include <stdexcept>
 #include <string>
 
+namespace
+{
+    constexpr std::array<UiButtonId, 4> TickerSpeedButtons{
+        UiButtonIds::TickerSpeedButton1, UiButtonIds::TickerSpeedButton2,
+        UiButtonIds::TickerSpeedButton3, UiButtonIds::TickerSpeedButton4
+    };
+}
+
 void UiManager::RefreshLayout()
 {
     if (!initialized) 
@@ -307,12 +315,7 @@ bool UiManager::HandleEvent(const SDL_Event& event)
 
 void UiManager::UpdateTicker(int simulationSpeed)
 {
-    constexpr std::array<UiButtonId, 4> speedButtons{
-        UiButtonIds::TickerSpeedButton1, UiButtonIds::TickerSpeedButton2,
-        UiButtonIds::TickerSpeedButton3, UiButtonIds::TickerSpeedButton4
-    };
-
-    const int speed = std::clamp(simulationSpeed, 0, static_cast<int>(speedButtons.size()));
+    const int speed = std::clamp(simulationSpeed, 0, static_cast<int>(TickerSpeedButtons.size()));
     const bool paused = speed == 0;
     const Uint64 now = SDL_GetTicks();
 
@@ -334,9 +337,40 @@ void UiManager::UpdateTicker(int simulationSpeed)
 
     select(UiButtonIds::TickerPlayButton, !paused);
     select(UiButtonIds::TickerPauseButton, pauseLit);
-    for (std::size_t i = 0; i < speedButtons.size(); ++i)
+    for (std::size_t i = 0; i < TickerSpeedButtons.size(); ++i)
     {
-        select(speedButtons[i], static_cast<int>(i) < speed);
+        select(TickerSpeedButtons[i], static_cast<int>(i) < speed);
+    }
+}
+
+void UiManager::UpdateTickerHover()
+{
+    std::size_t highlightedSquares = 0;
+    for (std::size_t i = 0; i < TickerSpeedButtons.size(); ++i)
+    {
+        const auto* button = buttons.Find(TickerSpeedButtons[i]);
+        if (!settings.minimized && button && button->IsHovered())
+        {
+            highlightedSquares = i + 1;
+        }
+    }
+
+    // Hover overlays the current speed display without changing its selection.
+    // Recompute the whole prefix so moving left or leaving clears old highlights.
+    for (std::size_t i = 0; i < TickerSpeedButtons.size(); ++i)
+    {
+        if (auto* button = buttons.Find(TickerSpeedButtons[i]))
+        {
+            button->SetHighlighted(i < highlightedSquares);
+        }
+    }
+
+    for (UiButtonId id : {UiButtonIds::TickerPlayButton, UiButtonIds::TickerPauseButton})
+    {
+        if (auto* button = buttons.Find(id))
+        {
+            button->SetHighlighted(!settings.minimized && button->IsHovered());
+        }
     }
 }
 
