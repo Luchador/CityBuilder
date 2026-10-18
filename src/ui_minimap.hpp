@@ -2,6 +2,11 @@
 
 #include "ui.hpp"
 
+class Texture;
+class UiImageRenderer;
+struct SDL_GPUCommandBuffer;
+struct SDL_GPURenderPass;
+
 struct MinimapScreenPoint
 {
     float x, y;
@@ -40,6 +45,11 @@ public:
 
     // Append two opaque triangles to the existing UI mesh.
     void AppendGeometry(std::vector<UiVertex>& vertices) const;
+
+    // Draw a map-coordinate texture into exactly the same diamond as picking.
+    // Call after the panel background and before the red view outline/buttons.
+    void DrawMap(UiImageRenderer& renderer, SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
+                 const Texture& image, float windowWidth, float windowHeight) const;
 
     // Camera footprint on the y=0 reference plane, in logical window units.
     // Bounds intentionally extend beyond the diamond when the view does.

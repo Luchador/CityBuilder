@@ -128,12 +128,31 @@ std::unique_ptr<Texture> TextureManager::LoadTexture(const std::string& path)
 
     std::unique_ptr<SDL_Surface, decltype(&SDL_UnlockSurface)> unlock(rgba.get(), SDL_UnlockSurface);
 
+    return UploadTexture(static_cast<Uint32>(rgba->w), static_cast<Uint32>(rgba->h),
+                         static_cast<const Uint8*>(rgba->pixels), static_cast<std::size_t>(rgba->pitch), path);
+}
+
+std::unique_ptr<Texture> TextureManager::CreateRgba(Uint32 width, Uint32 height, std::span<const Uint8> pixels)
+{
+    if (!device)
+    {
+        throw std::logic_error("Initialize TextureManager before creating images");
+    }
+    if (width == 0 || height == 0 || width > 4096 || height > 4096 ||
+        pixels.size() != static_cast<std::size_t>(width) * height * 4)
+    {
+        throw std::invalid_argument("RGBA image requires dimensions in 1..4096 and exactly width * height * 4 bytes");
+    }
+    return UploadTexture(width, height, pixels.data(), static_cast<std::size_t>(width) * 4, "generated RGBA image");
+}
+
+std::unique_ptr<Texture> TextureManager::UploadTexture(Uint32 width, Uint32 height, const Uint8* pixels,
+                                                       std::size_t sourcePitch, const std::string& path)
+{
     auto texture = std::unique_ptr<Texture>(new Texture(device));
 
-    texture->width = static_cast<Uint32>(rgba->w);
-    texture->height = static_cast<Uint32>(rgba->h);
-
-    const Uint32 width = texture->width, height = texture->height;
+    texture->width = width;
+    texture->height = height;
 
     // D3D12 prefers 256-byte rows and 512-byte offsets (our offset is zero).
     const Uint32 pitch = (width * 4 + 255u) & ~255u;
@@ -181,12 +200,12 @@ std::unique_ptr<Texture> TextureManager::LoadTexture(const std::string& path)
     
         for (Uint32 y = 0; y < height; ++y)
         {
-            const auto* source = static_cast<const Uint8*>(rgba->pixels) + static_cast<std::size_t>(y) * rgba->pitch;
+            const auto* source = pixels + static_cast<std::size_t>(y) * sourcePitch;
             Uint8* destination = mapped + y * pitch;
     
             for (Uint32 x = 0; x < width; ++x)
             {
-                // PNG stores straight alpha; premultiply before GPU filtering.
+                // Input uses straight alpha; premultiply before GPU filtering.
                 const Uint32 alpha = source[x * 4 + 3];
     
                 for (Uint32 channel = 0; channel < 3; ++channel)
@@ -253,7 +272,7 @@ std::unique_ptr<Texture> TextureManager::LoadTexture(const std::string& path)
             SDL_ReleaseGPUTransferBuffer(device, transfer);
         }
 
-        throw; // Texture and both CPU surfaces are released automatically.
+        throw; // The texture is released automatically.
     }
 }
 

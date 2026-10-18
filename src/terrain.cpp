@@ -330,54 +330,93 @@ TerrainMesh BuildTerrain(const TerrainHeightmap& terrain, const TerrainPalette& 
     terrain.Validate();
     ValidatePalette(palette);
 
-    TerrainMesh mesh;
-    mesh.vertices.reserve(TerrainVertexCount);
-    mesh.indices.reserve(MapSize * MapSize * 6);
-
-    for (std::uint32_t z = 0; z <= MapSize; ++z)
+    // One slope per logical tile. Averaging its two triangle slopes gives the
+    // large center quad a consistent lighting normal, including saddle tiles.
+    struct Slope { float x, z; };
+    std::vector<Slope> slopes(MapSize * MapSize);
+    for (std::uint32_t z = 0; z < MapSize; ++z)
     {
-        for (std::uint32_t x = 0; x <= MapSize; ++x)
+        for (std::uint32_t x = 0; x < MapSize; ++x)
         {
-            const auto left = x == 0 ? x : x - 1;
-            const auto right = std::min(x + 1, MapSize);
-            const auto back = z == 0 ? z : z - 1;
-            const auto front = std::min(z + 1, MapSize);
-    
-            // Central differences inside, one-sided differences at map boundaries.
-            const float dx = (terrain.Height(right, z) - terrain.Height(left, z)) / static_cast<float>(right - left);
-            const float dz = (terrain.Height(x, front) - terrain.Height(x, back)) / static_cast<float>(front - back);
+            const float a = terrain.Height(x, z), b = terrain.Height(x + 1, z);
+            const float c = terrain.Height(x, z + 1), d = terrain.Height(x + 1, z + 1);
+            slopes[z * MapSize + x] = {0.5f * ((b - a) + (d - c)),
+                                      0.5f * ((c - a) + (d - b))};
+        }
+    }
+
+    TerrainMesh mesh;
+    mesh.vertices.reserve(TerrainMeshVertexCount);
+    mesh.indices.reserve(TerrainMeshSize * TerrainMeshSize * 6);
+
+    for (std::uint32_t z = 0; z <= TerrainMeshSize; ++z)
+    {
+        for (std::uint32_t x = 0; x <= TerrainMeshSize; ++x)
+        {
+            const auto tileX = std::min(x / TerrainSubdivisions, MapSize - 1);
+            const auto tileZ = std::min(z / TerrainSubdivisions, MapSize - 1);
+            const float fx = TerrainMeshCoordinate(x), fz = TerrainMeshCoordinate(z);
+            const float u = fx - static_cast<float>(tileX);
+            const float v = fz - static_cast<float>(tileZ);
+            const float a = terrain.Height(tileX, tileZ), b = terrain.Height(tileX + 1, tileZ);
+            const float c = terrain.Height(tileX, tileZ + 1), d = terrain.Height(tileX + 1, tileZ + 1);
+
+            // Stay on the ORIGINAL two triangles, not a bilinear height patch.
+            // Mirrored inset coordinates make the little diagonals line up with
+            // the original b-c diagonal. Water depths and skirt edges still fit.
+            const float height = u + v <= 1.0f
+                ? (1.0f - u - v) * a + u * b + v * c
+                : (u + v - 1.0f) * d + (1.0f - v) * b + (1.0f - u) * c;
+
+            // Interior inset vertices use only their own tile's slope. Shared
+            // edges average two tiles; shared corners average up to four. Thus
+            // lighting changes across the narrow strips instead of the center.
+            const auto firstX = x > 0 && x % TerrainSubdivisions == 0 ? x / TerrainSubdivisions - 1 : tileX;
+            const auto firstZ = z > 0 && z % TerrainSubdivisions == 0 ? z / TerrainSubdivisions - 1 : tileZ;
+            float dx = 0, dz = 0;
+            for (auto tz = firstZ; tz <= tileZ; ++tz)
+            {
+                for (auto tx = firstX; tx <= tileX; ++tx)
+                {
+                    const auto& slope = slopes[tz * MapSize + tx];
+                    dx += slope.x;
+                    dz += slope.z;
+                }
+            }
+            const float count = static_cast<float>((tileX - firstX + 1) * (tileZ - firstZ + 1));
+            dx /= count;
+            dz /= count;
             const float inverseLength = 1.0f / std::sqrt(dx * dx + 1.0f + dz * dz);
-            const float height = terrain.Height(x, z);
             const TerrainColor color = SamplePalette(height, palette);
-            mesh.vertices.push_back({static_cast<float>(x), height, static_cast<float>(z),
+            mesh.vertices.push_back({fx, height, fz,
                                      -dx * inverseLength, inverseLength, -dz * inverseLength,
                                      color.r, color.g, color.b});
         }
     }
 
-    for (std::uint32_t z = 0; z < MapSize; ++z)
+    for (std::uint32_t z = 0; z < TerrainMeshSize; ++z)
     {
-        for (std::uint32_t x = 0; x < MapSize; ++x)
+        for (std::uint32_t x = 0; x < TerrainMeshSize; ++x)
         {
-            const auto a = z * TerrainStride + x;
+            const auto a = z * TerrainMeshStride + x;
             const auto b = a + 1;
-            const auto c = a + TerrainStride;
+            const auto c = a + TerrainMeshStride;
             const auto d = c + 1;
-            // Two triangles per tile, both with an upward-facing winding.
+            // Nine quads / eighteen triangles per logical tile, facing upward.
             mesh.indices.insert(mesh.indices.end(), {a, c, b, b, c, d});
         }
     }
 
-    // One segment per tile edge, shared between neighboring tiles. The old long
-    // map-spanning lines cannot follow hills. Reuse the exact terrain endpoints.
+    // G still shows the logical tile boundaries. Each boundary remains straight,
+    // so one line is enough; the inset subdivisions are only rendering detail.
     mesh.lines.reserve(4 * MapSize * TerrainStride);
     for (std::uint32_t z = 0; z <= MapSize; ++z)
     {
         for (std::uint32_t x = 0; x < MapSize; ++x)
         {
-            const auto a = z * TerrainStride + x;
+            const auto a = (z * TerrainMeshStride + x) * TerrainSubdivisions;
             mesh.lines.push_back(mesh.vertices[a]);
-            mesh.lines.push_back(mesh.vertices[a + 1]);
+            mesh.lines.push_back(mesh.vertices[a + TerrainSubdivisions]);
         }
     }
 
@@ -385,9 +424,9 @@ TerrainMesh BuildTerrain(const TerrainHeightmap& terrain, const TerrainPalette& 
     {
         for (std::uint32_t z = 0; z < MapSize; ++z)
         {
-            const auto a = z * TerrainStride + x;
+            const auto a = (z * TerrainMeshStride + x) * TerrainSubdivisions;
             mesh.lines.push_back(mesh.vertices[a]);
-            mesh.lines.push_back(mesh.vertices[a + TerrainStride]);
+            mesh.lines.push_back(mesh.vertices[a + TerrainSubdivisions * TerrainMeshStride]);
         }
     }
 

@@ -1,0 +1,1041 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index 03c163e..ba21d7f 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -50,6 +50,22 @@ add_custom_target(copy_assets
+     VERBATIM)
+ add_dependencies(CityBuilder copy_assets)
+ 
++option(CITY_BUILD_MINIMAP_TESTS "Build minimap map and texture tests" OFF)
++if(CITY_BUILD_MINIMAP_TESTS)
++    enable_testing()
++    add_executable(CityMinimapMapTests tests/minimap_map_tests.cpp src/minimap_map.cpp src/terrain.cpp)
++    target_compile_features(CityMinimapMapTests PRIVATE cxx_std_20)
++    target_include_directories(CityMinimapMapTests PRIVATE src)
++    add_test(NAME CityMinimapMapTests COMMAND CityMinimapMapTests)
++
++    add_executable(CityMinimapTextureTests tests/minimap_texture_tests.cpp src/texture.cpp
++        src/ui_minimap.cpp src/ui_minimap_draw.cpp src/ui.cpp src/camera.cpp)
++    target_compile_features(CityMinimapTextureTests PRIVATE cxx_std_20)
++    target_include_directories(CityMinimapTextureTests PRIVATE src)
++    target_link_libraries(CityMinimapTextureTests PRIVATE SDL3::Headers)
++    add_test(NAME CityMinimapTextureTests COMMAND CityMinimapTextureTests)
++endif()
++
+ option(CITY_BUILD_TESTS "Build terrain, camera panning, and texture manager tests" OFF)
+ option(CITY_BUILD_SKIRT_TESTS "Build the standalone terrain skirt tests" OFF)
+ if(CITY_BUILD_TESTS OR CITY_BUILD_SKIRT_TESTS)
+diff --git a/docs/minimap-terrain.md b/docs/minimap-terrain.md
+new file mode 100644
+index 0000000..cfb405c
+--- /dev/null
++++ b/docs/minimap-terrain.md
+@@ -0,0 +1,89 @@
++# Terrain and water on the minimap
++
++The minimap now displays the generated world using its terrain vertex colors
++and the same below-sea-level test as the water renderer. Its orientation stays
++fixed while the camera rotates. Existing click-to-center behavior, panel layout,
++buttons, and clipped red camera footprint continue to use the same coordinates.
++
++## Implementation
++
++- `minimap_map.hpp/.cpp` creates a 512 x 512 opaque RGBA image from the mesh
++  returned by `BuildTerrain`. Columns represent world X; rows represent world Z.
++  It samples the actual vertex colors, so changing `TerrainPalette` or the
++  colors supplied to `BuildTerrain` is reflected on the minimap.
++- Each world tile uses the same two triangles as terrain and water, including
++  their shared diagonal. Interpolated height below `TerrainSeaLevel` produces
++  `WaterColor`; exactly sea level is dry. Four subpixel samples per image pixel
++  soften the shoreline. A partially submerged tile is not painted entirely blue.
++- Colors show elevation without directional lighting, terrain grid lines, or
++  the rock skirt. This is a topographic map of X/Z positions, so hills do not
++  displace map landmarks upward or hide terrain behind them.
++- `TextureManager::CreateRgba()` uploads generated images using the same
++  premultiplied-alpha upload path as PNGs. Generated textures are uncached and
++  returned as owning `std::unique_ptr<Texture>` objects. Destroy them before
++  the GPU device; `Application` does this explicitly for the minimap texture.
++- `UiMinimap::DrawMap()` draws the image with the existing UI image renderer.
++  Its two triangles exactly cover the diamond used by `MapToScreen` and
++  `TryScreenToMap`, including when the panel changes size.
++- `Application::RebuildMinimap()` builds and uploads the image after world
++  generation. Camera movement, zoom, rotation, and resizing reuse the texture.
++  The image takes 1 MiB of GPU pixel storage and adds one six-vertex draw.
++- Rendering restores the solid-color UI pipeline and screen uniforms before
++  drawing the existing red camera outline above the map.
++
++The map is a finite-resolution image, not an exact vector shoreline: very small
++features below its sampling resolution can be softened or missed. The existing
++red footprint still represents the camera's view on the sea-level reference
++plane, rather than following the uneven terrain surface.
++
++## Future zones
++
++`BuildMinimapImage` and `RebuildMinimap` accept an optional array of
++`MinimapTileOverlay`. Supply one entry for each of the 256 x 256 tiles, indexed
++by `z * MapSize + x`. Opacity zero leaves the terrain visible; opacity one uses
++the overlay color on dry land. Underwater samples retain `WaterColor`.
++
++For example, a future zone system can prepare:
++
++```cpp
++std::vector<MinimapTileOverlay> overlays(MapSize * MapSize);
++overlays[z * MapSize + x] = {{0.2f, 0.8f, 0.2f}, 0.85f};
++RebuildMinimap(mesh, overlays);
++```
++
++No zones are created or displayed by this change. Once world editing is added,
++rebuild after terrain/palette/zone changes, or mark the minimap dirty and rebuild
++once after a batch of edits. Keep the mesh argument consistent with the rendered
++world. There is no reason to rebuild it every frame.
++
++## Verification
++
++Strict C++20 syntax checks passed against the project's SDL3 headers, with a
++declaration-only Windows shader compiler stub. Automated tests passed with
++AddressSanitizer and UndefinedBehaviorSanitizer (leak detection disabled):
++
++- All-water, dry sea-level, flat terrain, maximum elevation, and custom palettes.
++- Vertex-color interpolation, X/Z orientation, and image borders.
++- Analytical saddle and partially submerged tile cases that catch an incorrect
++  bilinear height test or whole-tile water fill.
++- Overlay indexing, transparency, water visibility, input validation, and
++  repeatable output for identical terrain.
++- Generated/PNG upload parity, alpha premultiplication, padded row layout,
++  ownership, failed upload cleanup, and preserving a texture after a failed rebuild.
++- Image/picking alignment at nine panel/window sizes and clipped camera
++  outlines in all four rotations.
++
++The patch was also applied to a copy containing the sound walkthrough changes
++and syntax-checked there. A software preview used the actual generated pixels
++and UI geometry at two panel sizes. A native Windows build and interactive
++Direct3D 12 rendering still need to be checked on Windows.
++
++To run the included focused tests from the developer command prompt:
++
++```bat
++cmake -S . -B build -DCITY_BUILD_MINIMAP_TESTS=ON
++cmake --build build --target CityMinimapMapTests CityMinimapTextureTests
++ctest --test-dir build -R "^CityMinimap(Map|Texture)Tests$" --output-on-failure
++```
++
++This option is independent of the project's broader `CITY_BUILD_TESTS` switch.
+diff --git a/src/main.cpp b/src/main.cpp
+index 2121b69..8bf98d4 100644
+--- a/src/main.cpp
++++ b/src/main.cpp
+@@ -23,6 +23,7 @@
+ #include "text.hpp"
+ #include "text_shaders.hpp"
+ #include "ui_minimap.hpp"
++#include "minimap_map.hpp"
+ #include "ui_text.hpp"
+ #include "ui_buttons.hpp"
+ #include "ui_image.hpp"
+@@ -184,6 +185,7 @@ public:
+             panOverlay.Release();
+             uiButtons.Clear();
+             imageRenderer.Release();
++            minimapTexture.reset();
+             textures.Release();
+             if (imageVertexShader) SDL_ReleaseGPUShader(device, imageVertexShader);
+             if (imageFragmentShader) SDL_ReleaseGPUShader(device, imageFragmentShader);
+@@ -276,6 +278,8 @@ public:
+         terrain = GenerateTerrain(terrainSettings);
+         const TerrainMesh mesh = BuildTerrain(terrain);
+ 
++        RebuildMinimap(mesh);
++
+         vertices = UploadBuffer(device, mesh.vertices.data(), static_cast<Uint32>(mesh.vertices.size() * sizeof(Vertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
+         indices = UploadBuffer(device, mesh.indices.data(), static_cast<Uint32>(mesh.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
+         gridVertices = UploadBuffer(device, mesh.lines.data(), static_cast<Uint32>(mesh.lines.size() * sizeof(Vertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
+@@ -886,6 +890,14 @@ private:
+         minimapOutlineDirty = true;
+     }
+ 
++    void RebuildMinimap(const TerrainMesh& mesh, std::span<const MinimapTileOverlay> overlays = {})
++    {
++        // Rebuild only after world data changes, not when the camera moves
++        // or the panel resizes. Future tile zone colors can be supplied here.
++        const auto image = BuildMinimapImage(mesh, overlays);
++        minimapTexture = textures.CreateRgba(image.width, image.height, image.rgba);
++    }
++
+     void UpdateMinimapOutline(SDL_GPUCommandBuffer* commands, const MinimapView& view)
+     {
+         if (!minimapOutlineDirty && view == minimapOutlineView) 
+@@ -1350,8 +1362,17 @@ private:
+         SDL_PushGPUVertexUniformData(commands, 0, screen, sizeof(screen));
+         SDL_DrawGPUPrimitives(pass, uiVertexCount, 1, 0, 0);
+ 
++        if (minimapTexture)
++        {
++            minimap.DrawMap(imageRenderer, commands, pass, *minimapTexture, uiLayout.width, uiLayout.height);
++        }
++
+         if (minimapOutlineVertexCount > 0)
+         {
++            // DrawMap binds the image pipeline and its larger uniform block.
++            // Restore the solid-color pipeline before drawing the red outline.
++            SDL_BindGPUGraphicsPipeline(pass, uiPipeline);
++            SDL_PushGPUVertexUniformData(commands, 0, screen, sizeof(screen));
+             const SDL_GPUBufferBinding outlineBinding{minimapOutlineVertices, 0};
+             SDL_BindGPUVertexBuffers(pass, 0, &outlineBinding, 1);
+             SDL_DrawGPUPrimitives(pass, minimapOutlineVertexCount, 1, 0, 0);
+@@ -1409,6 +1430,7 @@ private:
+     UiSettings uiSettings;
+     UiLayout uiLayout;
+     UiMinimap minimap;
++    std::unique_ptr<Texture> minimapTexture;
+     SDL_GPUShader* uiVertexShader = nullptr;
+     SDL_GPUGraphicsPipeline* uiPipeline = nullptr;
+     SDL_GPUBuffer* uiVertices = nullptr;
+diff --git a/src/minimap_map.cpp b/src/minimap_map.cpp
+new file mode 100644
+index 0000000..3d25e8e
+--- /dev/null
++++ b/src/minimap_map.cpp
+@@ -0,0 +1,125 @@
++#include "minimap_map.hpp"
++#include "water.hpp"
++
++#include <algorithm>
++#include <cmath>
++#include <stdexcept>
++
++namespace
++{
++    constexpr std::uint32_t PixelsPerTile = 2;
++    constexpr std::uint32_t SamplesPerAxis = 2;
++
++    bool ValidColor(TerrainColor color)
++    {
++        return std::isfinite(color.r) && std::isfinite(color.g) && std::isfinite(color.b) &&
++               color.r >= 0 && color.r <= 1 && color.g >= 0 && color.g <= 1 && color.b >= 0 && color.b <= 1;
++    }
++
++    TerrainColor SampleTile(const TerrainMesh& terrain, std::uint32_t x, std::uint32_t z,
++                            float u, float v, const MinimapTileOverlay& overlay)
++    {
++        const auto a = z * TerrainStride + x;
++        const auto b = a + 1;
++        const auto c = a + TerrainStride;
++        const auto d = c + 1;
++
++        // Match BuildTerrain and BuildWater: {a,c,b}, {b,c,d}, not bilinear
++        // interpolation. Bilinear heights can move shorelines on saddle tiles.
++        const bool upper = u + v <= 1.0f;
++        const Vertex& p = terrain.vertices[upper ? a : d];
++        const Vertex& q = terrain.vertices[b];
++        const Vertex& r = terrain.vertices[c];
++        const float wp = upper ? 1.0f - u - v : u + v - 1.0f;
++        const float wq = upper ? u : 1.0f - v;
++        const float wr = upper ? v : 1.0f - u;
++        const float height = wp * p.y + wq * q.y + wr * r.y;
++
++        // Exactly sea level is dry, matching the water shader's discard test.
++        if (IsWaterElevation(height))
++        {
++            return WaterColor;
++        }
++
++        const TerrainColor ground{wp * p.r + wq * q.r + wr * r.r,
++                                  wp * p.g + wq * q.g + wr * r.g,
++                                  wp * p.b + wq * q.b + wr * r.b};
++        return {std::lerp(ground.r, overlay.color.r, overlay.opacity),
++                std::lerp(ground.g, overlay.color.g, overlay.opacity),
++                std::lerp(ground.b, overlay.color.b, overlay.opacity)};
++    }
++
++    std::uint8_t ToByte(float value)
++    {
++        return static_cast<std::uint8_t>(std::lround(std::clamp(value, 0.0f, 1.0f) * 255.0f));
++    }
++}
++
++MinimapImage BuildMinimapImage(const TerrainMesh& terrain, std::span<const MinimapTileOverlay> overlays)
++{
++    if (terrain.vertices.size() != TerrainVertexCount)
++    {
++        throw std::invalid_argument("Minimap requires the regular grid returned by BuildTerrain");
++    }
++    for (std::uint32_t z = 0; z <= MapSize; ++z)
++    {
++        for (std::uint32_t x = 0; x <= MapSize; ++x)
++        {
++            const auto& vertex = terrain.vertices[z * TerrainStride + x];
++            if (vertex.x != static_cast<float>(x) || vertex.z != static_cast<float>(z) ||
++                !std::isfinite(vertex.y) || !ValidColor({vertex.r, vertex.g, vertex.b}))
++            {
++                throw std::invalid_argument("Minimap requires valid terrain positions and colors");
++            }
++        }
++    }
++    if (!overlays.empty() && overlays.size() != MapSize * MapSize)
++    {
++        throw std::invalid_argument("Minimap overlay must contain one entry per tile");
++    }
++    for (const auto& overlay : overlays)
++    {
++        if (!ValidColor(overlay.color) || !std::isfinite(overlay.opacity) || overlay.opacity < 0 || overlay.opacity > 1)
++        {
++            throw std::invalid_argument("Minimap overlay colors and opacity must be in 0..1");
++        }
++    }
++
++    MinimapImage image;
++    image.width = image.height = MapSize * PixelsPerTile;
++    image.rgba.resize(static_cast<std::size_t>(image.width) * image.height * 4);
++    constexpr float sampleWeight = 1.0f / (SamplesPerAxis * SamplesPerAxis);
++
++    for (std::uint32_t py = 0; py < image.height; ++py)
++    {
++        for (std::uint32_t px = 0; px < image.width; ++px)
++        {
++            const auto x = px / PixelsPerTile;
++            const auto z = py / PixelsPerTile;
++            const MinimapTileOverlay overlay = overlays.empty() ? MinimapTileOverlay{} : overlays[z * MapSize + x];
++            TerrainColor color{0, 0, 0};
++
++            // Four subpixel samples soften the shoreline without flooding an
++            // entire tile just because one of its corners is underwater.
++            for (std::uint32_t sy = 0; sy < SamplesPerAxis; ++sy)
++            {
++                for (std::uint32_t sx = 0; sx < SamplesPerAxis; ++sx)
++                {
++                    const float u = (static_cast<float>(px % PixelsPerTile) + (sx + 0.5f) / SamplesPerAxis) / PixelsPerTile;
++                    const float v = (static_cast<float>(py % PixelsPerTile) + (sy + 0.5f) / SamplesPerAxis) / PixelsPerTile;
++                    const auto sample = SampleTile(terrain, x, z, u, v, overlay);
++                    color.r += sample.r * sampleWeight;
++                    color.g += sample.g * sampleWeight;
++                    color.b += sample.b * sampleWeight;
++                }
++            }
++
++            const auto offset = (static_cast<std::size_t>(py) * image.width + px) * 4;
++            image.rgba[offset] = ToByte(color.r);
++            image.rgba[offset + 1] = ToByte(color.g);
++            image.rgba[offset + 2] = ToByte(color.b);
++            image.rgba[offset + 3] = 255;
++        }
++    }
++    return image;
++}
+diff --git a/src/minimap_map.hpp b/src/minimap_map.hpp
+new file mode 100644
+index 0000000..778ff4f
+--- /dev/null
++++ b/src/minimap_map.hpp
+@@ -0,0 +1,28 @@
++#pragma once
++
++#include "terrain.hpp"
++
++#include <span>
++
++// CPU image in map coordinates: columns are +X, rows are +Z. Keeping this
++// independent of the panel layout makes it reusable at any minimap size.
++struct MinimapImage
++{
++    std::uint32_t width = 0, height = 0;
++    std::vector<std::uint8_t> rgba;
++};
++
++// Optional tile colors for future zones/roads. Opacity 0 keeps the terrain.
++// A supplied array has MapSize * MapSize entries, indexed by z * MapSize + x.
++// Water remains visible above this land overlay.
++struct MinimapTileOverlay
++{
++    TerrainColor color{0, 0, 0};
++    float opacity = 0.0f;
++};
++
++// Use the mesh returned by BuildTerrain, including its actual palette colors.
++// Sample the same two triangles and sea-level shoreline as terrain/water.
++// Colors show elevation without directional lighting, grid lines, or skirts.
++MinimapImage BuildMinimapImage(const TerrainMesh& terrain,
++                              std::span<const MinimapTileOverlay> overlays = {});
+diff --git a/src/texture.cpp b/src/texture.cpp
+index b37509f..0f87374 100644
+--- a/src/texture.cpp
++++ b/src/texture.cpp
+@@ -128,12 +128,31 @@ std::unique_ptr<Texture> TextureManager::LoadTexture(const std::string& path)
+ 
+     std::unique_ptr<SDL_Surface, decltype(&SDL_UnlockSurface)> unlock(rgba.get(), SDL_UnlockSurface);
+ 
+-    auto texture = std::unique_ptr<Texture>(new Texture(device));
++    return UploadTexture(static_cast<Uint32>(rgba->w), static_cast<Uint32>(rgba->h),
++                         static_cast<const Uint8*>(rgba->pixels), static_cast<std::size_t>(rgba->pitch), path);
++}
+ 
+-    texture->width = static_cast<Uint32>(rgba->w);
+-    texture->height = static_cast<Uint32>(rgba->h);
++std::unique_ptr<Texture> TextureManager::CreateRgba(Uint32 width, Uint32 height, std::span<const Uint8> pixels)
++{
++    if (!device)
++    {
++        throw std::logic_error("Initialize TextureManager before creating images");
++    }
++    if (width == 0 || height == 0 || width > 4096 || height > 4096 ||
++        pixels.size() != static_cast<std::size_t>(width) * height * 4)
++    {
++        throw std::invalid_argument("RGBA image requires dimensions in 1..4096 and exactly width * height * 4 bytes");
++    }
++    return UploadTexture(width, height, pixels.data(), static_cast<std::size_t>(width) * 4, "generated RGBA image");
++}
++
++std::unique_ptr<Texture> TextureManager::UploadTexture(Uint32 width, Uint32 height, const Uint8* pixels,
++                                                       std::size_t sourcePitch, const std::string& path)
++{
++    auto texture = std::unique_ptr<Texture>(new Texture(device));
+ 
+-    const Uint32 width = texture->width, height = texture->height;
++    texture->width = width;
++    texture->height = height;
+ 
+     // D3D12 prefers 256-byte rows and 512-byte offsets (our offset is zero).
+     const Uint32 pitch = (width * 4 + 255u) & ~255u;
+@@ -181,12 +200,12 @@ std::unique_ptr<Texture> TextureManager::LoadTexture(const std::string& path)
+     
+         for (Uint32 y = 0; y < height; ++y)
+         {
+-            const auto* source = static_cast<const Uint8*>(rgba->pixels) + static_cast<std::size_t>(y) * rgba->pitch;
++            const auto* source = pixels + static_cast<std::size_t>(y) * sourcePitch;
+             Uint8* destination = mapped + y * pitch;
+     
+             for (Uint32 x = 0; x < width; ++x)
+             {
+-                // PNG stores straight alpha; premultiply before GPU filtering.
++                // Input uses straight alpha; premultiply before GPU filtering.
+                 const Uint32 alpha = source[x * 4 + 3];
+     
+                 for (Uint32 channel = 0; channel < 3; ++channel)
+@@ -253,7 +272,7 @@ std::unique_ptr<Texture> TextureManager::LoadTexture(const std::string& path)
+             SDL_ReleaseGPUTransferBuffer(device, transfer);
+         }
+ 
+-        throw; // Texture and both CPU surfaces are released automatically.
++        throw; // The texture is released automatically.
+     }
+ }
+ 
+diff --git a/src/texture.hpp b/src/texture.hpp
+index 81fd599..656afdf 100644
+--- a/src/texture.hpp
++++ b/src/texture.hpp
+@@ -4,11 +4,13 @@
+ 
+ #include <cstddef>
+ #include <memory>
++#include <span>
+ #include <string>
+ #include <string_view>
+ #include <unordered_map>
+ 
+-// An image uploaded to the GPU. TextureManager owns it; renderers borrow it.
++// An image uploaded to the GPU. PNGs are owned by TextureManager; generated
++// images are owned by the caller of CreateRgba. Renderers borrow either kind.
+ // Pixels are RGBA8 with premultiplied alpha, matching the pan overlay pipeline.
+ class Texture
+ {
+@@ -61,6 +63,10 @@ public:
+     // Equivalent separators and dot segments share a cache entry. Match the
+     // filename's case. Returned references survive later loads, until Release().
+     const Texture& Load(std::string_view assetPath);
++
++    // Create an uncached image from tightly packed RGBA8 (straight alpha).
++    // Caller owns the result and must destroy it before the GPU device.
++    std::unique_ptr<Texture> CreateRgba(Uint32 width, Uint32 height, std::span<const Uint8> pixels);
+     std::size_t Size() const noexcept 
+     { 
+         return textures.size(); 
+@@ -71,6 +77,8 @@ public:
+ 
+ private:
+     std::unique_ptr<Texture> LoadTexture(const std::string& path);
++    std::unique_ptr<Texture> UploadTexture(Uint32 width, Uint32 height, const Uint8* pixels,
++                                           std::size_t sourcePitch, const std::string& label);
+ 
+     SDL_GPUDevice* device = nullptr;
+     std::string assetRoot;
+diff --git a/src/ui_minimap.hpp b/src/ui_minimap.hpp
+index afdcc4d..bf25ccb 100644
+--- a/src/ui_minimap.hpp
++++ b/src/ui_minimap.hpp
+@@ -2,6 +2,11 @@
+ 
+ #include "ui.hpp"
+ 
++class Texture;
++class UiImageRenderer;
++struct SDL_GPUCommandBuffer;
++struct SDL_GPURenderPass;
++
+ struct MinimapScreenPoint
+ {
+     float x, y;
+@@ -41,6 +46,11 @@ public:
+     // Append two opaque triangles to the existing UI mesh.
+     void AppendGeometry(std::vector<UiVertex>& vertices) const;
+ 
++    // Draw a map-coordinate texture into exactly the same diamond as picking.
++    // Call after the panel background and before the red view outline/buttons.
++    void DrawMap(UiImageRenderer& renderer, SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
++                 const Texture& image, float windowWidth, float windowHeight) const;
++
+     // Camera footprint on the y=0 reference plane, in logical window units.
+     // Bounds intentionally extend beyond the diamond when the view does.
+     UiRect GetViewBounds(const MinimapView& view) const;
+diff --git a/src/ui_minimap_draw.cpp b/src/ui_minimap_draw.cpp
+new file mode 100644
+index 0000000..fd62dd5
+--- /dev/null
++++ b/src/ui_minimap_draw.cpp
+@@ -0,0 +1,20 @@
++#include "ui_minimap.hpp"
++#include "ui_image.hpp"
++
++void UiMinimap::DrawMap(UiImageRenderer& renderer, SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
++                       const Texture& image, float windowWidth, float windowHeight) const
++{
++    if (diamondBounds.w <= 0 || diamondBounds.h <= 0)
++    {
++        return;
++    }
++
++    // Texture U is map X, V is map Z. Transform the square into the diamond:
++    // (0,0) -> top, (1,0) -> right, (1,1) -> bottom, (0,1) -> left.
++    // This is MapToScreen expressed as a centered 2x2 image transform.
++    const UiImageTransform transform{
++        0.5f, -0.5f * diamondBounds.w / diamondBounds.h,
++        0.5f * diamondBounds.h / diamondBounds.w, 0.5f
++    };
++    renderer.Draw(commands, pass, image, diamondBounds, windowWidth, windowHeight, {}, transform);
++}
+diff --git a/tests/minimap_map_tests.cpp b/tests/minimap_map_tests.cpp
+new file mode 100644
+index 0000000..f76b417
+--- /dev/null
++++ b/tests/minimap_map_tests.cpp
+@@ -0,0 +1,155 @@
++#include "minimap_map.hpp"
++#include "water.hpp"
++
++#include <algorithm>
++#include <array>
++#include <cmath>
++#include <iostream>
++#include <limits>
++#include <stdexcept>
++
++namespace
++{
++    void Check(bool condition, const char* message)
++    {
++        if (!condition) throw std::runtime_error(message);
++    }
++
++    template<class Action> void MustReject(Action action)
++    {
++        try { action(); }
++        catch (const std::invalid_argument&) { return; }
++        throw std::runtime_error("Invalid minimap input was accepted");
++    }
++
++    void CheckPixel(const MinimapImage& image, std::uint32_t x, std::uint32_t y, TerrainColor color)
++    {
++        const auto i = (static_cast<std::size_t>(y) * image.width + x) * 4;
++        const std::array<float, 3> expected{color.r, color.g, color.b};
++        for (std::size_t channel = 0; channel < 3; ++channel)
++        {
++            Check(std::abs(static_cast<int>(image.rgba[i + channel]) - std::lround(expected[channel] * 255)) <= 1,
++                  "Minimap pixel did not match the world");
++        }
++        Check(image.rgba[i + 3] == 255, "Minimap must be opaque");
++    }
++
++    TerrainMesh Flat(float height)
++    {
++        TerrainHeightmap map;
++        std::fill(map.heights.begin(), map.heights.end(), height);
++        return BuildTerrain(map);
++    }
++
++    TerrainColor WaterOverRed(float coverage)
++    {
++        return {1.0f - coverage + coverage * WaterColor.r,
++                coverage * WaterColor.g, coverage * WaterColor.b};
++    }
++
++    void FlatMaps()
++    {
++        for (float height : {-1.0f, 0.0f, 1.0f, 256.0f})
++        {
++            const auto image = BuildMinimapImage(Flat(height));
++            Check(image.width == 512 && image.height == 512 && image.rgba.size() == 512 * 512 * 4,
++                  "Unexpected minimap image dimensions");
++            const auto color = IsWaterElevation(height) ? WaterColor : SampleTerrainColor(height);
++            for (std::uint32_t y = 0; y < image.height; ++y)
++                for (std::uint32_t x = 0; x < image.width; ++x) CheckPixel(image, x, y, color);
++        }
++    }
++
++    void PaletteAndOrientation()
++    {
++        auto mesh = Flat(1.0f);
++        // A known linear vertex-color field catches transposition, mirroring,
++        // border stretching, and accidental resampling of a default palette.
++        for (auto& v : mesh.vertices)
++        {
++            v.r = v.x / MapExtent;
++            v.g = v.z / MapExtent;
++            v.b = 0.2f;
++        }
++        const auto image = BuildMinimapImage(mesh);
++        for (const std::uint32_t y : {0u, 81u, 256u, 511u})
++            for (const std::uint32_t x : {0u, 37u, 256u, 511u})
++                CheckPixel(image, x, y, {(x + 0.5f) / image.width, (y + 0.5f) / image.height, 0.2f});
++
++        TerrainPalette palette;
++        for (auto& band : palette.bands) band.color = {0.8f, 0.1f, 0.6f};
++        const auto custom = BuildMinimapImage(BuildTerrain(TerrainHeightmap{}, palette));
++        CheckPixel(custom, 256, 256, {0.8f, 0.1f, 0.6f});
++    }
++
++    void ShorelinesAndOverlays()
++    {
++        auto mesh = Flat(1.0f);
++        for (auto& v : mesh.vertices) { v.r = 1; v.g = v.b = 0; }
++        const auto setTile = [&](std::uint32_t x, std::uint32_t z, float a, float b, float c, float d)
++        {
++            mesh.vertices[z * TerrainStride + x].y = a;
++            mesh.vertices[z * TerrainStride + x + 1].y = b;
++            mesh.vertices[(z + 1) * TerrainStride + x].y = c;
++            mesh.vertices[(z + 1) * TerrainStride + x + 1].y = d;
++        };
++        setTile(10, 20, -1, 1, 1, -1); // Saddle: bilinear sampling would be wrong.
++        setTile(30, 40, -1, 0, 0, 0);  // One wet triangle beside a dry sea-level one.
++        const auto image = BuildMinimapImage(mesh);
++        CheckPixel(image, 20, 40, WaterOverRed(0.25f));
++        CheckPixel(image, 21, 40, WaterOverRed(0.0f));
++        CheckPixel(image, 20, 41, WaterOverRed(0.0f));
++        CheckPixel(image, 21, 41, WaterOverRed(0.25f));
++        CheckPixel(image, 60, 80, WaterColor);
++        CheckPixel(image, 61, 80, WaterOverRed(0.25f));
++        CheckPixel(image, 60, 81, WaterOverRed(0.25f));
++        CheckPixel(image, 61, 81, {1, 0, 0});
++
++        std::vector<MinimapTileOverlay> overlay(MapSize * MapSize);
++        Check(BuildMinimapImage(mesh, overlay).rgba == image.rgba, "Transparent overlay altered terrain");
++        overlay[60 * MapSize + 50] = {{0, 1, 0}, 0.5f};
++        overlay[40 * MapSize + 30] = {{0, 0, 1}, 1};
++        const auto zoned = BuildMinimapImage(mesh, overlay);
++        CheckPixel(zoned, 100, 120, {0.5f, 0.5f, 0});
++        CheckPixel(zoned, 102, 120, {1, 0, 0});
++        CheckPixel(zoned, 60, 80, WaterColor); // Zones cannot hide water.
++        CheckPixel(zoned, 61, 81, {0, 0, 1});
++    }
++
++    void ValidationAndRepeatability()
++    {
++        auto mesh = Flat(1);
++        std::vector<MinimapTileOverlay> badSize(1);
++        MustReject([&] { BuildMinimapImage(mesh, badSize); });
++        std::vector<MinimapTileOverlay> invalid(MapSize * MapSize);
++        invalid[0].opacity = std::numeric_limits<float>::quiet_NaN();
++        MustReject([&] { BuildMinimapImage(mesh, invalid); });
++        mesh.vertices[0].y = std::numeric_limits<float>::infinity();
++        MustReject([&] { BuildMinimapImage(mesh); });
++        mesh.vertices.pop_back();
++        MustReject([&] { BuildMinimapImage(mesh); });
++
++        const auto world = BuildTerrain(GenerateTerrain({}));
++        const auto a = BuildMinimapImage(world);
++        const auto b = BuildMinimapImage(world);
++        Check(a.rgba == b.rgba, "Same terrain must produce the same minimap");
++    }
++}
++
++int main()
++{
++    try
++    {
++        FlatMaps();
++        PaletteAndOrientation();
++        ShorelinesAndOverlays();
++        ValidationAndRepeatability();
++        std::cout << "PASS: elevation colors, exact sea level, triangular shorelines, map axes, overlays, validation\n";
++        return 0;
++    }
++    catch (const std::exception& error)
++    {
++        std::cerr << error.what() << '\n';
++        return 1;
++    }
++}
+diff --git a/tests/minimap_texture_tests.cpp b/tests/minimap_texture_tests.cpp
+new file mode 100644
+index 0000000..981ba94
+--- /dev/null
++++ b/tests/minimap_texture_tests.cpp
+@@ -0,0 +1,360 @@
++// These SDL test doubles exercise ownership and upload data without a GPU.
++// They do not test SDL's PNG decoder or Direct3D 12 itself.
++#include "texture.hpp"
++#include "ui_image.hpp"
++#include "ui_minimap.hpp"
++
++#include <array>
++#include <cmath>
++#include <cstdlib>
++#include <cstring>
++#include <iostream>
++#include <stdexcept>
++#include <vector>
++
++struct SDL_GPUDevice {};
++struct SDL_GPUTexture
++{
++    SDL_GPUDevice* device;
++    std::vector<Uint8> pixels;
++};
++struct SDL_GPUTransferBuffer
++{
++    SDL_GPUDevice* device;
++    std::vector<Uint8> bytes;
++    bool mapped = false;
++};
++struct SDL_GPUCommandBuffer { bool copying = false; };
++struct SDL_GPUCopyPass { SDL_GPUCommandBuffer* commands; };
++
++namespace
++{
++    enum class Failure { None, BasePath, Decode, Convert, Lock, Texture, Transfer, Map, Acquire, Copy, Submit };
++    Failure failure = Failure::None;
++    int liveTextures = 0, liveTransfers = 0, liveCommands = 0, liveSurfaces = 0, locks = 0;
++    int loads = 0, uploads = 0;
++    int imageWidth = 3;
++    std::string lastPath;
++    int draws = 0;
++    UiRect drawnBounds;
++    UiImageTransform drawnTransform;
++    // Two rows, each with three RGBA pixels and four bytes of padding.
++    constexpr std::array<Uint8, 32> pixels = {
++        200, 100, 50, 255, 200, 100, 50, 128, 255, 255, 255, 0, 99, 99, 99, 99,
++        10, 20, 30, 255, 255, 255, 255, 255, 100, 200, 250, 64, 99, 99, 99, 99
++    };
++
++    void Check(bool condition, const char* message)
++    {
++        if (!condition)
++        {
++            std::cerr << "FAIL: " << message << '\n';
++            std::exit(1);
++        }
++    }
++
++    template<class Function>
++    std::string ExpectFailure(Function action)
++    {
++        try { action(); }
++        catch (const std::exception& error) { return error.what(); }
++        Check(false, "expected an exception");
++        return {};
++    }
++
++    void CheckNoTemporaryResources()
++    {
++        Check(liveTransfers == 0 && liveCommands == 0 && liveSurfaces == 0 && locks == 0,
++              "no temporary resource leaks");
++    }
++
++    SDL_Surface* MakeSurface()
++    {
++        auto* surface = new SDL_Surface{};
++        surface->format = SDL_PIXELFORMAT_RGBA32;
++        surface->w = imageWidth;
++        surface->h = 2;
++        surface->pitch = 16;
++        surface->pixels = new Uint8[pixels.size()];
++        std::memcpy(surface->pixels, pixels.data(), pixels.size());
++        ++liveSurfaces;
++        return surface;
++    }
++}
++
++// Capture the production minimap draw's geometry without a window or GPU.
++void UiImageRenderer::Release() {}
++void UiImageRenderer::Draw(SDL_GPUCommandBuffer*, SDL_GPURenderPass*, const Texture&,
++                           UiRect bounds, float, float, UiImageTint, UiImageTransform transform) const
++{
++    ++draws;
++    drawnBounds = bounds;
++    drawnTransform = transform;
++}
++
++const char* SDLCALL SDL_GetBasePath()
++{
++    return failure == Failure::BasePath ? nullptr : "/city-test/";
++}
++const char* SDLCALL SDL_GetError() { return "simulated SDL failure"; }
++
++SDL_Surface* SDLCALL SDL_LoadPNG(const char* path)
++{
++    ++loads;
++    lastPath = path;
++    return failure == Failure::Decode ? nullptr : MakeSurface();
++}
++SDL_Surface* SDLCALL SDL_ConvertSurface(SDL_Surface*, SDL_PixelFormat format)
++{
++    Check(format == SDL_PIXELFORMAT_RGBA32, "convert to RGBA bytes");
++    return failure == Failure::Convert ? nullptr : MakeSurface();
++}
++void SDLCALL SDL_DestroySurface(SDL_Surface* surface)
++{
++    if (!surface) return;
++    delete[] static_cast<Uint8*>(surface->pixels);
++    delete surface;
++    --liveSurfaces;
++}
++bool SDLCALL SDL_LockSurface(SDL_Surface*)
++{
++    if (failure == Failure::Lock) return false;
++    ++locks;
++    return true;
++}
++void SDLCALL SDL_UnlockSurface(SDL_Surface*) { --locks; }
++
++SDL_GPUTexture* SDLCALL SDL_CreateGPUTexture(SDL_GPUDevice* device, const SDL_GPUTextureCreateInfo* info)
++{
++    if (failure == Failure::Texture) return nullptr;
++    Check(info->format == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM &&
++          info->usage == SDL_GPU_TEXTUREUSAGE_SAMPLER, "sampled RGBA8 texture");
++    Check(info->width == 3 && info->height == 2 && info->num_levels == 1, "image dimensions");
++    ++liveTextures;
++    return new SDL_GPUTexture{device, {}};
++}
++void SDLCALL SDL_ReleaseGPUTexture(SDL_GPUDevice* device, SDL_GPUTexture* texture)
++{
++    Check(device == texture->device, "release on owning device");
++    delete texture;
++    --liveTextures;
++}
++SDL_GPUTransferBuffer* SDLCALL SDL_CreateGPUTransferBuffer(
++    SDL_GPUDevice* device, const SDL_GPUTransferBufferCreateInfo* info)
++{
++    if (failure == Failure::Transfer) return nullptr;
++    ++liveTransfers;
++    return new SDL_GPUTransferBuffer{device, std::vector<Uint8>(info->size)};
++}
++void SDLCALL SDL_ReleaseGPUTransferBuffer(SDL_GPUDevice* device, SDL_GPUTransferBuffer* transfer)
++{
++    Check(device == transfer->device && !transfer->mapped, "release unmapped staging buffer");
++    delete transfer;
++    --liveTransfers;
++}
++void* SDLCALL SDL_MapGPUTransferBuffer(SDL_GPUDevice*, SDL_GPUTransferBuffer* transfer, bool)
++{
++    if (failure == Failure::Map) return nullptr;
++    transfer->mapped = true;
++    return transfer->bytes.data();
++}
++void SDLCALL SDL_UnmapGPUTransferBuffer(SDL_GPUDevice*, SDL_GPUTransferBuffer* transfer)
++{
++    Check(transfer->mapped, "unmap mapped buffer");
++    transfer->mapped = false;
++}
++SDL_GPUCommandBuffer* SDLCALL SDL_AcquireGPUCommandBuffer(SDL_GPUDevice*)
++{
++    if (failure == Failure::Acquire) return nullptr;
++    ++liveCommands;
++    return new SDL_GPUCommandBuffer{};
++}
++SDL_GPUCopyPass* SDLCALL SDL_BeginGPUCopyPass(SDL_GPUCommandBuffer* commands)
++{
++    if (failure == Failure::Copy) return nullptr;
++    commands->copying = true;
++    return new SDL_GPUCopyPass{commands};
++}
++void SDLCALL SDL_UploadToGPUTexture(SDL_GPUCopyPass* pass, const SDL_GPUTextureTransferInfo* source,
++                                   const SDL_GPUTextureRegion* destination, bool)
++{
++    Check(pass->commands->copying && !source->transfer_buffer->mapped, "upload in copy pass after unmap");
++    const Uint32 pitch = source->pixels_per_row * 4;
++    Check(pitch % 256 == 0 && source->offset % 512 == 0, "D3D12 upload alignment");
++    Check(source->rows_per_layer == destination->h, "upload row count");
++    auto& output = destination->texture->pixels;
++    for (Uint32 y = 0; y < destination->h; ++y)
++    {
++        const auto first = source->transfer_buffer->bytes.begin() + source->offset + y * pitch;
++        output.insert(output.end(), first, first + destination->w * 4);
++    }
++    ++uploads;
++}
++void SDLCALL SDL_EndGPUCopyPass(SDL_GPUCopyPass* pass)
++{
++    pass->commands->copying = false;
++    delete pass;
++}
++bool SDLCALL SDL_SubmitGPUCommandBuffer(SDL_GPUCommandBuffer* commands)
++{
++    Check(!commands->copying, "end copy pass before submit");
++    delete commands;
++    --liveCommands;
++    return failure != Failure::Submit;
++}
++bool SDLCALL SDL_CancelGPUCommandBuffer(SDL_GPUCommandBuffer* commands)
++{
++    Check(!commands->copying, "no open copy pass on cancellation");
++    delete commands;
++    --liveCommands;
++    return true;
++}
++
++int main()
++{
++    SDL_GPUDevice device;
++    {
++        TextureManager textures;
++        ExpectFailure([&] { textures.Load("ui/circle.png"); });
++        ExpectFailure([&] { textures.Initialize(nullptr); });
++        failure = Failure::BasePath;
++        ExpectFailure([&] { textures.Initialize(&device); });
++        failure = Failure::None;
++        textures.Initialize(&device);
++        const Texture& circle = textures.Load("ui/circle.png");
++        Check(circle.Width() == 3 && circle.Height() == 2, "expose image dimensions");
++        Check(lastPath == "/city-test/assets/ui/circle.png", "asset path independent of working directory");
++        const std::vector<Uint8> expected = {
++            200, 100, 50, 255, 100, 50, 25, 128, 0, 0, 0, 0,
++            10, 20, 30, 255, 255, 255, 255, 255, 25, 50, 63, 64
++        };
++        Check(circle.Handle()->pixels == expected, "correct alpha and source row pitch");
++        Check(&circle == &textures.Load("ui/circle.png"), "repeat load reuses texture object");
++        Check(&circle == &textures.Load(".\\ui\\circle.png"), "backslash and dot aliases share texture");
++        Check(&circle == &textures.Load("ui/unused/../circle.png"), "normalized path reuses texture");
++        Check(textures.Size() == 1 && loads == 1 && uploads == 1, "cache hit skips decode and upload");
++        ExpectFailure([&] { textures.Initialize(&device); });
++        for (const char* path : {"", ".", "ui/", "../outside.png", "ui/../../outside.png", "/abs.png", "C:\\abs.png"})
++            ExpectFailure([&] { textures.Load(path); });
++        Check(loads == 1, "invalid paths never reach decoder");
++
++        auto* firstHandle = circle.Handle();
++        for (int i = 0; i < 100; ++i) textures.Load("buildings/house" + std::to_string(i) + ".png");
++        Check(&circle == &textures.Load("ui/circle.png") && circle.Handle() == firstHandle,
++              "borrowed references survive cache growth");
++        Check(liveTextures == 101 && textures.Size() == 101, "one GPU texture per unique path");
++        CheckNoTemporaryResources();
++        textures.Release();
++        textures.Release();
++        Check(liveTextures == 0 && textures.Size() == 0, "release frees every cached texture once");
++        ExpectFailure([&] { textures.Load("ui/circle.png"); });
++        textures.Initialize(&device);
++        textures.Load("ui/circle.png");
++    }
++    Check(liveTextures == 0, "destructor releases cache");
++
++    const std::vector<Uint8> generatedPixels{
++        200, 100, 50, 255, 200, 100, 50, 128, 255, 255, 255, 0,
++        10, 20, 30, 255, 255, 255, 255, 255, 100, 200, 250, 64
++    };
++    {
++        TextureManager textures;
++        ExpectFailure([&] { textures.CreateRgba(3, 2, generatedPixels); });
++        textures.Initialize(&device);
++        const auto& png = textures.Load("comparison.png");
++        auto image = textures.CreateRgba(3, 2, generatedPixels);
++        Check(image->Handle()->pixels == png.Handle()->pixels, "generated upload matches PNG alpha and row handling");
++        Check(textures.Size() == 1, "generated image is uncached and owned by the caller");
++        CheckNoTemporaryResources();
++
++        UiImageRenderer renderer;
++        UiMinimap minimap;
++        minimap.DrawMap(renderer, nullptr, nullptr, *image, 1280, 720);
++        Check(draws == 0, "empty minimap layout draws nothing");
++
++        for (const auto size : {128.0f, 288.0f, 512.0f})
++        {
++            for (const auto window : {std::array<float, 2>{800, 480}, {1280, 720}, {1920, 1080}})
++            {
++                UiSettings settings;
++                settings.minimapSize = size;
++                minimap.SetLayout(CalculateUiLayout(window[0], window[1], settings));
++                minimap.DrawMap(renderer, nullptr, nullptr, *image, window[0], window[1]);
++                for (const auto uv : {std::array<float, 2>{0, 0}, {1, 0}, {1, 1}, {0, 1}, {0.23f, 0.81f}})
++                {
++                    const float lx = (uv[0] * 2 - 1) * drawnBounds.w * 0.5f;
++                    const float ly = (uv[1] * 2 - 1) * drawnBounds.h * 0.5f;
++                    const float sx = drawnBounds.x + drawnBounds.w * 0.5f + drawnTransform.m00 * lx + drawnTransform.m01 * ly;
++                    const float sy = drawnBounds.y + drawnBounds.h * 0.5f + drawnTransform.m10 * lx + drawnTransform.m11 * ly;
++                    const auto expected = minimap.MapToScreen(uv[0], uv[1]);
++                    Check(std::abs(sx - expected.x) < 0.001f && std::abs(sy - expected.y) < 0.001f,
++                          "texture landmarks must line up with MapToScreen");
++                    float mapX = -1, mapZ = -1;
++                    Check(minimap.TryScreenToMap(sx, sy, mapX, mapZ) &&
++                          std::abs(mapX - uv[0]) < 0.001f && std::abs(mapZ - uv[1]) < 0.001f,
++                          "clicking texture landmarks recovers their world coordinates");
++                }
++                for (unsigned int turn = 0; turn < 4; ++turn)
++                {
++                    std::vector<UiVertex> outline;
++                    minimap.AppendViewOutline(outline, {24, 240, 40, 1.7f, 256, turn});
++                    for (const auto v : outline)
++                        Check(minimap.Contains(v.x, v.y), "rotated outline stays inside the textured diamond");
++                }
++            }
++        }
++
++        for (const auto dimensions : {std::array<Uint32, 2>{0, 2}, {4097, 2}, {3, 0}, {3, 4097}, {3, 3}})
++            ExpectFailure([&] { textures.CreateRgba(dimensions[0], dimensions[1], generatedPixels); });
++        image.reset();
++        Check(liveTextures == 1, "caller releases generated texture without invalidating cached PNG");
++    }
++
++    for (Failure stage : {Failure::Texture, Failure::Transfer, Failure::Map, Failure::Acquire, Failure::Copy, Failure::Submit})
++    {
++        TextureManager textures;
++        textures.Initialize(&device);
++        auto kept = textures.CreateRgba(3, 2, generatedPixels);
++        auto* previous = kept->Handle();
++        failure = stage;
++        ExpectFailure([&] { kept = textures.CreateRgba(3, 2, generatedPixels); });
++        Check(kept->Handle() == previous && liveTextures == 1, "failed map rebuild preserves previous texture");
++        CheckNoTemporaryResources();
++        failure = Failure::None;
++        kept = textures.CreateRgba(3, 2, generatedPixels);
++        Check(liveTextures == 1, "successful map rebuild releases previous texture");
++    }
++
++    // A failed load must preserve existing borrowers, clean up, and permit retry.
++    for (Failure stage : {Failure::Decode, Failure::Convert, Failure::Lock, Failure::Texture,
++                          Failure::Transfer, Failure::Map, Failure::Acquire, Failure::Copy, Failure::Submit})
++    {
++        TextureManager textures;
++        textures.Initialize(&device);
++        const Texture& kept = textures.Load("kept.png");
++        failure = stage;
++        const std::string error = ExpectFailure([&] { textures.Load("broken.png"); });
++        Check(error.find("broken.png") != std::string::npos &&
++              error.find("simulated SDL failure") != std::string::npos, "error includes path and reason");
++        Check(textures.Size() == 1 && liveTextures == 1, "failure leaves existing cache intact");
++        Check(&kept == &textures.Load("kept.png"), "cached texture usable after failed load");
++        CheckNoTemporaryResources();
++        failure = Failure::None;
++        textures.Load("broken.png");
++        Check(textures.Size() == 2, "failed load can be retried");
++    }
++    {
++        TextureManager textures;
++        textures.Initialize(&device);
++        for (int width : {0, 4097})
++        {
++            imageWidth = width;
++            ExpectFailure([&] { textures.Load("invalid-size.png"); });
++            CheckNoTemporaryResources();
++            Check(liveTextures == 0 && textures.Size() == 0, "invalid dimensions allocate no GPU resources");
++        }
++    }
++    Check(liveTextures == 0, "all test textures released");
++    CheckNoTemporaryResources();
++    std::cout << "PASS: generated/PNG uploads, alpha, pitch, lifetime/failure recovery, diamond rendering and picking\n";
++}

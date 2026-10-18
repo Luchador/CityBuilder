@@ -50,6 +50,32 @@ add_custom_target(copy_assets
     VERBATIM)
 add_dependencies(CityBuilder copy_assets)
 
+option(CITY_BUILD_SUBDIVISION_TESTS "Build terrain subdivision tests" OFF)
+if(CITY_BUILD_SUBDIVISION_TESTS)
+    enable_testing()
+    add_executable(CitySubdivisionTests tests/terrain_subdivision_tests.cpp
+        src/terrain.cpp src/terrain_skirt.cpp src/water.cpp)
+    target_compile_features(CitySubdivisionTests PRIVATE cxx_std_20)
+    target_include_directories(CitySubdivisionTests PRIVATE src)
+    add_test(NAME CitySubdivisionTests COMMAND CitySubdivisionTests)
+endif()
+
+option(CITY_BUILD_MINIMAP_TESTS "Build minimap map and texture tests" OFF)
+if(CITY_BUILD_MINIMAP_TESTS)
+    enable_testing()
+    add_executable(CityMinimapMapTests tests/minimap_map_tests.cpp src/minimap_map.cpp src/terrain.cpp)
+    target_compile_features(CityMinimapMapTests PRIVATE cxx_std_20)
+    target_include_directories(CityMinimapMapTests PRIVATE src)
+    add_test(NAME CityMinimapMapTests COMMAND CityMinimapMapTests)
+
+    add_executable(CityMinimapTextureTests tests/minimap_texture_tests.cpp src/texture.cpp
+        src/ui_minimap.cpp src/ui_minimap_draw.cpp src/ui.cpp src/camera.cpp)
+    target_compile_features(CityMinimapTextureTests PRIVATE cxx_std_20)
+    target_include_directories(CityMinimapTextureTests PRIVATE src)
+    target_link_libraries(CityMinimapTextureTests PRIVATE SDL3::Headers)
+    add_test(NAME CityMinimapTextureTests COMMAND CityMinimapTextureTests)
+endif()
+
 option(CITY_BUILD_TESTS "Build terrain, camera panning, and texture manager tests" OFF)
 option(CITY_BUILD_SKIRT_TESTS "Build the standalone terrain skirt tests" OFF)
 if(CITY_BUILD_TESTS OR CITY_BUILD_SKIRT_TESTS)

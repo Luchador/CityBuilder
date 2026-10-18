@@ -4,11 +4,13 @@
 
 #include <cstddef>
 #include <memory>
+#include <span>
 #include <string>
 #include <string_view>
 #include <unordered_map>
 
-// An image uploaded to the GPU. TextureManager owns it; renderers borrow it.
+// An image uploaded to the GPU. PNGs are owned by TextureManager; generated
+// images are owned by the caller of CreateRgba. Renderers borrow either kind.
 // Pixels are RGBA8 with premultiplied alpha, matching the pan overlay pipeline.
 class Texture
 {
@@ -61,6 +63,10 @@ public:
     // Equivalent separators and dot segments share a cache entry. Match the
     // filename's case. Returned references survive later loads, until Release().
     const Texture& Load(std::string_view assetPath);
+
+    // Create an uncached image from tightly packed RGBA8 (straight alpha).
+    // Caller owns the result and must destroy it before the GPU device.
+    std::unique_ptr<Texture> CreateRgba(Uint32 width, Uint32 height, std::span<const Uint8> pixels);
     std::size_t Size() const noexcept 
     { 
         return textures.size(); 
@@ -71,6 +77,8 @@ public:
 
 private:
     std::unique_ptr<Texture> LoadTexture(const std::string& path);
+    std::unique_ptr<Texture> UploadTexture(Uint32 width, Uint32 height, const Uint8* pixels,
+                                           std::size_t sourcePitch, const std::string& label);
 
     SDL_GPUDevice* device = nullptr;
     std::string assetRoot;

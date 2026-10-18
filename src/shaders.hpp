@@ -30,7 +30,7 @@ float WorldBrightness(float3 normal)
 {
     const float ambientIntensity = 0.45;
     const float directionalIntensity = 1.00;
-    const float3 lightDirection = float3(-0.6, 0.5, 0.0);
+    const float3 lightDirection = float3(-0.75, 0.5, 0.25);
 
     float sunlight = saturate(dot(normalize(normal), lightDirection));
     return (ambientIntensity + directionalIntensity * sunlight) / 0.89;

@@ -11,6 +11,7 @@
 #include <string>
 
 #include "camera.hpp"
+#include "sound.hpp"
 #include "terrain.hpp"
 #include "terrain_skirt.hpp"
 #include "terrain_skirt_shaders.hpp"
@@ -23,6 +24,7 @@
 #include "text.hpp"
 #include "text_shaders.hpp"
 #include "ui_minimap.hpp"
+#include "minimap_map.hpp"
 #include "ui_text.hpp"
 #include "ui_buttons.hpp"
 #include "ui_image.hpp"
@@ -184,6 +186,7 @@ public:
             panOverlay.Release();
             uiButtons.Clear();
             imageRenderer.Release();
+            minimapTexture.reset();
             textures.Release();
             if (imageVertexShader) SDL_ReleaseGPUShader(device, imageVertexShader);
             if (imageFragmentShader) SDL_ReleaseGPUShader(device, imageFragmentShader);
@@ -270,11 +273,18 @@ public:
         // UI
         CreateUiButtons();
 
+        // Load sound effects.
+        zoomInSound.Load("sfx/ui/sfx_zoom_in.wav");
+        zoomOutSound.Load("sfx/ui/sfx_zoom_out.wav");
+        rotateSound.Load("sfx/ui/sfx_rotate.wav");
+
         // Terrain
         terrainSettings.seed = SDL_rand_bits(); // Use a fixed number here to replay a landscape.
         SDL_Log("Terrain seed: %u", static_cast<unsigned int>(terrainSettings.seed));
         terrain = GenerateTerrain(terrainSettings);
         const TerrainMesh mesh = BuildTerrain(terrain);
+
+        RebuildMinimap(mesh);
 
         vertices = UploadBuffer(device, mesh.vertices.data(), static_cast<Uint32>(mesh.vertices.size() * sizeof(Vertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
         indices = UploadBuffer(device, mesh.indices.data(), static_cast<Uint32>(mesh.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
@@ -431,6 +441,10 @@ public:
 private:
     Camera camera{MapExtent};
 
+    SoundEffect zoomInSound;
+    SoundEffect zoomOutSound;
+    SoundEffect rotateSound;
+
     static constexpr UiButtonId ZoomInButton = 1;
     static constexpr UiButtonId ZoomOutButton = 2;
     static constexpr UiButtonId RotateClockwiseButton = 3;
@@ -555,6 +569,8 @@ private:
         {
             camera.RotateCounterClockwise();
         }
+
+        rotateSound.Play();
     }
 
     void OnUiButtonClicked(UiButtonId id)
@@ -563,10 +579,12 @@ private:
         {
             case ZoomInButton:
                 camera.Zoom(1.0f);
+                zoomInSound.Play();
                 break;
 
             case ZoomOutButton:
                 camera.Zoom(-1.0f);
+                zoomOutSound.Play();
                 break;
 
             case RotateClockwiseButton:
@@ -884,6 +902,14 @@ private:
         bottomBarText.SetLayout(uiLayout);
         LayoutUiButtons(uiLayout);
         minimapOutlineDirty = true;
+    }
+
+    void RebuildMinimap(const TerrainMesh& mesh, std::span<const MinimapTileOverlay> overlays = {})
+    {
+        // Rebuild only after world data changes, not when the camera moves
+        // or the panel resizes. Future tile zone colors can be supplied here.
+        const auto image = BuildMinimapImage(mesh, overlays);
+        minimapTexture = textures.CreateRgba(image.width, image.height, image.rgba);
     }
 
     void UpdateMinimapOutline(SDL_GPUCommandBuffer* commands, const MinimapView& view)
@@ -1350,8 +1376,17 @@ private:
         SDL_PushGPUVertexUniformData(commands, 0, screen, sizeof(screen));
         SDL_DrawGPUPrimitives(pass, uiVertexCount, 1, 0, 0);
 
+        if (minimapTexture)
+        {
+            minimap.DrawMap(imageRenderer, commands, pass, *minimapTexture, uiLayout.width, uiLayout.height);
+        }
+
         if (minimapOutlineVertexCount > 0)
         {
+            // DrawMap binds the image pipeline and its larger uniform block.
+            // Restore the solid-color pipeline before drawing the red outline.
+            SDL_BindGPUGraphicsPipeline(pass, uiPipeline);
+            SDL_PushGPUVertexUniformData(commands, 0, screen, sizeof(screen));
             const SDL_GPUBufferBinding outlineBinding{minimapOutlineVertices, 0};
             SDL_BindGPUVertexBuffers(pass, 0, &outlineBinding, 1);
             SDL_DrawGPUPrimitives(pass, minimapOutlineVertexCount, 1, 0, 0);
@@ -1409,6 +1444,7 @@ private:
     UiSettings uiSettings;
     UiLayout uiLayout;
     UiMinimap minimap;
+    std::unique_ptr<Texture> minimapTexture;
     SDL_GPUShader* uiVertexShader = nullptr;
     SDL_GPUGraphicsPipeline* uiPipeline = nullptr;
     SDL_GPUBuffer* uiVertices = nullptr;
@@ -1430,7 +1466,7 @@ int main(int argc, char* argv[])
     (void)argc;
     (void)argv;
 
-    if (!SDL_Init(SDL_INIT_VIDEO)) 
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO))
     {
         SDL_Log("SDL initialization failed: %s", SDL_GetError());
         return 1;

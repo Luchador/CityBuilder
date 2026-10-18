@@ -8,6 +8,22 @@ constexpr float MapExtent = static_cast<float>(MapSize);
 constexpr std::uint32_t TerrainStride = MapSize + 1;
 constexpr std::uint32_t TerrainVertexCount = TerrainStride * TerrainStride;
 
+// Render detail is separate from the 256x256 logical tile grid/heightmap.
+// Each tile has a large center quad, four edge strips, and four corner quads.
+constexpr std::uint32_t TerrainSubdivisions = 3;
+constexpr float TerrainTileBorder = 0.10f; // Fraction of a tile on EACH side.
+static_assert(TerrainTileBorder > 0.0f && TerrainTileBorder < 0.5f);
+constexpr std::array<float, 4> TerrainTileOffsets{0.0f, TerrainTileBorder, 1.0f - TerrainTileBorder, 1.0f};
+constexpr std::uint32_t TerrainMeshSize = MapSize * TerrainSubdivisions;
+constexpr std::uint32_t TerrainMeshStride = TerrainMeshSize + 1;
+constexpr std::uint32_t TerrainMeshVertexCount = TerrainMeshStride * TerrainMeshStride;
+
+// Shared by mesh generation and minimap sampling. index is in 0..TerrainMeshSize.
+constexpr float TerrainMeshCoordinate(std::uint32_t index)
+{
+    return static_cast<float>(index / TerrainSubdivisions) + TerrainTileOffsets[index % TerrainSubdivisions];
+}
+
 // Allowed elevation increments
 constexpr float TerrainHeightStep = 0.25f;
 constexpr float TerrainSeaLevel = 0.0f;
@@ -95,6 +111,8 @@ struct Vertex
 };
 static_assert(sizeof(Vertex) == 36);
 
+// Row-major render vertices use TerrainMeshStride, NOT TerrainStride.
+// Neighboring tiles share their boundary vertices, including normals/colors.
 struct TerrainMesh {
     std::vector<Vertex> vertices;
     std::vector<std::uint32_t> indices;

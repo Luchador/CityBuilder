@@ -1,0 +1,573 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index ba21d7f..62f258c 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -50,6 +50,16 @@ add_custom_target(copy_assets
+     VERBATIM)
+ add_dependencies(CityBuilder copy_assets)
+ 
++option(CITY_BUILD_SUBDIVISION_TESTS "Build terrain subdivision tests" OFF)
++if(CITY_BUILD_SUBDIVISION_TESTS)
++    enable_testing()
++    add_executable(CitySubdivisionTests tests/terrain_subdivision_tests.cpp
++        src/terrain.cpp src/terrain_skirt.cpp src/water.cpp)
++    target_compile_features(CitySubdivisionTests PRIVATE cxx_std_20)
++    target_include_directories(CitySubdivisionTests PRIVATE src)
++    add_test(NAME CitySubdivisionTests COMMAND CitySubdivisionTests)
++endif()
++
+ option(CITY_BUILD_MINIMAP_TESTS "Build minimap map and texture tests" OFF)
+ if(CITY_BUILD_MINIMAP_TESTS)
+     enable_testing()
+diff --git a/docs/terrain-subdivision.md b/docs/terrain-subdivision.md
+new file mode 100644
+index 0000000..c51e5fa
+--- /dev/null
++++ b/docs/terrain-subdivision.md
+@@ -0,0 +1,71 @@
++# Nine quads per terrain tile
++
++The logical world is still 256 by 256 tiles. `TerrainHeightmap` still holds the
++257 by 257 shared corner heights, including the existing elevation increments.
++
++`BuildTerrain` now puts render vertices at 0%, 10%, 90%, and 100% along each tile
++axis. That produces one large center quad, four narrow edge quads, and four small
++corner quads. Each quad is rendered as two triangles. Adjacent tiles share their
++edge vertices, so their positions, colors, and normals agree at the join.
++
++## Appearance
++
++The four inset vertices use the tile's average slope for their lighting normal.
++An edge vertex averages the two adjacent tiles' slopes; a corner averages up to
++four. Lighting therefore blends across the narrow border while the large center
++has a more consistent appearance. Flat neighboring tiles remain flat.
++
++This is shading-based smoothing. The inserted heights lie on the original two
++terrain triangles, retaining the existing slopes, stepped corner heights, lake
++shorelines, and map outline. It does not flatten tile centers or round the
++physical silhouette. Those would require changing the surface-height model as a
++separate step.
++
++The inset offsets are mirrored, so the small triangle diagonals line up with the
++original tile diagonal. This lets the water keep one quad per wet logical tile
++and lets the rock skirt keep its straight segments without gaps. The G-key grid
++also keeps one line per logical edge rather than exposing all subdivisions.
++
++## Adjust the border
++
++In `src/terrain.hpp`, change:
++
++```cpp
++constexpr float TerrainTileBorder = 0.10f;
++```
++
++The value is the width on **each** side of a tile. `0.10f` gives a center 80% of a
++tile wide. `0.15f` gives a 70% center and broader lighting transitions. Values
++must be greater than 0 and less than 0.5. Rebuild after changing it.
++
++## Indexing and minimap
++
++- Logical heightmap: `TerrainStride` and `TerrainVertexCount` (257 by 257).
++- Render mesh: `TerrainMeshStride` and `TerrainMeshVertexCount` (769 by 769).
++- Render vertex position on one axis: `TerrainMeshCoordinate(index)`.
++- Logical corner `(x, z)` in the mesh: `(z * TerrainMeshStride + x) * TerrainSubdivisions`.
++
++The minimap now samples the new subtriangle colors. Its water classification
++still uses the original tile triangles, matching the water mesh, and future zone
++overlays still have one entry per logical tile.
++
++There are 591,361 shared terrain vertices and 1,179,648 terrain triangles. This
++is nine times the old triangle count; GPU performance should be checked in the
++actual game, especially at distant zoom levels. Vertex layout and shaders are
++unchanged.
++
++## Verification
++
++The CPU tests cover triangle counts/winding, shared vertices, original surface
++heights, grid/skirt/water agreement, border normal blending, and minimap colors,
++shorelines, and overlays. Tests pass with AddressSanitizer/UndefinedBehaviorSanitizer;
++all application C++ files pass strict syntax checks with the available SDL headers.
++The Windows Direct3D 12 application was not run in this environment.
++
++Optional Windows test commands, from the developer command prompt:
++
++```bat
++cmake -S . -B build -DCITY_BUILD_SUBDIVISION_TESTS=ON -DCITY_BUILD_MINIMAP_TESTS=ON
++cmake --build build --target CitySubdivisionTests CityMinimapMapTests
++ctest --test-dir build -R "CitySubdivisionTests|CityMinimapMapTests" --output-on-failure
++```
+diff --git a/src/minimap_map.cpp b/src/minimap_map.cpp
+index 3d25e8e..f519eb1 100644
+--- a/src/minimap_map.cpp
++++ b/src/minimap_map.cpp
+@@ -19,13 +19,35 @@ namespace
+     TerrainColor SampleTile(const TerrainMesh& terrain, std::uint32_t x, std::uint32_t z,
+                             float u, float v, const MinimapTileOverlay& overlay)
+     {
+-        const auto a = z * TerrainStride + x;
++        // Subdivision preserves the original ground triangles. Test water using
++        // their corner heights, exactly as BuildWater does. This also avoids
++        // classifying an exact sea-level point as wet due to inset rounding.
++        const auto corner = (z * TerrainMeshStride + x) * TerrainSubdivisions;
++        const float ha = terrain.vertices[corner].y;
++        const float hb = terrain.vertices[corner + TerrainSubdivisions].y;
++        const float hc = terrain.vertices[corner + TerrainSubdivisions * TerrainMeshStride].y;
++        const float hd = terrain.vertices[corner + TerrainSubdivisions * (TerrainMeshStride + 1)].y;
++        const float height = u + v <= 1.0f
++            ? (1.0f - u - v) * ha + u * hb + v * hc
++            : (u + v - 1.0f) * hd + (1.0f - v) * hb + (1.0f - u) * hc;
++        if (IsWaterElevation(height)) return WaterColor;
++
++        // Find the narrow border or large center interval, then interpolate the
++        // same subtriangle colors the GPU draws. u/v are logical tile fractions.
++        const auto interval = [](float t) -> std::uint32_t
++        {
++            return t < TerrainTileOffsets[1] ? 0u : t < TerrainTileOffsets[2] ? 1u : 2u;
++        };
++        const auto sx = x * TerrainSubdivisions + interval(u);
++        const auto sz = z * TerrainSubdivisions + interval(v);
++        const auto a = sz * TerrainMeshStride + sx;
+         const auto b = a + 1;
+-        const auto c = a + TerrainStride;
++        const auto c = a + TerrainMeshStride;
+         const auto d = c + 1;
++        u = (static_cast<float>(x) + u - terrain.vertices[a].x) / (terrain.vertices[b].x - terrain.vertices[a].x);
++        v = (static_cast<float>(z) + v - terrain.vertices[a].z) / (terrain.vertices[c].z - terrain.vertices[a].z);
+ 
+-        // Match BuildTerrain and BuildWater: {a,c,b}, {b,c,d}, not bilinear
+-        // interpolation. Bilinear heights can move shorelines on saddle tiles.
++        // Match BuildTerrain: {a,c,b}, {b,c,d}, not bilinear interpolation.
+         const bool upper = u + v <= 1.0f;
+         const Vertex& p = terrain.vertices[upper ? a : d];
+         const Vertex& q = terrain.vertices[b];
+@@ -33,13 +55,6 @@ namespace
+         const float wp = upper ? 1.0f - u - v : u + v - 1.0f;
+         const float wq = upper ? u : 1.0f - v;
+         const float wr = upper ? v : 1.0f - u;
+-        const float height = wp * p.y + wq * q.y + wr * r.y;
+-
+-        // Exactly sea level is dry, matching the water shader's discard test.
+-        if (IsWaterElevation(height))
+-        {
+-            return WaterColor;
+-        }
+ 
+         const TerrainColor ground{wp * p.r + wq * q.r + wr * r.r,
+                                   wp * p.g + wq * q.g + wr * r.g,
+@@ -57,16 +72,16 @@ namespace
+ 
+ MinimapImage BuildMinimapImage(const TerrainMesh& terrain, std::span<const MinimapTileOverlay> overlays)
+ {
+-    if (terrain.vertices.size() != TerrainVertexCount)
++    if (terrain.vertices.size() != TerrainMeshVertexCount)
+     {
+-        throw std::invalid_argument("Minimap requires the regular grid returned by BuildTerrain");
++        throw std::invalid_argument("Minimap requires the subdivided grid returned by BuildTerrain");
+     }
+-    for (std::uint32_t z = 0; z <= MapSize; ++z)
++    for (std::uint32_t z = 0; z <= TerrainMeshSize; ++z)
+     {
+-        for (std::uint32_t x = 0; x <= MapSize; ++x)
++        for (std::uint32_t x = 0; x <= TerrainMeshSize; ++x)
+         {
+-            const auto& vertex = terrain.vertices[z * TerrainStride + x];
+-            if (vertex.x != static_cast<float>(x) || vertex.z != static_cast<float>(z) ||
++            const auto& vertex = terrain.vertices[z * TerrainMeshStride + x];
++            if (vertex.x != TerrainMeshCoordinate(x) || vertex.z != TerrainMeshCoordinate(z) ||
+                 !std::isfinite(vertex.y) || !ValidColor({vertex.r, vertex.g, vertex.b}))
+             {
+                 throw std::invalid_argument("Minimap requires valid terrain positions and colors");
+diff --git a/src/minimap_map.hpp b/src/minimap_map.hpp
+index 778ff4f..9ea073f 100644
+--- a/src/minimap_map.hpp
++++ b/src/minimap_map.hpp
+@@ -22,7 +22,7 @@ struct MinimapTileOverlay
+ };
+ 
+ // Use the mesh returned by BuildTerrain, including its actual palette colors.
+-// Sample the same two triangles and sea-level shoreline as terrain/water.
++// Sample the nine render quads' colors and the unchanged sea-level shoreline.
+ // Colors show elevation without directional lighting, grid lines, or skirts.
+ MinimapImage BuildMinimapImage(const TerrainMesh& terrain,
+                               std::span<const MinimapTileOverlay> overlays = {});
+diff --git a/src/terrain.cpp b/src/terrain.cpp
+index 90ee833..f2f6810 100644
+--- a/src/terrain.cpp
++++ b/src/terrain.cpp
+@@ -330,54 +330,93 @@ TerrainMesh BuildTerrain(const TerrainHeightmap& terrain, const TerrainPalette&
+     terrain.Validate();
+     ValidatePalette(palette);
+ 
++    // One slope per logical tile. Averaging its two triangle slopes gives the
++    // large center quad a consistent lighting normal, including saddle tiles.
++    struct Slope { float x, z; };
++    std::vector<Slope> slopes(MapSize * MapSize);
++    for (std::uint32_t z = 0; z < MapSize; ++z)
++    {
++        for (std::uint32_t x = 0; x < MapSize; ++x)
++        {
++            const float a = terrain.Height(x, z), b = terrain.Height(x + 1, z);
++            const float c = terrain.Height(x, z + 1), d = terrain.Height(x + 1, z + 1);
++            slopes[z * MapSize + x] = {0.5f * ((b - a) + (d - c)),
++                                      0.5f * ((c - a) + (d - b))};
++        }
++    }
++
+     TerrainMesh mesh;
+-    mesh.vertices.reserve(TerrainVertexCount);
+-    mesh.indices.reserve(MapSize * MapSize * 6);
++    mesh.vertices.reserve(TerrainMeshVertexCount);
++    mesh.indices.reserve(TerrainMeshSize * TerrainMeshSize * 6);
+ 
+-    for (std::uint32_t z = 0; z <= MapSize; ++z)
++    for (std::uint32_t z = 0; z <= TerrainMeshSize; ++z)
+     {
+-        for (std::uint32_t x = 0; x <= MapSize; ++x)
++        for (std::uint32_t x = 0; x <= TerrainMeshSize; ++x)
+         {
+-            const auto left = x == 0 ? x : x - 1;
+-            const auto right = std::min(x + 1, MapSize);
+-            const auto back = z == 0 ? z : z - 1;
+-            const auto front = std::min(z + 1, MapSize);
+-    
+-            // Central differences inside, one-sided differences at map boundaries.
+-            const float dx = (terrain.Height(right, z) - terrain.Height(left, z)) / static_cast<float>(right - left);
+-            const float dz = (terrain.Height(x, front) - terrain.Height(x, back)) / static_cast<float>(front - back);
++            const auto tileX = std::min(x / TerrainSubdivisions, MapSize - 1);
++            const auto tileZ = std::min(z / TerrainSubdivisions, MapSize - 1);
++            const float fx = TerrainMeshCoordinate(x), fz = TerrainMeshCoordinate(z);
++            const float u = fx - static_cast<float>(tileX);
++            const float v = fz - static_cast<float>(tileZ);
++            const float a = terrain.Height(tileX, tileZ), b = terrain.Height(tileX + 1, tileZ);
++            const float c = terrain.Height(tileX, tileZ + 1), d = terrain.Height(tileX + 1, tileZ + 1);
++
++            // Stay on the ORIGINAL two triangles, not a bilinear height patch.
++            // Mirrored inset coordinates make the little diagonals line up with
++            // the original b-c diagonal. Water depths and skirt edges still fit.
++            const float height = u + v <= 1.0f
++                ? (1.0f - u - v) * a + u * b + v * c
++                : (u + v - 1.0f) * d + (1.0f - v) * b + (1.0f - u) * c;
++
++            // Interior inset vertices use only their own tile's slope. Shared
++            // edges average two tiles; shared corners average up to four. Thus
++            // lighting changes across the narrow strips instead of the center.
++            const auto firstX = x > 0 && x % TerrainSubdivisions == 0 ? x / TerrainSubdivisions - 1 : tileX;
++            const auto firstZ = z > 0 && z % TerrainSubdivisions == 0 ? z / TerrainSubdivisions - 1 : tileZ;
++            float dx = 0, dz = 0;
++            for (auto tz = firstZ; tz <= tileZ; ++tz)
++            {
++                for (auto tx = firstX; tx <= tileX; ++tx)
++                {
++                    const auto& slope = slopes[tz * MapSize + tx];
++                    dx += slope.x;
++                    dz += slope.z;
++                }
++            }
++            const float count = static_cast<float>((tileX - firstX + 1) * (tileZ - firstZ + 1));
++            dx /= count;
++            dz /= count;
+             const float inverseLength = 1.0f / std::sqrt(dx * dx + 1.0f + dz * dz);
+-            const float height = terrain.Height(x, z);
+             const TerrainColor color = SamplePalette(height, palette);
+-            mesh.vertices.push_back({static_cast<float>(x), height, static_cast<float>(z),
++            mesh.vertices.push_back({fx, height, fz,
+                                      -dx * inverseLength, inverseLength, -dz * inverseLength,
+                                      color.r, color.g, color.b});
+         }
+     }
+ 
+-    for (std::uint32_t z = 0; z < MapSize; ++z)
++    for (std::uint32_t z = 0; z < TerrainMeshSize; ++z)
+     {
+-        for (std::uint32_t x = 0; x < MapSize; ++x)
++        for (std::uint32_t x = 0; x < TerrainMeshSize; ++x)
+         {
+-            const auto a = z * TerrainStride + x;
++            const auto a = z * TerrainMeshStride + x;
+             const auto b = a + 1;
+-            const auto c = a + TerrainStride;
++            const auto c = a + TerrainMeshStride;
+             const auto d = c + 1;
+-            // Two triangles per tile, both with an upward-facing winding.
++            // Nine quads / eighteen triangles per logical tile, facing upward.
+             mesh.indices.insert(mesh.indices.end(), {a, c, b, b, c, d});
+         }
+     }
+ 
+-    // One segment per tile edge, shared between neighboring tiles. The old long
+-    // map-spanning lines cannot follow hills. Reuse the exact terrain endpoints.
++    // G still shows the logical tile boundaries. Each boundary remains straight,
++    // so one line is enough; the inset subdivisions are only rendering detail.
+     mesh.lines.reserve(4 * MapSize * TerrainStride);
+     for (std::uint32_t z = 0; z <= MapSize; ++z)
+     {
+         for (std::uint32_t x = 0; x < MapSize; ++x)
+         {
+-            const auto a = z * TerrainStride + x;
++            const auto a = (z * TerrainMeshStride + x) * TerrainSubdivisions;
+             mesh.lines.push_back(mesh.vertices[a]);
+-            mesh.lines.push_back(mesh.vertices[a + 1]);
++            mesh.lines.push_back(mesh.vertices[a + TerrainSubdivisions]);
+         }
+     }
+ 
+@@ -385,9 +424,9 @@ TerrainMesh BuildTerrain(const TerrainHeightmap& terrain, const TerrainPalette&
+     {
+         for (std::uint32_t z = 0; z < MapSize; ++z)
+         {
+-            const auto a = z * TerrainStride + x;
++            const auto a = (z * TerrainMeshStride + x) * TerrainSubdivisions;
+             mesh.lines.push_back(mesh.vertices[a]);
+-            mesh.lines.push_back(mesh.vertices[a + TerrainStride]);
++            mesh.lines.push_back(mesh.vertices[a + TerrainSubdivisions * TerrainMeshStride]);
+         }
+     }
+ 
+diff --git a/src/terrain.hpp b/src/terrain.hpp
+index 33ae8e1..c9c0908 100644
+--- a/src/terrain.hpp
++++ b/src/terrain.hpp
+@@ -8,6 +8,22 @@ constexpr float MapExtent = static_cast<float>(MapSize);
+ constexpr std::uint32_t TerrainStride = MapSize + 1;
+ constexpr std::uint32_t TerrainVertexCount = TerrainStride * TerrainStride;
+ 
++// Render detail is separate from the 256x256 logical tile grid/heightmap.
++// Each tile has a large center quad, four edge strips, and four corner quads.
++constexpr std::uint32_t TerrainSubdivisions = 3;
++constexpr float TerrainTileBorder = 0.10f; // Fraction of a tile on EACH side.
++static_assert(TerrainTileBorder > 0.0f && TerrainTileBorder < 0.5f);
++constexpr std::array<float, 4> TerrainTileOffsets{0.0f, TerrainTileBorder, 1.0f - TerrainTileBorder, 1.0f};
++constexpr std::uint32_t TerrainMeshSize = MapSize * TerrainSubdivisions;
++constexpr std::uint32_t TerrainMeshStride = TerrainMeshSize + 1;
++constexpr std::uint32_t TerrainMeshVertexCount = TerrainMeshStride * TerrainMeshStride;
++
++// Shared by mesh generation and minimap sampling. index is in 0..TerrainMeshSize.
++constexpr float TerrainMeshCoordinate(std::uint32_t index)
++{
++    return static_cast<float>(index / TerrainSubdivisions) + TerrainTileOffsets[index % TerrainSubdivisions];
++}
++
+ // Allowed elevation increments
+ constexpr float TerrainHeightStep = 0.25f;
+ constexpr float TerrainSeaLevel = 0.0f;
+@@ -95,6 +111,8 @@ struct Vertex
+ };
+ static_assert(sizeof(Vertex) == 36);
+ 
++// Row-major render vertices use TerrainMeshStride, NOT TerrainStride.
++// Neighboring tiles share their boundary vertices, including normals/colors.
+ struct TerrainMesh {
+     std::vector<Vertex> vertices;
+     std::vector<std::uint32_t> indices;
+diff --git a/tests/minimap_map_tests.cpp b/tests/minimap_map_tests.cpp
+index f76b417..ba23fbc 100644
+--- a/tests/minimap_map_tests.cpp
++++ b/tests/minimap_map_tests.cpp
+@@ -84,17 +84,19 @@ namespace
+ 
+     void ShorelinesAndOverlays()
+     {
+-        auto mesh = Flat(1.0f);
+-        for (auto& v : mesh.vertices) { v.r = 1; v.g = v.b = 0; }
++        TerrainHeightmap map;
++        std::fill(map.heights.begin(), map.heights.end(), 1.0f);
+         const auto setTile = [&](std::uint32_t x, std::uint32_t z, float a, float b, float c, float d)
+         {
+-            mesh.vertices[z * TerrainStride + x].y = a;
+-            mesh.vertices[z * TerrainStride + x + 1].y = b;
+-            mesh.vertices[(z + 1) * TerrainStride + x].y = c;
+-            mesh.vertices[(z + 1) * TerrainStride + x + 1].y = d;
++            map.heights[z * TerrainStride + x] = a;
++            map.heights[z * TerrainStride + x + 1] = b;
++            map.heights[(z + 1) * TerrainStride + x] = c;
++            map.heights[(z + 1) * TerrainStride + x + 1] = d;
+         };
+         setTile(10, 20, -1, 1, 1, -1); // Saddle: bilinear sampling would be wrong.
+         setTile(30, 40, -1, 0, 0, 0);  // One wet triangle beside a dry sea-level one.
++        auto mesh = BuildTerrain(map);
++        for (auto& v : mesh.vertices) { v.r = 1; v.g = v.b = 0; }
+         const auto image = BuildMinimapImage(mesh);
+         CheckPixel(image, 20, 40, WaterOverRed(0.25f));
+         CheckPixel(image, 21, 40, WaterOverRed(0.0f));
+@@ -116,6 +118,26 @@ namespace
+         CheckPixel(zoned, 61, 81, {0, 0, 1});
+     }
+ 
++    void InsetVertexColors()
++    {
++        auto mesh = Flat(1);
++        // The logical corners are blue, but the large inset face is red. A
++        // sampler still reading the old 257x257 grid would miss the new colors.
++        for (auto& vertex : mesh.vertices) { vertex.r = vertex.g = 0; vertex.b = 1; }
++        for (std::uint32_t z = 1; z <= 2; ++z)
++            for (std::uint32_t x = 1; x <= 2; ++x)
++            {
++                auto& vertex = mesh.vertices[(42 * TerrainSubdivisions + z) * TerrainMeshStride + 71 * TerrainSubdivisions + x];
++                vertex.r = 1;
++                vertex.b = 0;
++            }
++        const auto image = BuildMinimapImage(mesh);
++        // With the default 10% border, these four pixel samples lie in the inset.
++        if (TerrainTileBorder <= 0.125f)
++            CheckPixel(image, 142, 84, {1, 0, 0});
++        CheckPixel(image, 144, 84, {0, 0, 1});
++    }
++
+     void ValidationAndRepeatability()
+     {
+         auto mesh = Flat(1);
+@@ -143,6 +165,7 @@ int main()
+         FlatMaps();
+         PaletteAndOrientation();
+         ShorelinesAndOverlays();
++        InsetVertexColors();
+         ValidationAndRepeatability();
+         std::cout << "PASS: elevation colors, exact sea level, triangular shorelines, map axes, overlays, validation\n";
+         return 0;
+diff --git a/tests/terrain_subdivision_tests.cpp b/tests/terrain_subdivision_tests.cpp
+new file mode 100644
+index 0000000..b6d4955
+--- /dev/null
++++ b/tests/terrain_subdivision_tests.cpp
+@@ -0,0 +1,141 @@
++#include "terrain.hpp"
++#include "terrain_skirt.hpp"
++#include "water.hpp"
++
++#include <algorithm>
++#include <cmath>
++#include <iostream>
++#include <stdexcept>
++
++namespace
++{
++    void Check(bool condition, const char* message)
++    {
++        if (!condition) throw std::runtime_error(message);
++    }
++
++    bool Near(float a, float b, float tolerance = 0.00005f)
++    {
++        return std::abs(a - b) <= tolerance;
++    }
++
++    float OriginalHeight(const TerrainHeightmap& map, float x, float z)
++    {
++        const auto tx = std::min(static_cast<std::uint32_t>(x), MapSize - 1);
++        const auto tz = std::min(static_cast<std::uint32_t>(z), MapSize - 1);
++        const float u = x - static_cast<float>(tx), v = z - static_cast<float>(tz);
++        if (u + v <= 1)
++            return (1 - u - v) * map.Height(tx, tz) + u * map.Height(tx + 1, tz) + v * map.Height(tx, tz + 1);
++        return (u + v - 1) * map.Height(tx + 1, tz + 1) + (1 - v) * map.Height(tx + 1, tz) + (1 - u) * map.Height(tx, tz + 1);
++    }
++
++    void GeometryAndJoins()
++    {
++        TerrainHeightmap map;
++        // Many crests, troughs, saddles, and mixed wet/dry tiles, including edges.
++        for (std::uint32_t z = 0; z <= MapSize; ++z)
++            for (std::uint32_t x = 0; x <= MapSize; ++x)
++                map.heights[z * TerrainStride + x] = 0.25f * (static_cast<int>((x * 7 + z * 11) % 17) - 8);
++        const auto savedHeights = map.heights;
++        const auto mesh = BuildTerrain(map);
++        Check(map.heights == savedHeights, "Rendering changed the logical terrain");
++        Check(mesh.vertices.size() == 769 * 769, "Shared vertex count is wrong");
++        Check(mesh.indices.size() == MapSize * MapSize * 18 * 3, "Each tile needs eighteen triangles");
++        Check(mesh.lines.size() == 4 * MapSize * TerrainStride, "G grid must still mark logical tiles");
++
++        for (const auto& v : mesh.vertices)
++        {
++            Check(Near(v.y, OriginalHeight(map, v.x, v.z)), "Subdivision changed a ground vertex height");
++            Check(Near(v.nx * v.nx + v.ny * v.ny + v.nz * v.nz, 1), "Normal is not unit length");
++            Check(v.ny > 0, "Normal must face upward");
++        }
++        for (const auto& v : mesh.lines)
++        {
++            Check(v.x == std::floor(v.x) && v.z == std::floor(v.z), "Grid includes internal subdivisions");
++            Check(v.y == map.Height(static_cast<std::uint32_t>(v.x), static_cast<std::uint32_t>(v.z)), "Grid does not meet terrain");
++        }
++        for (std::size_t i = 0; i < mesh.indices.size(); i += 3)
++        {
++            const auto& a = mesh.vertices.at(mesh.indices[i]);
++            const auto& b = mesh.vertices.at(mesh.indices[i + 1]);
++            const auto& c = mesh.vertices.at(mesh.indices[i + 2]);
++            const float normalY = (b.z - a.z) * (c.x - a.x) - (b.x - a.x) * (c.z - a.z);
++            Check(normalY > 0, "Triangle is degenerate or faces downward");
++            // Checking inside triangles catches a diagonal that crosses the old
++            // saddle surface even when all its vertices individually match.
++            const float x = 0.25f * a.x + 0.5f * b.x + 0.25f * c.x;
++            const float z = 0.25f * a.z + 0.5f * b.z + 0.25f * c.z;
++            const float y = 0.25f * a.y + 0.5f * b.y + 0.25f * c.y;
++            Check(Near(y, OriginalHeight(map, x, z), 0.00015f), "A subtriangle changed the original surface");
++        }
++
++        // Count index references along an internal shared edge. Both neighboring
++        // tiles must reference the same vertex, not two coincident copies.
++        const auto shared = (30 * TerrainMeshStride + 24) * TerrainSubdivisions + TerrainMeshStride;
++        Check(std::count(mesh.indices.begin(), mesh.indices.end(), shared) == 6, "Shared edge vertex is disconnected");
++
++        const auto skirt = BuildTerrainSkirt(map);
++        for (std::size_t i = 0; i < skirt.vertices.size(); i += 2)
++        {
++            const auto& top = skirt.vertices[i];
++            Check(top.y == OriginalHeight(map, top.x, top.z), "Skirt top does not meet terrain");
++            Check(skirt.vertices[i + 1].y == -40, "Skirt bottom moved");
++        }
++        const auto water = BuildWater(map);
++        for (const auto& v : water.vertices)
++        {
++            Check(v.y == TerrainSeaLevel, "Water surface moved");
++            Check(v.waterDepth == TerrainSeaLevel - OriginalHeight(map, v.x, v.z), "Water depth does not match terrain");
++        }
++        // Existing sparse water geometry is sufficient: subdivision preserves
++        // those same ground triangles, so their interpolated depths still match.
++        for (std::size_t i = 0; i < water.indices.size(); i += 3)
++        {
++            const auto& a = water.vertices[water.indices[i]];
++            const auto& b = water.vertices[water.indices[i + 1]];
++            const auto& c = water.vertices[water.indices[i + 2]];
++            const float x = 0.25f * a.x + 0.5f * b.x + 0.25f * c.x;
++            const float z = 0.25f * a.z + 0.5f * b.z + 0.25f * c.z;
++            Check(Near(0.25f * a.waterDepth + 0.5f * b.waterDepth + 0.25f * c.waterDepth,
++                       TerrainSeaLevel - OriginalHeight(map, x, z)), "Water shoreline changed");
++        }
++    }
++
++    void BorderShading()
++    {
++        TerrainHeightmap map;
++        for (std::uint32_t z = 0; z <= MapSize; ++z)
++            for (std::uint32_t x = 129; x <= MapSize; ++x)
++                map.heights[z * TerrainStride + x] = 0.25f;
++        const auto mesh = BuildTerrain(map);
++        const auto at = [&](std::uint32_t sx, std::uint32_t sz) -> const Vertex&
++        {
++            return mesh.vertices[sz * TerrainMeshStride + sx];
++        };
++        // Flat tiles beside a single rising tile. The large center should be
++        // consistently lit; the shared edge takes the halfway slope.
++        for (const auto z : {0u, 100u, 101u, 102u, TerrainMeshSize})
++        {
++            Check(at(127 * 3 + 2, z).nx == 0, "Flat center should remain flat-lit");
++            for (const auto x : {128 * 3 + 1, 128 * 3 + 2})
++                Check(Near(-at(x, z).nx / at(x, z).ny, 0.25f), "Tile center normal is not consistent");
++            Check(Near(-at(128 * 3, z).nx / at(128 * 3, z).ny, 0.125f), "Shared border shading is not blended");
++        }
++        Check(Near(at(1, 1).x, TerrainTileBorder) && Near(at(2, 2).x, 1 - TerrainTileBorder), "Inset widths are wrong");
++    }
++}
++
++int main()
++{
++    try
++    {
++        GeometryAndJoins();
++        BorderShading();
++        std::cout << "PASS: nine quads, shared vertices, winding, unchanged heights/shorelines/skirt/grid, border normals\n";
++    }
++    catch (const std::exception& error)
++    {
++        std::cerr << error.what() << '\n';
++        return 1;
++    }
++}
