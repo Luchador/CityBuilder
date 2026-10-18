@@ -29,6 +29,10 @@ public:
     bool Remove(UiButtonId id);
     void Clear();
 
+    // Filter drawing AND hit testing to one button. nullopt restores the set.
+    // Individual visibility/enabled/selected states are preserved.
+    void ShowOnly(std::optional<UiButtonId> id);
+
     bool BlocksPointer(float x, float y) const;
     bool HasCapture() const { return capturing; }
     UiButtonResult PointerDown(float x, float y);
@@ -43,7 +47,9 @@ public:
 private:
     struct Entry { UiButtonId id; std::unique_ptr<UiButton> button; };
     const Entry* TopButton(float x, float y) const;
+    bool IsShown(const Entry& entry) const;
     std::vector<Entry> entries;
+    std::optional<UiButtonId> onlyShown;
     bool capturing = false;
     UiButtonId capturedId = 0;
 };

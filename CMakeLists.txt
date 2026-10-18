@@ -50,6 +50,17 @@ add_custom_target(copy_assets
     VERBATIM)
 add_dependencies(CityBuilder copy_assets)
 
+option(CITY_BUILD_UI_TESTS "Build UI visibility and input tests" OFF)
+if(CITY_BUILD_UI_TESTS)
+    enable_testing()
+    add_executable(CityUiVisibilityTests tests/ui_visibility_tests.cpp src/ui.cpp
+        src/ui_button.cpp src/ui_buttons.cpp src/ui_buttons_draw.cpp)
+    target_compile_features(CityUiVisibilityTests PRIVATE cxx_std_20)
+    target_include_directories(CityUiVisibilityTests PRIVATE src)
+    target_link_libraries(CityUiVisibilityTests PRIVATE SDL3::Headers)
+    add_test(NAME CityUiVisibilityTests COMMAND CityUiVisibilityTests)
+endif()
+
 option(CITY_BUILD_MINIMAP_TESTS "Build minimap map and texture tests" OFF)
 if(CITY_BUILD_MINIMAP_TESTS)
     enable_testing()

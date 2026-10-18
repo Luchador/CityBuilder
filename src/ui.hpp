@@ -14,6 +14,8 @@ struct UiSettings
     float barSlimDimension = 92.0f;
 
     float minimapSize = 288.0f;
+
+    bool minimized = false;
 };
 
 struct UiLayout
@@ -22,6 +24,9 @@ struct UiLayout
     UiRect world, bottomBar, toolbar, minimapPanel;
     UiRect newsTicker, cityName, population, funds, date, zoneDemand;
     UiRect toolbarContent, minimapContent;
+
+    // Keep panel bounds for the restore button, but give the world the full window.
+    bool minimized = false;
 
     // minimapPanel remains the bounding rectangle. These describe its
     // actual five-sided outline, including the upper-left corner cut.

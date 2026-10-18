@@ -7,7 +7,7 @@ void UiButtons::Draw(UiImageRenderer& renderer, SDL_GPUCommandBuffer* commands, 
     {
         const auto& button = *entry.button;
 
-        if (!button.IsVisible()) 
+        if (!IsShown(entry))
         {
             continue;
         }

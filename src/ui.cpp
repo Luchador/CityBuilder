@@ -21,7 +21,7 @@ float UiLayout::GetMinimapCornerCut() const
 
 bool UiLayout::IsMinimapPanelPoint(float x, float y) const
 {
-    return minimapPanel.Contains(x, y) && (x - minimapPanel.x) + (y - minimapPanel.y) >= GetMinimapCornerCut();
+    return !minimized && minimapPanel.Contains(x, y) && (x - minimapPanel.x) + (y - minimapPanel.y) >= GetMinimapCornerCut();
 }
 
 bool UiLayout::IsWorldPoint(float x, float y) const
@@ -148,6 +148,7 @@ UiLayout CalculateUiLayout(float width, float height, const UiSettings& settings
 
     layout.width = std::max(width, 1.0f);
     layout.height = std::max(height, 1.0f);
+    layout.minimized = settings.minimized;
 
     // Normally 1. Window minimum size is 800x480; retain safe geometry even
     // if a platform temporarily reports a smaller non-minimized window.
@@ -161,7 +162,9 @@ UiLayout CalculateUiLayout(float width, float height, const UiSettings& settings
     // Reserve useful space for city information and toolbar controls.
     const float maxMap = std::min({512.0f * s, layout.width - 480.0f * s, layout.height - 220.0f * s});
     const float map = std::clamp(settings.minimapSize * s, 128.0f * s, maxMap);
-    layout.world = {0, 0, layout.width - right, layout.height - bottom};
+    layout.world = settings.minimized
+        ? UiRect{0, 0, layout.width, layout.height}
+        : UiRect{0, 0, layout.width - right, layout.height - bottom};
     layout.bottomBar = {0, layout.height - bottom, layout.width, bottom};
     layout.toolbar = {layout.width - right, 0, right, layout.height - bottom};
     layout.minimapPanel = {layout.width - map, layout.height - map, map, map};

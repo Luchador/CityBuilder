@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 
@@ -354,6 +355,11 @@ public:
                         showGrid = !showGrid;
                     }
 
+                    if (event.key.key == SDLK_TAB)
+                    {
+                        ToggleUi();
+                    }
+
                     if (event.key.key == SDLK_COMMA)
                     {
                         RotateCamera(true);
@@ -491,6 +497,17 @@ private:
         minimizeUI.SetShape(UiButtonShape::Rectangle);
     }
 
+    void ToggleUi()
+    {
+        // A layout change invalidates mouse-pan anchors and in-progress clicks.
+        StopMousePan();
+        CancelButtonInteraction();
+
+        uiSettings.minimized = !uiSettings.minimized;
+        uiButtons.ShowOnly(uiSettings.minimized
+            ? std::optional<UiButtonId>{MinimizeUIButton} : std::nullopt);
+    }
+
     void ToggleFullscreen()
     {
         // Cancel interactions whose screen coordinates may change.
@@ -616,6 +633,10 @@ private:
                 RotateCamera(false);
                 break;
 
+            case MinimizeUIButton:
+                ToggleUi();
+                break;
+
             default:
                 break;
         }
@@ -731,7 +752,7 @@ private:
 
     bool HandleMinimapEvent(const SDL_Event& event)
     {
-        if (event.type != SDL_EVENT_MOUSE_BUTTON_DOWN || event.button.button != SDL_BUTTON_LEFT)
+        if (uiSettings.minimized || event.type != SDL_EVENT_MOUSE_BUTTON_DOWN || event.button.button != SDL_BUTTON_LEFT)
         {
             return false;
         }
@@ -826,7 +847,8 @@ private:
             }
     
             camera.BeginMousePan(event.button.x, event.button.y);
-            restoreCursor = SDL_CursorVisible();
+            // With the UI hidden there is no pan overlay, so keep the cursor.
+            restoreCursor = !uiSettings.minimized && SDL_CursorVisible();
     
             if (restoreCursor)
             { 
@@ -901,7 +923,7 @@ private:
 
         const auto next = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
 
-        if (uiVertices && next.width == uiLayout.width && next.height == uiLayout.height && next.minimapPanel.w == uiLayout.minimapPanel.w && next.toolbar.w == uiLayout.toolbar.w && next.bottomBar.h == uiLayout.bottomBar.h) 
+        if (uiVertices && next.minimized == uiLayout.minimized && next.width == uiLayout.width && next.height == uiLayout.height && next.minimapPanel.w == uiLayout.minimapPanel.w && next.toolbar.w == uiLayout.toolbar.w && next.bottomBar.h == uiLayout.bottomBar.h)
         {
             return;
         }
@@ -1230,7 +1252,7 @@ private:
 
     void Render()
     {
-        // Static UI geometry is uploaded only when layout dimensions change.
+        // Static UI geometry is uploaded only when the layout or visibility changes.
         // Do this before acquiring the presentation command buffer.
         EnsureUi();
         UpdateButtonPointer();
@@ -1244,7 +1266,7 @@ private:
             Fail("Get text pixel scale");
         }
 
-        if (pixelWidth > 0 && pixelHeight > 0)
+        if (!uiLayout.minimized && pixelWidth > 0 && pixelHeight > 0)
         {
             textRenderer.Prepare(std::max(static_cast<float>(pixelWidth) / uiLayout.width, static_cast<float>(pixelHeight) / uiLayout.height));
         }
@@ -1311,7 +1333,10 @@ private:
         // pass. Copy the small dynamic outline before any render pass begins.
         try
         {
-            UpdateMinimapOutline(commands, {view.centerX, view.centerZ, view.halfHeight, view.aspect, MapExtent, camera.GetQuarterTurns()});
+            if (!uiLayout.minimized)
+            {
+                UpdateMinimapOutline(commands, {view.centerX, view.centerZ, view.halfHeight, view.aspect, MapExtent, camera.GetQuarterTurns()});
+            }
         }
         catch (...)
         {
@@ -1390,32 +1415,39 @@ private:
         SDL_Rect uiScissor{0, 0, static_cast<int>(width), static_cast<int>(height)};
         SDL_SetGPUViewport(pass, &uiViewport);
         SDL_SetGPUScissor(pass, &uiScissor);
-        SDL_BindGPUGraphicsPipeline(pass, uiPipeline);
-        SDL_GPUBufferBinding uiBinding{uiVertices, 0};
-        SDL_BindGPUVertexBuffers(pass, 0, &uiBinding, 1);
-        const float screen[4] = {uiLayout.width, uiLayout.height, 0, 0};
-        SDL_PushGPUVertexUniformData(commands, 0, screen, sizeof(screen));
-        SDL_DrawGPUPrimitives(pass, uiVertexCount, 1, 0, 0);
-
-        if (minimapTexture)
+        if (!uiLayout.minimized)
         {
-            minimap.DrawMap(imageRenderer, commands, pass, *minimapTexture, uiLayout.width, uiLayout.height);
-        }
-
-        if (minimapOutlineVertexCount > 0)
-        {
-            // DrawMap binds the image pipeline and its larger uniform block.
-            // Restore the solid-color pipeline before drawing the red outline.
             SDL_BindGPUGraphicsPipeline(pass, uiPipeline);
+            SDL_GPUBufferBinding uiBinding{uiVertices, 0};
+            SDL_BindGPUVertexBuffers(pass, 0, &uiBinding, 1);
+            const float screen[4] = {uiLayout.width, uiLayout.height, 0, 0};
             SDL_PushGPUVertexUniformData(commands, 0, screen, sizeof(screen));
-            const SDL_GPUBufferBinding outlineBinding{minimapOutlineVertices, 0};
-            SDL_BindGPUVertexBuffers(pass, 0, &outlineBinding, 1);
-            SDL_DrawGPUPrimitives(pass, minimapOutlineVertexCount, 1, 0, 0);
+            SDL_DrawGPUPrimitives(pass, uiVertexCount, 1, 0, 0);
+
+            if (minimapTexture)
+            {
+                minimap.DrawMap(imageRenderer, commands, pass, *minimapTexture, uiLayout.width, uiLayout.height);
+            }
+
+            if (minimapOutlineVertexCount > 0)
+            {
+                // DrawMap binds the image pipeline and its larger uniform block.
+                // Restore the solid-color pipeline before drawing the red outline.
+                SDL_BindGPUGraphicsPipeline(pass, uiPipeline);
+                SDL_PushGPUVertexUniformData(commands, 0, screen, sizeof(screen));
+                const SDL_GPUBufferBinding outlineBinding{minimapOutlineVertices, 0};
+                SDL_BindGPUVertexBuffers(pass, 0, &outlineBinding, 1);
+                SDL_DrawGPUPrimitives(pass, minimapOutlineVertexCount, 1, 0, 0);
+            }
+
+            textRenderer.Draw(commands, pass, uiLayout.width, uiLayout.height, width, height);
         }
 
-        textRenderer.Draw(commands, pass, uiLayout.width, uiLayout.height, width, height);
         uiButtons.Draw(imageRenderer, commands, pass, uiLayout.width, uiLayout.height);
-        panOverlay.Draw(imageRenderer, commands, pass, uiLayout.width, uiLayout.height, camera.GetMousePan(), camera.GetPanSettings());
+        if (!uiLayout.minimized)
+        {
+            panOverlay.Draw(imageRenderer, commands, pass, uiLayout.width, uiLayout.height, camera.GetMousePan(), camera.GetPanSettings());
+        }
         SDL_EndGPURenderPass(pass);
 
         if (!SDL_SubmitGPUCommandBuffer(commands)) 

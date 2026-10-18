@@ -65,13 +65,31 @@ void UiButtons::Clear()
 {
     CancelInteraction();
     entries.clear();
+    onlyShown.reset();
+}
+
+void UiButtons::ShowOnly(std::optional<UiButtonId> id)
+{
+    if (id && !Find(*id))
+    {
+        throw std::invalid_argument("Visible UI button ID does not exist.");
+    }
+    if (onlyShown == id) return;
+
+    CancelInteraction();
+    onlyShown = id;
+}
+
+bool UiButtons::IsShown(const Entry& entry) const
+{
+    return entry.button->IsVisible() && (!onlyShown || entry.id == *onlyShown);
 }
 
 const UiButtons::Entry* UiButtons::TopButton(float x, float y) const
 {
     for (auto i = entries.rbegin(); i != entries.rend(); ++i)
     {
-        if (i->button->HitTest(x, y)) 
+        if (IsShown(*i) && i->button->HitTest(x, y))
         {
             return &*i;
         }
