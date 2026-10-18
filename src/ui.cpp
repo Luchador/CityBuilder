@@ -79,9 +79,13 @@ namespace
     {
         const UiRect& area = layout.speedTicker;
         const float controlSize = area.w * 0.5f;
+
         const auto place = [&](UiButtonId id, UiRect bounds)
         {
-            if (auto* button = buttons.Find(id)) button->SetBounds(bounds);
+            if (auto* button = buttons.Find(id)) 
+            {
+                button->SetBounds(bounds);
+            }
         };
 
         place(UiButtonIds::TickerPauseButton, {area.x, area.y, controlSize, controlSize});
@@ -91,14 +95,14 @@ namespace
             UiButtonIds::TickerSpeedButton1, UiButtonIds::TickerSpeedButton2,
             UiButtonIds::TickerSpeedButton3, UiButtonIds::TickerSpeedButton4
         };
+
         const float squareSize = area.w / static_cast<float>(speedIds.size());
         const float squareY = area.y + area.h - squareSize;
 
         for (std::size_t i = 0; i < speedIds.size(); ++i)
         {
             // Adjacent bounds touch exactly; there is no padding between squares.
-            place(speedIds[i], {area.x + static_cast<float>(i) * squareSize,
-                               squareY, squareSize, squareSize});
+            place(speedIds[i], {area.x + static_cast<float>(i) * squareSize, squareY, squareSize, squareSize});
         }
     }
 
@@ -151,7 +155,11 @@ namespace
 
         for (const auto& definition : ZoningButtons)
         {
-            if (auto* button = buttons.Find(definition.id)) button->SetBounds({x, y, size, size});
+            if (auto* button = buttons.Find(definition.id)) 
+            {
+                button->SetBounds({x, y, size, size});
+            }
+
             left = x;
             x -= size + gap;
         }
@@ -321,7 +329,12 @@ UiButtonResult HandleUiButtonEvent(SDL_Window* window, const SDL_Event& event, c
         if (event.button.button != SDL_BUTTON_LEFT)
         {
             const bool blocked = buttons.HasCapture() || buttons.BlocksPointer(event.button.x, event.button.y);
-            if (!blocked && buttons.HasOpenFlyout()) CancelUiButtonInteraction(buttons);
+
+            if (!blocked && buttons.HasOpenFlyout()) 
+            {
+                CancelUiButtonInteraction(buttons);
+            }
+
             return {blocked, {}};
         }
     
@@ -344,8 +357,8 @@ UiButtonResult HandleUiButtonEvent(SDL_Window* window, const SDL_Event& event, c
     if (event.type == SDL_EVENT_MOUSE_MOTION)
     {
         buttons.PointerMove(event.motion.x, event.motion.y);
-        return {buttons.HasCapture() || (buttons.HasOpenFlyout() &&
-            buttons.BlocksPointer(event.motion.x, event.motion.y)), {}};
+
+        return {buttons.HasCapture() || (buttons.HasOpenFlyout() && buttons.BlocksPointer(event.motion.x, event.motion.y)), {}};
     }
 
     if (event.type == SDL_EVENT_MOUSE_WHEEL)

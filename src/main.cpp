@@ -181,6 +181,7 @@ public:
     {
         CancelUiButtonInteraction(uiButtons);
         StopMousePan();
+
         if (device) 
         {
             SDL_WaitForGPUIdle(device);
@@ -545,7 +546,6 @@ private:
                 break;
 
             default:
-                // Toolbar placeholders have no game actions yet.
                 break;
         }
     }
@@ -553,11 +553,17 @@ private:
     bool HandleButtonEvent(const SDL_Event& event)
     {
         const auto result = HandleUiButtonEvent(window, event, uiSettings, uiButtons, minimap);
+
         if (result.consumed && event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT)
         {
             StopMousePan();
         }
-        if (result.clicked) OnUiButtonClicked(*result.clicked);
+
+        if (result.clicked) 
+        {
+            OnUiButtonClicked(*result.clicked);
+        }
+
         return result.consumed;
     }
 
@@ -1228,6 +1234,7 @@ private:
         SDL_Rect uiScissor{0, 0, static_cast<int>(width), static_cast<int>(height)};
         SDL_SetGPUViewport(pass, &uiViewport);
         SDL_SetGPUScissor(pass, &uiScissor);
+
         if (!uiLayout.minimized)
         {
             SDL_BindGPUGraphicsPipeline(pass, uiPipeline);

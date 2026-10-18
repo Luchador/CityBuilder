@@ -11,5 +11,5 @@ public:
 
 private:
     double timeAccumulated = 0.0;
-    int simulationSpeed = 0;
+    int simulationSpeed = 0; // 0-5, for different date progression rates.
 };
