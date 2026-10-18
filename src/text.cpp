@@ -81,8 +81,13 @@ TextLabel::~TextLabel()
 
 void TextLabel::SetText(std::string_view utf8)
 {
-    if (value == utf8) return;
+    if (value == utf8) 
+    {
+        return;
+    }
+
     value = utf8;
+
     stringDirty = rendererDirty = true;
 }
 

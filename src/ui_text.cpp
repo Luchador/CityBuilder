@@ -2,7 +2,7 @@
 
 #include <algorithm>
 
-void BottomBarText::Initialize(TextRenderer& renderer)
+void BottomBarText::Initialize(TextRenderer& renderer, City city)
 {
     news = &renderer.CreateLabel("");
 
@@ -14,16 +14,16 @@ void BottomBarText::Initialize(TextRenderer& renderer)
         values[i] = &renderer.CreateLabel("");
     }
 
-    SetValues(CityStatusText{});
+    UpdateText(city);
 }
 
-void BottomBarText::SetValues(const CityStatusText& next)
+void BottomBarText::UpdateText(City city)
 {
-    news->SetText(next.news);
-    values[0]->SetText(next.cityName);
-    values[1]->SetText(next.population);
-    values[2]->SetText(next.funds);
-    values[3]->SetText(next.date);
+    news->SetText("Temp");
+    values[0]->SetText("Name");
+    values[1]->SetText("Pop");
+    values[2]->SetText("funds");
+    values[3]->SetText("date");
 }
 
 void BottomBarText::SetLayout(const UiLayout& layout)

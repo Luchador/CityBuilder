@@ -274,7 +274,7 @@ public:
         textVertexShader = CompileShader(device, TextVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
         textFragmentShader = CompileShader(device, TextFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
         textRenderer.Initialize(device, textVertexShader, textFragmentShader, SDL_GetGPUSwapchainTextureFormat(device, window));
-        bottomBarText.Initialize(textRenderer);
+        bottomBarText.Initialize(textRenderer, city);
         imageVertexShader = CompileShader(device, UiImageVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
         imageFragmentShader = CompileShader(device, UiImageFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
         imageRenderer.Initialize(device, imageVertexShader, imageFragmentShader, SDL_GetGPUSwapchainTextureFormat(device, window));
@@ -338,6 +338,7 @@ public:
             SDL_Event event;
 
             city.date += std::chrono::days{1};
+            bottomBarText.UpdateText(city);
 
             while (SDL_PollEvent(&event)) 
             {
