@@ -50,16 +50,6 @@ add_custom_target(copy_assets
     VERBATIM)
 add_dependencies(CityBuilder copy_assets)
 
-option(CITY_BUILD_SUBDIVISION_TESTS "Build terrain subdivision tests" OFF)
-if(CITY_BUILD_SUBDIVISION_TESTS)
-    enable_testing()
-    add_executable(CitySubdivisionTests tests/terrain_subdivision_tests.cpp
-        src/terrain.cpp src/terrain_skirt.cpp src/water.cpp)
-    target_compile_features(CitySubdivisionTests PRIVATE cxx_std_20)
-    target_include_directories(CitySubdivisionTests PRIVATE src)
-    add_test(NAME CitySubdivisionTests COMMAND CitySubdivisionTests)
-endif()
-
 option(CITY_BUILD_MINIMAP_TESTS "Build minimap map and texture tests" OFF)
 if(CITY_BUILD_MINIMAP_TESTS)
     enable_testing()

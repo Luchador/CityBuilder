@@ -19,35 +19,13 @@ namespace
     TerrainColor SampleTile(const TerrainMesh& terrain, std::uint32_t x, std::uint32_t z,
                             float u, float v, const MinimapTileOverlay& overlay)
     {
-        // Subdivision preserves the original ground triangles. Test water using
-        // their corner heights, exactly as BuildWater does. This also avoids
-        // classifying an exact sea-level point as wet due to inset rounding.
-        const auto corner = (z * TerrainMeshStride + x) * TerrainSubdivisions;
-        const float ha = terrain.vertices[corner].y;
-        const float hb = terrain.vertices[corner + TerrainSubdivisions].y;
-        const float hc = terrain.vertices[corner + TerrainSubdivisions * TerrainMeshStride].y;
-        const float hd = terrain.vertices[corner + TerrainSubdivisions * (TerrainMeshStride + 1)].y;
-        const float height = u + v <= 1.0f
-            ? (1.0f - u - v) * ha + u * hb + v * hc
-            : (u + v - 1.0f) * hd + (1.0f - v) * hb + (1.0f - u) * hc;
-        if (IsWaterElevation(height)) return WaterColor;
-
-        // Find the narrow border or large center interval, then interpolate the
-        // same subtriangle colors the GPU draws. u/v are logical tile fractions.
-        const auto interval = [](float t) -> std::uint32_t
-        {
-            return t < TerrainTileOffsets[1] ? 0u : t < TerrainTileOffsets[2] ? 1u : 2u;
-        };
-        const auto sx = x * TerrainSubdivisions + interval(u);
-        const auto sz = z * TerrainSubdivisions + interval(v);
-        const auto a = sz * TerrainMeshStride + sx;
+        const auto a = z * TerrainStride + x;
         const auto b = a + 1;
-        const auto c = a + TerrainMeshStride;
+        const auto c = a + TerrainStride;
         const auto d = c + 1;
-        u = (static_cast<float>(x) + u - terrain.vertices[a].x) / (terrain.vertices[b].x - terrain.vertices[a].x);
-        v = (static_cast<float>(z) + v - terrain.vertices[a].z) / (terrain.vertices[c].z - terrain.vertices[a].z);
 
-        // Match BuildTerrain: {a,c,b}, {b,c,d}, not bilinear interpolation.
+        // Match BuildTerrain and BuildWater: {a,c,b}, {b,c,d}, not bilinear
+        // interpolation. Bilinear heights can move shorelines on saddle tiles.
         const bool upper = u + v <= 1.0f;
         const Vertex& p = terrain.vertices[upper ? a : d];
         const Vertex& q = terrain.vertices[b];
@@ -55,6 +33,13 @@ namespace
         const float wp = upper ? 1.0f - u - v : u + v - 1.0f;
         const float wq = upper ? u : 1.0f - v;
         const float wr = upper ? v : 1.0f - u;
+        const float height = wp * p.y + wq * q.y + wr * r.y;
+
+        // Exactly sea level is dry, matching the water shader's discard test.
+        if (IsWaterElevation(height))
+        {
+            return WaterColor;
+        }
 
         const TerrainColor ground{wp * p.r + wq * q.r + wr * r.r,
                                   wp * p.g + wq * q.g + wr * r.g,
@@ -72,16 +57,16 @@ namespace
 
 MinimapImage BuildMinimapImage(const TerrainMesh& terrain, std::span<const MinimapTileOverlay> overlays)
 {
-    if (terrain.vertices.size() != TerrainMeshVertexCount)
+    if (terrain.vertices.size() != TerrainVertexCount)
     {
-        throw std::invalid_argument("Minimap requires the subdivided grid returned by BuildTerrain");
+        throw std::invalid_argument("Minimap requires the regular grid returned by BuildTerrain");
     }
-    for (std::uint32_t z = 0; z <= TerrainMeshSize; ++z)
+    for (std::uint32_t z = 0; z <= MapSize; ++z)
     {
-        for (std::uint32_t x = 0; x <= TerrainMeshSize; ++x)
+        for (std::uint32_t x = 0; x <= MapSize; ++x)
         {
-            const auto& vertex = terrain.vertices[z * TerrainMeshStride + x];
-            if (vertex.x != TerrainMeshCoordinate(x) || vertex.z != TerrainMeshCoordinate(z) ||
+            const auto& vertex = terrain.vertices[z * TerrainStride + x];
+            if (vertex.x != static_cast<float>(x) || vertex.z != static_cast<float>(z) ||
                 !std::isfinite(vertex.y) || !ValidColor({vertex.r, vertex.g, vertex.b}))
             {
                 throw std::invalid_argument("Minimap requires valid terrain positions and colors");

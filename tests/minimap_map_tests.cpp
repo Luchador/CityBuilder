@@ -84,19 +84,17 @@ namespace
 
     void ShorelinesAndOverlays()
     {
-        TerrainHeightmap map;
-        std::fill(map.heights.begin(), map.heights.end(), 1.0f);
+        auto mesh = Flat(1.0f);
+        for (auto& v : mesh.vertices) { v.r = 1; v.g = v.b = 0; }
         const auto setTile = [&](std::uint32_t x, std::uint32_t z, float a, float b, float c, float d)
         {
-            map.heights[z * TerrainStride + x] = a;
-            map.heights[z * TerrainStride + x + 1] = b;
-            map.heights[(z + 1) * TerrainStride + x] = c;
-            map.heights[(z + 1) * TerrainStride + x + 1] = d;
+            mesh.vertices[z * TerrainStride + x].y = a;
+            mesh.vertices[z * TerrainStride + x + 1].y = b;
+            mesh.vertices[(z + 1) * TerrainStride + x].y = c;
+            mesh.vertices[(z + 1) * TerrainStride + x + 1].y = d;
         };
         setTile(10, 20, -1, 1, 1, -1); // Saddle: bilinear sampling would be wrong.
         setTile(30, 40, -1, 0, 0, 0);  // One wet triangle beside a dry sea-level one.
-        auto mesh = BuildTerrain(map);
-        for (auto& v : mesh.vertices) { v.r = 1; v.g = v.b = 0; }
         const auto image = BuildMinimapImage(mesh);
         CheckPixel(image, 20, 40, WaterOverRed(0.25f));
         CheckPixel(image, 21, 40, WaterOverRed(0.0f));
@@ -116,26 +114,6 @@ namespace
         CheckPixel(zoned, 102, 120, {1, 0, 0});
         CheckPixel(zoned, 60, 80, WaterColor); // Zones cannot hide water.
         CheckPixel(zoned, 61, 81, {0, 0, 1});
-    }
-
-    void InsetVertexColors()
-    {
-        auto mesh = Flat(1);
-        // The logical corners are blue, but the large inset face is red. A
-        // sampler still reading the old 257x257 grid would miss the new colors.
-        for (auto& vertex : mesh.vertices) { vertex.r = vertex.g = 0; vertex.b = 1; }
-        for (std::uint32_t z = 1; z <= 2; ++z)
-            for (std::uint32_t x = 1; x <= 2; ++x)
-            {
-                auto& vertex = mesh.vertices[(42 * TerrainSubdivisions + z) * TerrainMeshStride + 71 * TerrainSubdivisions + x];
-                vertex.r = 1;
-                vertex.b = 0;
-            }
-        const auto image = BuildMinimapImage(mesh);
-        // With the default 10% border, these four pixel samples lie in the inset.
-        if (TerrainTileBorder <= 0.125f)
-            CheckPixel(image, 142, 84, {1, 0, 0});
-        CheckPixel(image, 144, 84, {0, 0, 1});
     }
 
     void ValidationAndRepeatability()
@@ -165,7 +143,6 @@ int main()
         FlatMaps();
         PaletteAndOrientation();
         ShorelinesAndOverlays();
-        InsetVertexColors();
         ValidationAndRepeatability();
         std::cout << "PASS: elevation colors, exact sea level, triangular shorelines, map axes, overlays, validation\n";
         return 0;

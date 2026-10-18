@@ -22,7 +22,7 @@ struct MinimapTileOverlay
 };
 
 // Use the mesh returned by BuildTerrain, including its actual palette colors.
-// Sample the nine render quads' colors and the unchanged sea-level shoreline.
+// Sample the same two triangles and sea-level shoreline as terrain/water.
 // Colors show elevation without directional lighting, grid lines, or skirts.
 MinimapImage BuildMinimapImage(const TerrainMesh& terrain,
                               std::span<const MinimapTileOverlay> overlays = {});
