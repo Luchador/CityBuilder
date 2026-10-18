@@ -18,6 +18,8 @@ struct UiActions
     std::function<void(float, float)> moveCameraToMapPoint; // Normalized X/Z, 0..1.
     std::function<void()> cancelWorldInteraction;
     std::function<void(UiButtonId)> buttonClicked; // Future tools and speed controls.
+    std::function<void(int)> setSimulationSpeed;
+    std::function<void()> resumeSimulation;
 };
 
 // Application's single entry point for UI state, input, layout, and rendering.

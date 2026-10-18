@@ -123,18 +123,38 @@ public:
         waterVertexShader = CompileShader(device, WaterVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
         waterFragmentShader = CompileShader(device, WaterFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT);
         waterPipeline = MakeWaterPipeline();
+
         UiActions uiActions;
+
         uiActions.zoomCamera = [this](float steps)
         {
             camera.Zoom(steps);
-            if (steps > 0.0f) zoomInSound.Play();
-            else zoomOutSound.Play();
+            if (steps > 0.0f) 
+            {
+                zoomInSound.Play();
+            }
+            else 
+            {
+                zoomOutSound.Play();
+            }
         };
+    
         uiActions.rotateCamera = [this](bool clockwise) { RotateCamera(clockwise); };
         uiActions.moveCameraToMapPoint = [this](float x, float z)
         {
             camera.SetPosition(x * MapExtent, z * MapExtent);
         };
+
+        uiActions.setSimulationSpeed = [this](int speed)
+        {
+            simulation.SetSimulationSpeed(speed);
+        };
+
+        uiActions.resumeSimulation = [this]()
+        {
+            simulation.Resume();
+        };
+
         uiActions.cancelWorldInteraction = [this] { StopMousePan(); };
         ui.Initialize(device, window, textures, city, std::move(uiActions));
 
@@ -142,6 +162,9 @@ public:
         zoomInSound.Load("sfx/ui/sfx_zoom_in.wav");
         zoomOutSound.Load("sfx/ui/sfx_zoom_out.wav");
         rotateSound.Load("sfx/ui/sfx_rotate.wav");
+        playSound.Load("sfx/ui/sfx_play.wav");
+        pauseSound.Load("sfx/ui/sfx_pause.wav");
+        buttonClick.Load("sfx/ui/sfx_click.wav");
 
         // Terrain
         terrainSettings.seed = SDL_rand_bits(); // Use a fixed number here to replay a landscape.
@@ -309,6 +332,9 @@ private:
     SoundEffect zoomInSound;
     SoundEffect zoomOutSound;
     SoundEffect rotateSound;
+    SoundEffect playSound;
+    SoundEffect pauseSound;
+    SoundEffect buttonClick;
 
     void ToggleFullscreen()
     {

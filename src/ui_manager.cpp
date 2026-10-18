@@ -151,26 +151,55 @@ void UiManager::OnUiButtonClicked(UiButtonId id)
         }
         case UiButtonIds::TickerPlayButton:
         {
+            if (actions.resumeSimulation)
+            {
+                actions.resumeSimulation();
+            }
             break;
         }
+
         case UiButtonIds::TickerPauseButton:
         {
+            if (actions.setSimulationSpeed)
+            {
+                actions.setSimulationSpeed(0);
+            }
             break;
         }
+
         case UiButtonIds::TickerSpeedButton1:
         {
+            if (actions.setSimulationSpeed)
+            {
+                actions.setSimulationSpeed(1);
+            }
             break;
         }
+
         case UiButtonIds::TickerSpeedButton2:
         {
+            if (actions.setSimulationSpeed)
+            {
+                actions.setSimulationSpeed(2);
+            }
             break;
         }
+
         case UiButtonIds::TickerSpeedButton3:
         {
+            if (actions.setSimulationSpeed)
+            {
+                actions.setSimulationSpeed(3);
+            }
             break;
         }
+
         case UiButtonIds::TickerSpeedButton4:
         {
+            if (actions.setSimulationSpeed)
+            {
+                actions.setSimulationSpeed(4);
+            }
             break;
         }
         default:
