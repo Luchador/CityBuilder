@@ -847,8 +847,8 @@ private:
             }
     
             camera.BeginMousePan(event.button.x, event.button.y);
-            // With the UI hidden there is no pan overlay, so keep the cursor.
-            restoreCursor = !uiSettings.minimized && SDL_CursorVisible();
+            // Custom panning graphics replace the cursor in both UI modes.
+            restoreCursor = SDL_CursorVisible();
     
             if (restoreCursor)
             { 
@@ -1444,10 +1444,7 @@ private:
         }
 
         uiButtons.Draw(imageRenderer, commands, pass, uiLayout.width, uiLayout.height);
-        if (!uiLayout.minimized)
-        {
-            panOverlay.Draw(imageRenderer, commands, pass, uiLayout.width, uiLayout.height, camera.GetMousePan(), camera.GetPanSettings());
-        }
+        panOverlay.Draw(imageRenderer, commands, pass, uiLayout.width, uiLayout.height, camera.GetMousePan(), camera.GetPanSettings());
         SDL_EndGPURenderPass(pass);
 
         if (!SDL_SubmitGPUCommandBuffer(commands)) 

@@ -1,7 +1,7 @@
 # Minimize the UI
 
-Click the existing minimize button or press Tab to toggle the interface. Only
-the minimize button remains visible while minimized. Its current bottom-right
+Click the existing minimize button or press Tab to toggle the interface. The
+minimize button and active panning graphics remain visible while minimized. The button's bottom-right
 position, reduced size, and textures are retained. Tab key repeats are ignored.
 
 The world viewport expands to fill the window. Hidden panels, camera buttons,
@@ -9,8 +9,8 @@ and the minimap do not intercept mouse input, so wheel zoom and right-button
 panning work over the uncovered area. The remaining button still intercepts
 input normally. Keyboard camera controls continue to work.
 
-Pan indicator graphics are hidden with the interface; right-button panning keeps
-the normal mouse cursor visible in this mode. Toggling either way cancels an
+Pan indicator graphics work normally in both UI modes; right-button panning hides
+the normal mouse cursor and restores it when panning ends. Toggling either way cancels an
 active pan or button press so a changed layout cannot leave a stale mouse anchor
 or trigger a click on mouse release.
 
@@ -25,8 +25,9 @@ or trigger a click on mouse release.
   visibility, enabled, or selected properties. Newly added buttons obey the same
   filter automatically.
 - `EnsureUi()` notices visibility changes as well as window size changes.
-- The render path skips panel geometry, minimap texture/outline, text, and pan
-  overlays while minimized. It skips text preparation and outline uploads too.
+- The render path skips panel geometry, minimap texture/outline, and text while
+  minimized. It skips text preparation and outline uploads too. The pan overlay
+  is drawn in both UI modes whenever a right-button pan is active.
 
 The toggle lasts for the current game session; the interface starts visible.
 
