@@ -190,10 +190,12 @@ UiLayout CalculateUiLayout(float width, float height, const UiSettings& settings
     layout.funds = {layout.population.x + layout.population.w + gap, rowY, statsW * 0.24f, rowH};
     layout.date = {layout.funds.x + layout.funds.w + gap, rowY, statsW * 0.22f, rowH};
     layout.zoneDemand = {gap + contentWidth - demandW, layout.bottomBar.y + gap, demandW, layout.bottomBar.h - 2.0f * gap};
+
     // The 84-pixel toolbar art fits the normal 92-pixel bar with 4-pixel margins.
     const float toolbarPadding = 4.0f * s;
-    layout.toolbarContent = {layout.toolbar.x + toolbarPadding, toolbarPadding,
-        right - 2 * toolbarPadding, std::min(layout.minimapPanel.y, layout.world.h) - 2 * toolbarPadding};
+    const float toolbarTopPadding = 60.0f * s;
+
+    layout.toolbarContent = {layout.toolbar.x + toolbarPadding, toolbarTopPadding, right - 2.0f * toolbarPadding, std::max(0.0f, std::min(layout.minimapPanel.y, layout.world.h) - toolbarTopPadding - toolbarPadding)};
     layout.minimapContent = Inset(layout.minimapPanel, gap);
 
     return layout;
