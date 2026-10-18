@@ -55,7 +55,7 @@ struct TerrainPalette
     std::array<TerrainColorBand, 6> bands{{
         // Upper elevation                          // Transition width     // Color
         {TerrainSeaLevel,                           1.0f,                   {0.06f, 0.28f, 0.52f}}, // Water
-        {0.5f,                                      0.25f,                  {0.28f, 0.42f, 0.24f}}, // Light green
+        {0.5f,                                      0.25f,                  {0.40f, 0.50f, 0.40f}}, // Light green
         {1.5f,                                      1.0f,                   {0.24f, 0.4f,  0.18f}}, // Medium green
         {8.0f,                                      4.0f,                   {0.10f, 0.32f, 0.14f}}, // Dark green
         {224.0f,                                    32.0f,                  {0.42f, 0.51f, 0.22f}}, // Yellow-green

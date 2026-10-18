@@ -28,7 +28,7 @@ float4 ProjectWorldPosition(float3 position)
 
 float WorldBrightness(float3 normal)
 {
-    const float ambientIntensity = 0.45;
+    const float ambientIntensity = 0.55;
     const float directionalIntensity = 1.00;
     const float3 lightDirection = float3(-0.75, 0.5, 0.25);
 
