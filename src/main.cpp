@@ -148,11 +148,21 @@ public:
         uiActions.setSimulationSpeed = [this](int speed)
         {
             simulation.SetSimulationSpeed(speed);
+
+            if (speed == 0)
+            {
+                pauseSound.Play();
+            }
+            else
+            {
+                buttonClick.Play();
+            }
         };
 
         uiActions.resumeSimulation = [this]()
         {
             simulation.Resume();
+            playSound.Play();
         };
 
         uiActions.cancelWorldInteraction = [this] { StopMousePan(); };
