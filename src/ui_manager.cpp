@@ -1,6 +1,7 @@
 #include "ui_manager.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <stdexcept>
 #include <string>
@@ -304,10 +305,47 @@ bool UiManager::HandleEvent(const SDL_Event& event)
     return false;
 }
 
-void UiManager::Update(const City& city)
+void UiManager::UpdateTicker(int simulationSpeed)
+{
+    constexpr std::array<UiButtonId, 4> speedButtons{
+        UiButtonIds::TickerSpeedButton1, UiButtonIds::TickerSpeedButton2,
+        UiButtonIds::TickerSpeedButton3, UiButtonIds::TickerSpeedButton4
+    };
+
+    const int speed = std::clamp(simulationSpeed, 0, static_cast<int>(speedButtons.size()));
+    const bool paused = speed == 0;
+    const Uint64 now = SDL_GetTicks();
+
+    if (paused && !tickerPaused)
+    {
+        // Start each pause with the pressed graphic for a full half second.
+        pauseFlashStart = now;
+    }
+    tickerPaused = paused;
+
+    const bool pauseLit = paused && ((now - pauseFlashStart) / PauseFlashIntervalMs) % 2 == 0;
+    const auto select = [this](UiButtonId id, bool selected)
+    {
+        if (auto* button = buttons.Find(id))
+        {
+            button->SetSelected(selected);
+        }
+    };
+
+    select(UiButtonIds::TickerPlayButton, !paused);
+    select(UiButtonIds::TickerPauseButton, pauseLit);
+    for (std::size_t i = 0; i < speedButtons.size(); ++i)
+    {
+        select(speedButtons[i], static_cast<int>(i) < speed);
+    }
+}
+
+void UiManager::Update(const City& city, int simulationSpeed)
 {
     if (initialized) 
     {
         bottomBarText.UpdateText(city);
+        // Real time keeps the pause indicator animating while simulation time stops.
+        UpdateTicker(simulationSpeed);
     }
 }

@@ -43,6 +43,9 @@ public:
     void SetEnabled(bool value);
     void SetVisible(bool value);
     void SetSelected(bool value) { selected = value; }
+    // Turn off hover/held artwork for buttons whose selection displays game state.
+    // Hit testing, capture, and click handling still work normally.
+    void SetInteractionFeedbackEnabled(bool value) { interactionFeedback = value; }
     bool IsEnabled() const { return enabled; }
     bool IsVisible() const { return visible; }
     bool IsSelected() const { return selected; }
@@ -68,4 +71,5 @@ private:
     HitTestFunction customHitTest;
     bool enabled = true, visible = true, selected = false;
     bool hovered = false, pressed = false;
+    bool interactionFeedback = true;
 };

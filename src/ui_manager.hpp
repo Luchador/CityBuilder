@@ -50,7 +50,8 @@ public:
     bool IsWorldPoint(float x, float y);
     SDL_Rect GetWorldViewport(Uint32 pixelWidth, Uint32 pixelHeight);
 
-    void Update(const City& city);
+    // Supply the actual simulation speed each frame: 0 = paused, 1..4 = running.
+    void Update(const City& city, int simulationSpeed);
     void RebuildMinimap(const TerrainMesh& terrain, std::span<const MinimapTileOverlay> overlays = {});
 
     // Prepare before acquiring the frame command buffer (text/geometry uploads).
@@ -65,6 +66,7 @@ public:
 private:
     void RefreshLayout();
     void OnUiButtonClicked(UiButtonId id);
+    void UpdateTicker(int simulationSpeed);
     bool HandleMinimapEvent(const SDL_Event& event);
     SDL_GPUGraphicsPipeline* MakePipeline();
     void EnsureGeometry();
@@ -86,6 +88,9 @@ private:
     bool initialized = false;
     bool layoutDirty = true;
     bool geometryDirty = true;
+    static constexpr Uint64 PauseFlashIntervalMs = 500;
+    Uint64 pauseFlashStart = 0;
+    bool tickerPaused = false;
 
     SDL_GPUShader* vertexShader = nullptr;
     SDL_GPUShader* fragmentShader = nullptr;

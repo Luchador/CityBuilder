@@ -86,6 +86,8 @@ void UiManager::Release()
     layout = {};
     minimap = {};
     layoutDirty = geometryDirty = outlineDirty = true;
+    pauseFlashStart = 0;
+    tickerPaused = false;
     actions = {};
     textures = nullptr;
     window = nullptr;

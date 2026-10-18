@@ -184,6 +184,8 @@ void CreateUiButtons(UiButtons& buttons, TextureManager& textures)
     for (const auto& definition : TickerButtons)
     {
         AddButton(buttons, textures, definition);
+        // The ticker reports simulation state, even while hovered or held.
+        buttons.Find(definition.id)->SetInteractionFeedbackEnabled(false);
     }
 
     std::array<UiButtonId, ZoningButtons.size()> children{};

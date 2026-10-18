@@ -19,6 +19,7 @@ namespace {
 int liveShaders=0,livePipelines=0,liveBuffers=0,liveTransfers=0,shaderAttempts=0,failShaderAt=0;
 int geometryUploads=0,mapUploads=0,outlineUploads=0,textPrepares=0;
 float textScale=0;
+Uint64 clockMilliseconds=0;
 std::vector<std::string> draws;
 std::unordered_map<const Texture*,std::string> imageNames;
 std::unordered_map<const TextLabel*,std::string> labelValues;
@@ -26,6 +27,7 @@ void Check(bool ok,const char* message){if(!ok)throw std::runtime_error(message)
 bool NoGpuObjects(){return liveShaders==0&&livePipelines==0&&liveBuffers==0&&liveTransfers==0;}
 }
 const char* SDLCALL SDL_GetError(){return "test error";}
+Uint64 SDLCALL SDL_GetTicks(){return clockMilliseconds;}
 SDL_WindowFlags SDLCALL SDL_GetWindowFlags(SDL_Window* w){return w->flags;}
 bool SDLCALL SDL_GetWindowSize(SDL_Window* w,int* x,int* y){*x=w->width;*y=w->height;return true;}
 bool SDLCALL SDL_GetWindowSizeInPixels(SDL_Window* w,int* x,int* y){*x=w->width*w->scale;*y=w->height*w->scale;return true;}
@@ -106,6 +108,8 @@ namespace
         float zoomTotal = 0, mapX = -1, mapZ = -1;
         std::vector<bool> rotations;
         std::vector<UiButtonId> clicks;
+        std::vector<int> speedRequests;
+        int resumeRequests = 0;
 
         Fixture()
         {
@@ -124,6 +128,8 @@ namespace
                 mapZ = z;
             };
             actions.buttonClicked = [this](UiButtonId id) { clicks.push_back(id); };
+            actions.setSimulationSpeed = [this](int speed) { speedRequests.push_back(speed); };
+            actions.resumeSimulation = [this] { ++resumeRequests; };
             ui.Initialize(&device, &window, textures, city, std::move(actions));
             CreateUiButtons(referenceButtons, textures);
         }
@@ -185,7 +191,11 @@ namespace
         f.Click(UiButtonIds::RotateCounterClockwiseButton);
         Check(f.rotations == std::vector<bool>{true, false}, "rotation directions changed");
         f.Click(UiButtonIds::TickerSpeedButton3);
-        Check(f.clicks.back() == UiButtonIds::TickerSpeedButton3, "future button ID lost");
+        Check(f.speedRequests == std::vector<int>{3}, "speed callback lost");
+        f.Click(UiButtonIds::TickerPauseButton);
+        f.Click(UiButtonIds::TickerPlayButton);
+        Check(f.speedRequests == std::vector<int>{3, 0} && f.resumeRequests == 1,
+              "pause/play callbacks lost");
 
         f.referenceMinimap.SetLayout(f.ui.GetLayout());
         const auto point = f.referenceMinimap.MapToScreen(0.25f, 0.75f);
@@ -238,7 +248,7 @@ namespace
         Fixture f;
         f.window.scale = 2;
         f.city.name = "Manager City";
-        f.ui.Update(f.city);
+        f.ui.Update(f.city, 0);
         Check(std::any_of(labelValues.begin(), labelValues.end(),
                          [](const auto& pair) { return pair.second == "Manager City"; }),
               "city text did not update");
@@ -308,6 +318,113 @@ namespace
         Check(!f.ui.HandleEvent(event), "released UI processes events");
     }
 
+    std::vector<std::string> DrawTicker(Fixture& f)
+    {
+        SDL_GPUCommandBuffer commands;
+        SDL_GPUTexture target;
+        draws.clear();
+        f.ui.Draw(&commands, &target, 1280, 720, f.camera);
+        std::vector<std::string> ticker;
+        for (const auto& image : draws)
+        {
+            if (image.starts_with("ui/ticker/")) ticker.push_back(image);
+        }
+        return ticker;
+    }
+
+    void ExpectTicker(Fixture& f, bool play, bool pause, std::array<bool, 4> squares)
+    {
+        std::vector<std::string> expected;
+        const auto add = [&](const char* name, bool pressed)
+        {
+            expected.push_back(std::string("ui/ticker/btn_") + name +
+                               (pressed ? "_pressed.png" : "_normal.png"));
+        };
+        add("pause", pause);
+        for (bool lit : squares) add("tickersquare", lit);
+        add("play", play);
+        Check(DrawTicker(f) == expected, "ticker drew incorrect state textures");
+    }
+
+    void TickerState()
+    {
+        Fixture f;
+        f.ui.PrepareFrame(false);
+        clockMilliseconds = 1234;
+        f.ui.Update(f.city, 0);
+        ExpectTicker(f, false, true, {false, false, false, false});
+        clockMilliseconds = 1733;
+        f.ui.Update(f.city, 0);
+        ExpectTicker(f, false, true, {false, false, false, false});
+        clockMilliseconds = 1734;
+        f.ui.Update(f.city, 0);
+        ExpectTicker(f, false, false, {false, false, false, false});
+        clockMilliseconds = 2233;
+        f.ui.Update(f.city, 0);
+        ExpectTicker(f, false, false, {false, false, false, false});
+        clockMilliseconds = 2234;
+        f.ui.Update(f.city, 0);
+        ExpectTicker(f, false, true, {false, false, false, false});
+        // A long frame skips directly to the current phase instead of drifting.
+        clockMilliseconds = 8984;
+        f.ui.Update(f.city, 0);
+        ExpectTicker(f, false, false, {false, false, false, false});
+
+        // Changes supplied by the game work without a button click.
+        f.ui.Update(f.city, 1);
+        ExpectTicker(f, true, false, {true, false, false, false});
+        f.ui.Update(f.city, 2);
+        ExpectTicker(f, true, false, {true, true, false, false});
+        f.ui.Update(f.city, 3);
+        ExpectTicker(f, true, false, {true, true, true, false});
+        f.ui.Update(f.city, 4);
+        ExpectTicker(f, true, false, {true, true, true, true});
+        f.ui.Update(f.city, 1);
+        ExpectTicker(f, true, false, {true, false, false, false});
+
+        clockMilliseconds = 9000;
+        f.ui.Update(f.city, 0);
+        ExpectTicker(f, false, true, {false, false, false, false});
+        clockMilliseconds = 9500;
+        f.ui.Update(f.city, 0);
+        const auto pause = f.Center(UiButtonIds::TickerPauseButton);
+        f.Mouse(SDL_EVENT_MOUSE_MOTION, pause);
+        ExpectTicker(f, false, false, {false, false, false, false});
+        Check(f.Mouse(SDL_EVENT_MOUSE_BUTTON_DOWN, pause), "pause press not accepted");
+        ExpectTicker(f, false, false, {false, false, false, false});
+        f.Mouse(SDL_EVENT_MOUSE_BUTTON_UP, pause);
+        Check(f.speedRequests == std::vector<int>{0}, "flashing pause stopped accepting clicks");
+        f.ui.Update(f.city, 0);
+        ExpectTicker(f, false, false, {false, false, false, false});
+
+        const auto speed4 = f.Center(UiButtonIds::TickerSpeedButton4);
+        f.Mouse(SDL_EVENT_MOUSE_BUTTON_DOWN, speed4);
+        ExpectTicker(f, false, false, {false, false, false, false});
+        f.Mouse(SDL_EVENT_MOUSE_BUTTON_UP, speed4);
+        Check(f.speedRequests == std::vector<int>{0, 4}, "speed square stopped accepting clicks");
+        f.ui.Update(f.city, 4);
+        ExpectTicker(f, true, false, {true, true, true, true});
+
+        f.ui.SetMinimized(true);
+        clockMilliseconds = 10000;
+        f.ui.Update(f.city, 0);
+        Check(DrawTicker(f).empty(), "ticker visible while UI hidden");
+        clockMilliseconds = 10500;
+        f.ui.Update(f.city, 0);
+        f.ui.SetMinimized(false);
+        f.ui.PrepareFrame(false);
+        ExpectTicker(f, false, false, {false, false, false, false});
+
+        // Ordinary controls retain their original hover and held feedback.
+        f.Center(UiButtonIds::ZoomInButton);
+        auto* zoom = f.referenceButtons.Find(UiButtonIds::ZoomInButton);
+        const auto point = f.Center(UiButtonIds::ZoomInButton);
+        zoom->PointerMove(point[0], point[1]);
+        Check(zoom->GetState() == UiButtonState::Highlighted, "ordinary hover feedback changed");
+        zoom->PointerDown(point[0], point[1]);
+        Check(zoom->GetState() == UiButtonState::Pressed, "ordinary press feedback changed");
+    }
+
     void InitializationFailure()
     {
         SDL_GPUDevice device;
@@ -340,10 +457,11 @@ int main()
         InputRouting();
         Check(NoGpuObjects(), "input fixture leaked");
         RenderingAndLifetime();
+        TickerState();
         InitializationFailure();
         Check(imageNames.empty() && labelValues.empty(), "references survived owners");
         std::cout << "PASS: UI manager input, callbacks, resize, DPI, render order, "
-                     "minimized pan, cleanup and initialization failure\n";
+                     "minimized pan, ticker states/flashing, cleanup and initialization failure\n";
     }
     catch (const std::exception& error)
     {

@@ -304,8 +304,8 @@ public:
             // Main simulation logic
             simulation.Update(city, elapsedMilliseconds);
 
-            // Keep the bottom bar text updated with the latest logic.
-            ui.Update(city);
+            // Keep the bottom bar text and ticker synchronized with simulation state.
+            ui.Update(city, simulation.GetSimulationSpeed());
 
             if (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) 
             {

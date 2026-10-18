@@ -178,12 +178,12 @@ UiButtonState UiButton::GetState() const
         return UiButtonState::Normal;
     }
 
-    if (selected || (pressed && hovered)) 
+    if (selected || (interactionFeedback && pressed && hovered))
     {
         return UiButtonState::Pressed;
     }
 
-    return hovered ? UiButtonState::Highlighted : UiButtonState::Normal;
+    return interactionFeedback && hovered ? UiButtonState::Highlighted : UiButtonState::Normal;
 }
 
 const Texture* UiButton::GetTexture() const
