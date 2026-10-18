@@ -1,16 +1,16 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
-#include <d3dcompiler.h>
 
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
-#include <cstring>
-#include <memory>
 #include <stdexcept>
 #include <string>
+#include <utility>
 
 #include "camera.hpp"
+#include "gpu_utils.hpp"
+#include "ui_manager.hpp"
 #include "city.hpp"
 #include "simulation.hpp"
 #include "sound.hpp"
@@ -22,146 +22,11 @@
 #include "shaders.hpp"
 #include "water.hpp"
 #include "water_shaders.hpp"
-#include "ui.hpp"
-#include "pan_overlay.hpp"
 #include "texture.hpp"
-#include "text.hpp"
-#include "text_shaders.hpp"
-#include "ui_minimap.hpp"
-#include "minimap_map.hpp"
-#include "ui_text.hpp"
-#include "ui_buttons.hpp"
-#include "ui_image.hpp"
-#include "ui_image_shaders.hpp"
 
 [[noreturn]] static void Fail(const char* operation)
 {
     throw std::runtime_error(std::string(operation) + ": " + SDL_GetError());
-}
-
-struct BlobReleaser 
-{
-    void operator()(ID3DBlob* blob) const 
-    { 
-        if (blob) 
-        {
-            blob->Release(); 
-        }
-    }
-};
-
-static SDL_GPUShader* CompileShader(SDL_GPUDevice* device, const char* source, SDL_GPUShaderStage stage, Uint32 samplers = 0, const char* preamble = "", Uint32 fragmentUniforms = 0)
-{
-    ID3DBlob* rawCode = nullptr;
-    ID3DBlob* rawErrors = nullptr;
-    const bool vertex = stage == SDL_GPU_SHADERSTAGE_VERTEX;
-    const std::string fullSource = std::string(preamble) + source;
-    const HRESULT result = D3DCompile(fullSource.data(), fullSource.size(), vertex ? "city.vert" : "city.frag", nullptr, nullptr, "main", vertex ? "vs_5_1" : "ps_5_1", D3DCOMPILE_ENABLE_STRICTNESS | D3DCOMPILE_OPTIMIZATION_LEVEL3, 0, &rawCode, &rawErrors);
-
-    std::unique_ptr<ID3DBlob, BlobReleaser> code(rawCode), errors(rawErrors);
-
-    if (FAILED(result)) 
-    {
-        throw std::runtime_error(errors ? std::string(static_cast<const char*>(errors->GetBufferPointer()), errors->GetBufferSize()) : "D3DCompile failed without a diagnostic.");
-    }
-
-    SDL_GPUShaderCreateInfo info{};
-    info.code = static_cast<const Uint8*>(code->GetBufferPointer());
-    info.code_size = code->GetBufferSize();
-    info.entrypoint = "main";
-    info.format = SDL_GPU_SHADERFORMAT_DXBC;
-    info.stage = stage;
-    info.num_uniform_buffers = vertex ? 1u : fragmentUniforms;
-    info.num_samplers = samplers;
-    SDL_GPUShader* shader = SDL_CreateGPUShader(device, &info);
-
-    if (!shader) 
-    {
-        Fail("Create shader");
-    }
-
-    return shader;
-}
-
-static SDL_GPUBuffer* UploadBuffer(SDL_GPUDevice* device, const void* data, Uint32 size, SDL_GPUBufferUsageFlags usage)
-{
-    SDL_GPUBufferCreateInfo info{};
-    info.usage = usage;
-    info.size = size;
-    SDL_GPUBuffer* buffer = SDL_CreateGPUBuffer(device, &info);
-
-    if (!buffer) 
-    {
-        Fail("Create mesh buffer");
-    }
-
-    SDL_GPUTransferBuffer* transfer = nullptr;
-    SDL_GPUCommandBuffer* commands = nullptr;
-
-    try 
-    {
-        SDL_GPUTransferBufferCreateInfo staging{};
-
-        staging.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-        staging.size = size;
-        transfer = SDL_CreateGPUTransferBuffer(device, &staging);
-    
-        if (!transfer) 
-        {
-            Fail("Create upload buffer");
-        }
-
-        void* mapped = SDL_MapGPUTransferBuffer(device, transfer, false);
-    
-        if (!mapped) 
-        {
-            Fail("Map upload buffer");
-        }
-
-        std::memcpy(mapped, data, size);
-        SDL_UnmapGPUTransferBuffer(device, transfer);
-
-        commands = SDL_AcquireGPUCommandBuffer(device);
-
-        if (!commands) 
-        {
-            Fail("Acquire upload commands");
-        }
-
-        SDL_GPUCopyPass* pass = SDL_BeginGPUCopyPass(commands);
-        SDL_GPUTransferBufferLocation source{transfer, 0};
-        SDL_GPUBufferRegion destination{buffer, 0, size};
-        SDL_UploadToGPUBuffer(pass, &source, &destination, false);
-        SDL_EndGPUCopyPass(pass);
-
-        const bool submitted = SDL_SubmitGPUCommandBuffer(commands);
-        commands = nullptr;
-
-        if (!submitted) 
-        {
-            Fail("Submit mesh upload");
-        }
-
-        SDL_ReleaseGPUTransferBuffer(device, transfer);
-
-        return buffer;
-    } 
-    catch (...) 
-    {
-        if (commands) 
-        {
-            SDL_CancelGPUCommandBuffer(commands);
-        }
-    
-        if (transfer) 
-        {
-            SDL_ReleaseGPUTransferBuffer(device, transfer);
-        }
-
-        SDL_ReleaseGPUBuffer(device, buffer);
-
-        throw;
-    }
 }
 
 struct Uniforms 
@@ -179,23 +44,15 @@ class Application
 public:
     ~Application()
     {
-        CancelUiButtonInteraction(uiButtons);
+        ui.CancelInteraction();
         StopMousePan();
 
         if (device) 
         {
             SDL_WaitForGPUIdle(device);
-            textRenderer.Release();
-            if (textVertexShader) SDL_ReleaseGPUShader(device, textVertexShader);
-            if (textFragmentShader) SDL_ReleaseGPUShader(device, textFragmentShader);
-            panOverlay.Release();
-            uiButtons.Clear();
-            imageRenderer.Release();
-            minimapTexture.reset();
+            ui.Release();
             terrainMaterial.Release();
             textures.Release();
-            if (imageVertexShader) SDL_ReleaseGPUShader(device, imageVertexShader);
-            if (imageFragmentShader) SDL_ReleaseGPUShader(device, imageFragmentShader);
             if (terrainPipeline) SDL_ReleaseGPUGraphicsPipeline(device, terrainPipeline);
             if (terrainVertexShader) SDL_ReleaseGPUShader(device, terrainVertexShader);
             if (terrainFragmentShader) SDL_ReleaseGPUShader(device, terrainFragmentShader);
@@ -210,11 +67,6 @@ public:
             if (waterVertices) SDL_ReleaseGPUBuffer(device, waterVertices);
             if (waterIndices) SDL_ReleaseGPUBuffer(device, waterIndices);
             if (gridPipeline) SDL_ReleaseGPUGraphicsPipeline(device, gridPipeline);
-            if (uiPipeline) SDL_ReleaseGPUGraphicsPipeline(device, uiPipeline);
-            if (uiVertexShader) SDL_ReleaseGPUShader(device, uiVertexShader);
-            if (uiVertices) SDL_ReleaseGPUBuffer(device, uiVertices);
-            if (minimapOutlineVertices) SDL_ReleaseGPUBuffer(device, minimapOutlineVertices);
-            if (minimapOutlineTransfer) SDL_ReleaseGPUTransferBuffer(device, minimapOutlineTransfer);
             if (vertexShader) SDL_ReleaseGPUShader(device, vertexShader);
             if (fragmentShader) SDL_ReleaseGPUShader(device, fragmentShader);
             if (vertices) SDL_ReleaseGPUBuffer(device, vertices);
@@ -271,19 +123,20 @@ public:
         waterVertexShader = CompileShader(device, WaterVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
         waterFragmentShader = CompileShader(device, WaterFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT);
         waterPipeline = MakeWaterPipeline();
-        uiVertexShader = CompileShader(device, UiVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
-        uiPipeline = MakeUiPipeline();
-        textVertexShader = CompileShader(device, TextVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
-        textFragmentShader = CompileShader(device, TextFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
-        textRenderer.Initialize(device, textVertexShader, textFragmentShader, SDL_GetGPUSwapchainTextureFormat(device, window));
-        bottomBarText.Initialize(textRenderer, city);
-        imageVertexShader = CompileShader(device, UiImageVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
-        imageFragmentShader = CompileShader(device, UiImageFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
-        imageRenderer.Initialize(device, imageVertexShader, imageFragmentShader, SDL_GetGPUSwapchainTextureFormat(device, window));
-        panOverlay.Initialize(textures);
-
-        // UI
-        CreateUiButtons(uiButtons, textures);
+        UiActions uiActions;
+        uiActions.zoomCamera = [this](float steps)
+        {
+            camera.Zoom(steps);
+            if (steps > 0.0f) zoomInSound.Play();
+            else zoomOutSound.Play();
+        };
+        uiActions.rotateCamera = [this](bool clockwise) { RotateCamera(clockwise); };
+        uiActions.moveCameraToMapPoint = [this](float x, float z)
+        {
+            camera.SetPosition(x * MapExtent, z * MapExtent);
+        };
+        uiActions.cancelWorldInteraction = [this] { StopMousePan(); };
+        ui.Initialize(device, window, textures, city, std::move(uiActions));
 
         // Load sound effects.
         zoomInSound.Load("sfx/ui/sfx_zoom_in.wav");
@@ -296,7 +149,7 @@ public:
         terrain = GenerateTerrain(terrainSettings);
         const TerrainMesh mesh = BuildTerrain(terrain);
 
-        RebuildMinimap(mesh);
+        ui.RebuildMinimap(mesh);
 
         vertices = UploadBuffer(device, mesh.vertices.data(), static_cast<Uint32>(mesh.vertices.size() * sizeof(Vertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
         indices = UploadBuffer(device, mesh.indices.data(), static_cast<Uint32>(mesh.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
@@ -348,12 +201,7 @@ public:
 
             while (SDL_PollEvent(&event)) 
             {
-                if (HandleButtonEvent(event)) 
-                {
-                    continue;
-                }
-
-                if (HandleMinimapEvent(event)) 
+                if (ui.HandleEvent(event))
                 {
                     continue;
                 }
@@ -375,11 +223,6 @@ public:
                     if (event.key.key == SDLK_G) 
                     {
                         showGrid = !showGrid;
-                    }
-
-                    if (event.key.key == SDLK_TAB)
-                    {
-                        ToggleUi();
                     }
 
                     if (event.key.key == SDLK_COMMA)
@@ -409,20 +252,6 @@ public:
 
                 if (event.type == SDL_EVENT_MOUSE_WHEEL) 
                 {
-                    int windowWidth = 0, windowHeight = 0;
-
-                    if (!SDL_GetWindowSize(window, &windowWidth, &windowHeight)) 
-                    {
-                        continue;
-                    }
-
-                    const auto layout = CalculateUiLayout(static_cast<float>(windowWidth), static_cast<float>(windowHeight), uiSettings);
-
-                    if (!layout.IsWorldPoint(event.wheel.mouse_x, event.wheel.mouse_y)) 
-                    {
-                        continue;
-                    }
-
                     float amount = event.wheel.y;
     
                     if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) 
@@ -443,7 +272,7 @@ public:
             simulation.Update(city, elapsedMilliseconds);
 
             // Keep the bottom bar text updated with the latest logic.
-            bottomBarText.UpdateText(city);
+            ui.Update(city);
 
             if (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) 
             {
@@ -481,18 +310,11 @@ private:
     SoundEffect zoomOutSound;
     SoundEffect rotateSound;
 
-    void ToggleUi()
-    {
-        // A layout change invalidates mouse-pan anchors and in-progress clicks.
-        StopMousePan();
-        SetUiMinimized(uiSettings, uiButtons, !uiSettings.minimized);
-    }
-
     void ToggleFullscreen()
     {
         // Cancel interactions whose screen coordinates may change.
         StopMousePan();
-        CancelUiButtonInteraction(uiButtons);
+        ui.CancelInteraction();
 
         const bool isFullscreen = (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
 
@@ -517,95 +339,6 @@ private:
         }
 
         rotateSound.Play();
-    }
-
-    void OnUiButtonClicked(UiButtonId id)
-    {
-        switch(id)
-        {
-            case UiButtonIds::ZoomInButton:
-                camera.Zoom(1.0f);
-                zoomInSound.Play();
-                break;
-
-            case UiButtonIds::ZoomOutButton:
-                camera.Zoom(-1.0f);
-                zoomOutSound.Play();
-                break;
-
-            case UiButtonIds::RotateClockwiseButton:
-                RotateCamera(true);
-                break;
-
-            case UiButtonIds::RotateCounterClockwiseButton:
-                RotateCamera(false);
-                break;
-
-            case UiButtonIds::MinimizeUIButton:
-                ToggleUi();
-                break;
-
-            default:
-                break;
-        }
-    }
-
-    bool HandleButtonEvent(const SDL_Event& event)
-    {
-        const auto result = HandleUiButtonEvent(window, event, uiSettings, uiButtons, minimap);
-
-        if (result.consumed && event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT)
-        {
-            StopMousePan();
-        }
-
-        if (result.clicked) 
-        {
-            OnUiButtonClicked(*result.clicked);
-        }
-
-        return result.consumed;
-    }
-
-    bool HandleMinimapEvent(const SDL_Event& event)
-    {
-        if (uiSettings.minimized || event.type != SDL_EVENT_MOUSE_BUTTON_DOWN || event.button.button != SDL_BUTTON_LEFT)
-        {
-            return false;
-        }
-
-        if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) 
-        {
-            return false;
-        }
-
-        int width = 0, height = 0;
-
-        if (!SDL_GetWindowSize(window, &width, &height)) 
-        {
-            return false;
-        }
-
-        // A click can arrive before the first render, or immediately after a
-        // resize. Recalculate the CPU layout instead of using stale bounds.
-        // SDL mouse coordinates and these rectangles use logical window units.
-        const auto layout = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
-        minimap.SetLayout(layout);
-
-        float mapX = 0.0f, mapZ = 0.0f;
-
-        if (minimap.TryScreenToMap(event.button.x, event.button.y, mapX, mapZ))
-        {
-            StopMousePan();
-    
-            camera.SetPosition(mapX * MapExtent, mapZ * MapExtent);
-
-            return true;
-        }
-
-        // Reserve the visible panel for UI, including future minimap buttons.
-        // The removed upper-left corner belongs to the world again.
-        return layout.IsMinimapPanelPoint(event.button.x, event.button.y);
     }
 
     void StopMousePan()
@@ -644,25 +377,12 @@ private:
         }
         else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_RIGHT && !camera.IsMousePanning())
         {
-            int width = 0, height = 0;
-        
-            if (!SDL_GetWindowSize(window, &width, &height)) 
+            if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) ||
+                !ui.IsWorldPoint(event.button.x, event.button.y))
             {
                 return;
             }
-    
-            if (!(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) 
-            {
-                return;
-            }
-        
-            const auto layout = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
-    
-            if (!layout.IsWorldPoint(event.button.x, event.button.y)) 
-            {
-                return;
-            }
-    
+
             camera.BeginMousePan(event.button.x, event.button.y);
             // Custom panning graphics replace the cursor in both UI modes.
             restoreCursor = SDL_CursorVisible();
@@ -683,164 +403,6 @@ private:
         {
            camera.MoveMousePan(event.motion.x, event.motion.y);
         }
-    }
-
-    SDL_GPUGraphicsPipeline* MakeUiPipeline()
-    {
-        SDL_GPUVertexBufferDescription buffer{};
-        buffer.pitch = sizeof(UiVertex);
-        buffer.input_rate = SDL_GPU_VERTEXINPUTRATE_VERTEX;
-        SDL_GPUVertexAttribute attributes[2]{};
-        attributes[0].location = 0;
-        attributes[0].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2;
-        attributes[1].location = 1;
-        attributes[1].format = SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4;
-        attributes[1].offset = offsetof(UiVertex, r);
-        SDL_GPUColorTargetDescription color{};
-        color.format = SDL_GetGPUSwapchainTextureFormat(device, window);
-        color.blend_state.enable_blend = false;
-
-        SDL_GPUGraphicsPipelineCreateInfo info{};
-        info.vertex_shader = uiVertexShader;
-        info.fragment_shader = fragmentShader;
-        info.vertex_input_state.vertex_buffer_descriptions = &buffer;
-        info.vertex_input_state.num_vertex_buffers = 1;
-        info.vertex_input_state.vertex_attributes = attributes;
-        info.vertex_input_state.num_vertex_attributes = 2;
-        info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
-        info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
-        info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_NONE;
-        info.rasterizer_state.front_face = SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE;
-        info.multisample_state.sample_count = SDL_GPU_SAMPLECOUNT_1;
-        info.depth_stencil_state.enable_depth_test = false;
-        info.depth_stencil_state.enable_depth_write = false;
-        info.depth_stencil_state.compare_op = SDL_GPU_COMPAREOP_ALWAYS;
-        info.target_info.color_target_descriptions = &color;
-        info.target_info.num_color_targets = 1;
-
-        // Rendered in its own pass after the terrain, with no depth attachment.
-        SDL_GPUGraphicsPipeline* pipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
-
-        if (!pipeline) 
-        {
-            Fail("Create UI pipeline");
-        }
-
-        return pipeline;
-    }
-
-    void EnsureUi()
-    {
-        int width = 0, height = 0;
-    
-        if (!SDL_GetWindowSize(window, &width, &height)) 
-        {
-            Fail("Get UI window size");
-        }
-
-        const auto next = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
-
-        if (uiVertices && next.minimized == uiLayout.minimized && next.width == uiLayout.width && next.height == uiLayout.height && next.minimapPanel.w == uiLayout.minimapPanel.w && next.toolbar.w == uiLayout.toolbar.w && next.bottomBar.h == uiLayout.bottomBar.h)
-        {
-            return;
-        }
-
-        minimap.SetLayout(next);
-        auto mesh = BuildUiBackground(next);
-        minimap.AppendGeometry(mesh);
-
-        SDL_GPUBuffer* replacement = UploadBuffer(device, mesh.data(), static_cast<Uint32>(mesh.size() * sizeof(UiVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
-
-        if (uiVertices) 
-        {
-            SDL_ReleaseGPUBuffer(device, uiVertices);
-        }
-    
-        uiVertices = replacement;
-        uiVertexCount = static_cast<Uint32>(mesh.size());
-        uiLayout = next;
-        bottomBarText.SetLayout(uiLayout);
-        LayoutUiButtons(uiButtons, minimap, uiLayout);
-        minimapOutlineDirty = true;
-    }
-
-    void RebuildMinimap(const TerrainMesh& mesh, std::span<const MinimapTileOverlay> overlays = {})
-    {
-        // Rebuild only after world data changes, not when the camera moves
-        // or the panel resizes. Future tile zone colors can be supplied here.
-        const auto image = BuildMinimapImage(mesh, overlays);
-        minimapTexture = textures.CreateRgba(image.width, image.height, image.rgba);
-    }
-
-    void UpdateMinimapOutline(SDL_GPUCommandBuffer* commands, const MinimapView& view)
-    {
-        if (!minimapOutlineDirty && view == minimapOutlineView) 
-        {
-            return;
-        }
-
-        minimapOutlineMesh.clear();
-        minimapOutlineMesh.reserve(MaxMinimapOutlineVertices);
-        minimap.AppendViewOutline(minimapOutlineMesh, view);
-
-        if (minimapOutlineMesh.size() > MaxMinimapOutlineVertices)
-        {
-            throw std::runtime_error("Minimap outline exceeds its vertex buffer capacity.");
-        }
-
-        const auto count = static_cast<Uint32>(minimapOutlineMesh.size());
-
-        if (count > 0)
-        {
-            // Each rectangular stroke clipped by a diamond has at most eight
-            // corners (six triangles). Keep a little spare capacity and reuse
-            // these buffers; cycling protects data still used by earlier frames.
-            if (!minimapOutlineVertices)
-            {
-                SDL_GPUBufferCreateInfo info{};
-                info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
-                info.size = MaxMinimapOutlineVertices * static_cast<Uint32>(sizeof(UiVertex));
-                minimapOutlineVertices = SDL_CreateGPUBuffer(device, &info);
-                if (!minimapOutlineVertices) Fail("Create minimap outline buffer");
-            }
-
-            if (!minimapOutlineTransfer)
-            {
-                SDL_GPUTransferBufferCreateInfo info{};
-                info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
-                info.size = MaxMinimapOutlineVertices * static_cast<Uint32>(sizeof(UiVertex));
-                minimapOutlineTransfer = SDL_CreateGPUTransferBuffer(device, &info);
-                if (!minimapOutlineTransfer) Fail("Create minimap outline transfer buffer");
-            }
-
-            const Uint32 bytes = count * static_cast<Uint32>(sizeof(UiVertex));
-            void* mapped = SDL_MapGPUTransferBuffer(device, minimapOutlineTransfer, true);
-
-            if (!mapped) 
-            {
-                Fail("Map minimap outline transfer buffer");
-            }
-
-            std::memcpy(mapped, minimapOutlineMesh.data(), bytes);
-            SDL_UnmapGPUTransferBuffer(device, minimapOutlineTransfer);
-
-            SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(commands);
-
-            if (!copy) 
-            {
-                Fail("Begin minimap outline upload");
-            }
-
-            const SDL_GPUTransferBufferLocation source{minimapOutlineTransfer, 0};
-            const SDL_GPUBufferRegion destination{minimapOutlineVertices, 0, bytes};
-            SDL_UploadToGPUBuffer(copy, &source, &destination, true);
-            SDL_EndGPUCopyPass(copy);
-        }
-
-        // Setting count to zero hides an entirely clipped outline immediately.
-        minimapOutlineVertexCount = count;
-        minimapOutlineView = view;
-        minimapOutlineDirty = false;
     }
 
     SDL_GPUGraphicsPipeline* MakePipeline(bool grid)
@@ -1050,14 +612,7 @@ private:
 
     void PanCamera(float dt)
     {
-        int width = 0, height = 0;
-
-        if (!SDL_GetWindowSize(window, &width, &height))
-        {
-            return;
-        }
-
-        const auto layout = CalculateUiLayout(static_cast<float>(width), static_cast<float>(height), uiSettings);
+        const auto& layout = ui.GetLayout();
 
         const bool* keys = SDL_GetKeyboardState(nullptr);
 
@@ -1070,24 +625,8 @@ private:
 
     void Render()
     {
-        // Static UI geometry is uploaded only when the layout or visibility changes.
-        // Do this before acquiring the presentation command buffer.
-        EnsureUi();
-        UpdateUiButtonPointer(window, uiButtons, camera.IsMousePanning());
-
-        // Font atlas uploads must be submitted before this frame's render commands.
-        // Rasterize at drawable resolution, then place glyphs in logical UI units.
-        int pixelWidth = 0, pixelHeight = 0;
-
-        if (!SDL_GetWindowSizeInPixels(window, &pixelWidth, &pixelHeight)) 
-        {
-            Fail("Get text pixel scale");
-        }
-
-        if (!uiLayout.minimized && pixelWidth > 0 && pixelHeight > 0)
-        {
-            textRenderer.Prepare(std::max(static_cast<float>(pixelWidth) / uiLayout.width, static_cast<float>(pixelHeight) / uiLayout.height));
-        }
+        // UI atlas and static geometry uploads precede the presentation commands.
+        ui.PrepareFrame(camera.IsMousePanning());
 
         SDL_GPUCommandBuffer* commands = SDL_AcquireGPUCommandBuffer(device);
 
@@ -1142,19 +681,17 @@ private:
         depthTarget.stencil_store_op = SDL_GPU_STOREOP_DONT_CARE;
         depthTarget.cycle = true;
 
-        const int worldWidth = std::max(1, static_cast<int>(std::lround(uiLayout.world.w * static_cast<float>(width) / uiLayout.width)));
-        const int worldHeight = std::max(1, static_cast<int>(std::lround(uiLayout.world.h * static_cast<float>(height) / uiLayout.height)));
-    
+        const SDL_Rect worldRect = ui.GetWorldViewport(width, height);
+        const int worldWidth = worldRect.w;
+        const int worldHeight = worldRect.h;
+
         Uniforms view{camera.GetCenterX(), camera.GetCenterZ(), camera.GetHalfHeight(), static_cast<float>(worldWidth) / static_cast<float>(worldHeight), 1.0f, 1.0f, 1.0f, 0.0f, camera.GetOrientation()};
 
         // Use exactly the same camera and rounded pixel aspect as the world
         // pass. Copy the small dynamic outline before any render pass begins.
         try
         {
-            if (!uiLayout.minimized)
-            {
-                UpdateMinimapOutline(commands, {view.centerX, view.centerZ, view.halfHeight, view.aspect, MapExtent, camera.GetQuarterTurns()});
-            }
+            ui.UploadFrame(commands, camera, MapExtent, width, height);
         }
         catch (...)
         {
@@ -1227,45 +764,15 @@ private:
 
         SDL_EndGPURenderPass(pass);
 
-        // Preserve the city image and cover the docks with opaque UI geometry.
-        color.load_op = SDL_GPU_LOADOP_LOAD;
-        pass = SDL_BeginGPURenderPass(commands, &color, 1, nullptr);
-        SDL_GPUViewport uiViewport{0, 0, static_cast<float>(width), static_cast<float>(height), 0, 1};
-        SDL_Rect uiScissor{0, 0, static_cast<int>(width), static_cast<int>(height)};
-        SDL_SetGPUViewport(pass, &uiViewport);
-        SDL_SetGPUScissor(pass, &uiScissor);
-
-        if (!uiLayout.minimized)
+        try
         {
-            SDL_BindGPUGraphicsPipeline(pass, uiPipeline);
-            SDL_GPUBufferBinding uiBinding{uiVertices, 0};
-            SDL_BindGPUVertexBuffers(pass, 0, &uiBinding, 1);
-            const float screen[4] = {uiLayout.width, uiLayout.height, 0, 0};
-            SDL_PushGPUVertexUniformData(commands, 0, screen, sizeof(screen));
-            SDL_DrawGPUPrimitives(pass, uiVertexCount, 1, 0, 0);
-
-            if (minimapTexture)
-            {
-                minimap.DrawMap(imageRenderer, commands, pass, *minimapTexture, uiLayout.width, uiLayout.height);
-            }
-
-            if (minimapOutlineVertexCount > 0)
-            {
-                // DrawMap binds the image pipeline and its larger uniform block.
-                // Restore the solid-color pipeline before drawing the red outline.
-                SDL_BindGPUGraphicsPipeline(pass, uiPipeline);
-                SDL_PushGPUVertexUniformData(commands, 0, screen, sizeof(screen));
-                const SDL_GPUBufferBinding outlineBinding{minimapOutlineVertices, 0};
-                SDL_BindGPUVertexBuffers(pass, 0, &outlineBinding, 1);
-                SDL_DrawGPUPrimitives(pass, minimapOutlineVertexCount, 1, 0, 0);
-            }
-
-            textRenderer.Draw(commands, pass, uiLayout.width, uiLayout.height, width, height);
+            ui.Draw(commands, swapchain, width, height, camera);
         }
-
-        uiButtons.Draw(imageRenderer, commands, pass, uiLayout.width, uiLayout.height);
-        panOverlay.Draw(imageRenderer, commands, pass, uiLayout.width, uiLayout.height, camera.GetMousePan(), camera.GetPanSettings());
-        SDL_EndGPURenderPass(pass);
+        catch (...)
+        {
+            SDL_SubmitGPUCommandBuffer(commands);
+            throw;
+        }
 
         if (!SDL_SubmitGPUCommandBuffer(commands)) 
         {
@@ -1305,31 +812,8 @@ private:
     TextureManager textures;
     TerrainMaterial terrainMaterial;
     TerrainMaterialSettings terrainMaterialSettings;
-    UiImageRenderer imageRenderer;
-    UiButtons uiButtons;
-    TextRenderer textRenderer;
-    BottomBarText bottomBarText;
-    SDL_GPUShader* textVertexShader = nullptr;
-    SDL_GPUShader* textFragmentShader = nullptr;
-    PanOverlay panOverlay;
+    UiManager ui;
     bool restoreCursor = false;
-    SDL_GPUShader* imageVertexShader = nullptr;
-    SDL_GPUShader* imageFragmentShader = nullptr;
-    UiSettings uiSettings;
-    UiLayout uiLayout;
-    UiMinimap minimap;
-    std::unique_ptr<Texture> minimapTexture;
-    SDL_GPUShader* uiVertexShader = nullptr;
-    SDL_GPUGraphicsPipeline* uiPipeline = nullptr;
-    SDL_GPUBuffer* uiVertices = nullptr;
-    Uint32 uiVertexCount = 0;
-    static constexpr Uint32 MaxMinimapOutlineVertices = 96;
-    SDL_GPUBuffer* minimapOutlineVertices = nullptr;
-    SDL_GPUTransferBuffer* minimapOutlineTransfer = nullptr;
-    Uint32 minimapOutlineVertexCount = 0;
-    std::vector<UiVertex> minimapOutlineMesh;
-    MinimapView minimapOutlineView{};
-    bool minimapOutlineDirty = true;
     Uint32 depthWidth = 0, depthHeight = 0;
     Uint32 indexCount = 0, lineVertexCount = 0;
     bool showGrid = true;

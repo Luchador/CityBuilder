@@ -329,12 +329,12 @@ UiButtonResult HandleUiButtonEvent(SDL_Window* window, const SDL_Event& event, c
         if (event.button.button != SDL_BUTTON_LEFT)
         {
             const bool blocked = buttons.HasCapture() || buttons.BlocksPointer(event.button.x, event.button.y);
-
+            
             if (!blocked && buttons.HasOpenFlyout()) 
             {
                 CancelUiButtonInteraction(buttons);
             }
-
+    
             return {blocked, {}};
         }
     

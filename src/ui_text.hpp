@@ -9,7 +9,7 @@
 class BottomBarText
 {
 public:
-    void Initialize(TextRenderer& renderer, City city);
+    void Initialize(TextRenderer& renderer, const City& city);
     void UpdateText(const City& city);
     void SetLayout(const UiLayout& layout);
 

@@ -50,6 +50,22 @@ add_custom_target(copy_assets
     VERBATIM)
 add_dependencies(CityBuilder copy_assets)
 
+option(CITY_BUILD_UI_MANAGER_TESTS "Build UI manager input/render lifetime checks" OFF)
+if(CITY_BUILD_UI_MANAGER_TESTS)
+    enable_testing()
+    add_executable(CityUiManagerTests tests/ui_manager_tests.cpp
+        src/ui_manager.cpp src/ui_manager_draw.cpp src/ui.cpp src/ui_layout.cpp
+        src/ui_button.cpp src/ui_buttons.cpp src/ui_buttons_draw.cpp
+        src/ui_minimap.cpp src/ui_minimap_draw.cpp src/ui_text.cpp
+        src/pan_overlay.cpp src/minimap_map.cpp src/camera.cpp)
+    target_compile_features(CityUiManagerTests PRIVATE cxx_std_20)
+    # Device/font doubles only need the public headers, not the SDL_ttf binary.
+    target_include_directories(CityUiManagerTests PRIVATE src
+        $<TARGET_PROPERTY:SDL3_ttf::SDL3_ttf,INTERFACE_INCLUDE_DIRECTORIES>)
+    target_link_libraries(CityUiManagerTests PRIVATE SDL3::Headers)
+    add_test(NAME CityUiManagerTests COMMAND CityUiManagerTests)
+endif()
+
 option(CITY_BUILD_UI_TESTS "Build UI visibility and input tests" OFF)
 if(CITY_BUILD_UI_TESTS)
     enable_testing()

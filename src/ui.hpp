@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <vector>
+#include <functional>
 
 class TextureManager;
 class UiButtons;
@@ -95,3 +96,13 @@ void CancelUiButtonInteraction(UiButtons& buttons);
 UiButtonResult HandleUiButtonEvent(SDL_Window* window, const SDL_Event& event,
                                    const UiSettings& settings, UiButtons& buttons, UiMinimap& minimap);
 void UpdateUiButtonPointer(SDL_Window* window, UiButtons& buttons, bool mousePanning);
+
+struct UiButtonActions
+{
+    std::function<void()> zoomIn;
+    std::function<void()> zoomOut;
+    std::function<void(bool)> rotateCamera;
+    std::function<void()> toggleUi;
+};
+
+void OnUiButtonClicked(UiButtonId id, const UiButtonActions& actions);
