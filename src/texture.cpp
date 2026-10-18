@@ -77,12 +77,25 @@ void TextureManager::Initialize(SDL_GPUDevice* gpu)
 
 const Texture& TextureManager::Load(std::string_view assetPath)
 {
+    return Load(assetPath, {});
+}
+
+const Texture& TextureManager::Load(std::string_view assetPath, TextureOptions options)
+{
     if (!device) 
     {
         throw std::logic_error("Initialize TextureManager before loading images");
     }
 
-    const std::string key = NormalizeAssetPath(assetPath);
+    if (options.content != TextureContent::Ui && options.content != TextureContent::Color &&
+        options.content != TextureContent::Data)
+    {
+        throw std::invalid_argument("Unknown texture content type");
+    }
+    const std::string name = NormalizeAssetPath(assetPath);
+    // One file may be used in different roles without sharing incompatible data.
+    const std::string key = std::to_string(static_cast<int>(options.content)) +
+                            (options.mipmaps ? ":mip:" : ":base:") + name;
     const auto found = textures.find(key);
 
     if (found != textures.end()) 
@@ -91,14 +104,14 @@ const Texture& TextureManager::Load(std::string_view assetPath)
     }
 
     // Own the texture before inserting it so a failed allocation cannot leak it.
-    auto texture = LoadTexture(assetRoot + key);
+    auto texture = LoadTexture(assetRoot + name, options);
 
     const auto entry = textures.emplace(key, std::move(texture));
 
     return *entry.first->second;
 }
 
-std::unique_ptr<Texture> TextureManager::LoadTexture(const std::string& path)
+std::unique_ptr<Texture> TextureManager::LoadTexture(const std::string& path, TextureOptions options)
 {
     using Surface = std::unique_ptr<SDL_Surface, decltype(&SDL_DestroySurface)>;
     Surface loaded(SDL_LoadPNG(path.c_str()), SDL_DestroySurface);
@@ -129,7 +142,7 @@ std::unique_ptr<Texture> TextureManager::LoadTexture(const std::string& path)
     std::unique_ptr<SDL_Surface, decltype(&SDL_UnlockSurface)> unlock(rgba.get(), SDL_UnlockSurface);
 
     return UploadTexture(static_cast<Uint32>(rgba->w), static_cast<Uint32>(rgba->h),
-                         static_cast<const Uint8*>(rgba->pixels), static_cast<std::size_t>(rgba->pitch), path);
+                         static_cast<const Uint8*>(rgba->pixels), static_cast<std::size_t>(rgba->pitch), path, options);
 }
 
 std::unique_ptr<Texture> TextureManager::CreateRgba(Uint32 width, Uint32 height, std::span<const Uint8> pixels)
@@ -147,24 +160,32 @@ std::unique_ptr<Texture> TextureManager::CreateRgba(Uint32 width, Uint32 height,
 }
 
 std::unique_ptr<Texture> TextureManager::UploadTexture(Uint32 width, Uint32 height, const Uint8* pixels,
-                                                       std::size_t sourcePitch, const std::string& path)
+                                                       std::size_t sourcePitch, const std::string& path,
+                                                       TextureOptions options)
 {
     auto texture = std::unique_ptr<Texture>(new Texture(device));
 
     texture->width = width;
     texture->height = height;
+    if (options.mipmaps)
+    {
+        for (Uint32 size = std::max(width, height); size > 1; size /= 2)
+            ++texture->mipLevels;
+    }
 
     // D3D12 prefers 256-byte rows and 512-byte offsets (our offset is zero).
     const Uint32 pitch = (width * 4 + 255u) & ~255u;
 
     SDL_GPUTextureCreateInfo textureInfo{};
     textureInfo.type = SDL_GPU_TEXTURETYPE_2D;
-    textureInfo.format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
+    textureInfo.format = options.content == TextureContent::Color ?
+        SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
     textureInfo.usage = SDL_GPU_TEXTUREUSAGE_SAMPLER;
+    if (texture->mipLevels > 1) textureInfo.usage |= SDL_GPU_TEXTUREUSAGE_COLOR_TARGET;
     textureInfo.width = width;
     textureInfo.height = height;
     textureInfo.layer_count_or_depth = 1;
-    textureInfo.num_levels = 1;
+    textureInfo.num_levels = texture->mipLevels;
     textureInfo.sample_count = SDL_GPU_SAMPLECOUNT_1;
     texture->handle = SDL_CreateGPUTexture(device, &textureInfo);
 
@@ -205,12 +226,13 @@ std::unique_ptr<Texture> TextureManager::UploadTexture(Uint32 width, Uint32 heig
     
             for (Uint32 x = 0; x < width; ++x)
             {
-                // Input uses straight alpha; premultiply before GPU filtering.
+                // UI uses premultiplied alpha; material color/data stays straight.
                 const Uint32 alpha = source[x * 4 + 3];
     
                 for (Uint32 channel = 0; channel < 3; ++channel)
                 {
-                    destination[x * 4 + channel] = static_cast<Uint8>((source[x * 4 + channel] * alpha + 127) / 255);
+                    destination[x * 4 + channel] = options.content == TextureContent::Ui ?
+                        static_cast<Uint8>((source[x * 4 + channel] * alpha + 127) / 255) : source[x * 4 + channel];
                 }
         
                 destination[x * 4 + 3] = static_cast<Uint8>(alpha);
@@ -246,6 +268,9 @@ std::unique_ptr<Texture> TextureManager::UploadTexture(Uint32 width, Uint32 heig
 
         SDL_UploadToGPUTexture(pass, &source, &destination, false);
         SDL_EndGPUCopyPass(pass);
+
+        // SDL requires this outside any pass, after the base level upload.
+        if (texture->mipLevels > 1) SDL_GenerateMipmapsForGPUTexture(commands, texture->handle);
 
         const bool submitted = SDL_SubmitGPUCommandBuffer(commands);
 

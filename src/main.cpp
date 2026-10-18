@@ -14,6 +14,8 @@
 #include "camera.hpp"
 #include "sound.hpp"
 #include "terrain.hpp"
+#include "terrain_material.hpp"
+#include "terrain_shaders.hpp"
 #include "terrain_skirt.hpp"
 #include "terrain_skirt_shaders.hpp"
 #include "shaders.hpp"
@@ -188,10 +190,13 @@ public:
             uiButtons.Clear();
             imageRenderer.Release();
             minimapTexture.reset();
+            terrainMaterial.Release();
             textures.Release();
             if (imageVertexShader) SDL_ReleaseGPUShader(device, imageVertexShader);
             if (imageFragmentShader) SDL_ReleaseGPUShader(device, imageFragmentShader);
             if (terrainPipeline) SDL_ReleaseGPUGraphicsPipeline(device, terrainPipeline);
+            if (terrainVertexShader) SDL_ReleaseGPUShader(device, terrainVertexShader);
+            if (terrainFragmentShader) SDL_ReleaseGPUShader(device, terrainFragmentShader);
             if (skirtPipeline) SDL_ReleaseGPUGraphicsPipeline(device, skirtPipeline);
             if (skirtVertexShader) SDL_ReleaseGPUShader(device, skirtVertexShader);
             if (skirtFragmentShader) SDL_ReleaseGPUShader(device, skirtFragmentShader);
@@ -249,12 +254,17 @@ public:
 
         claimed = true;
         textures.Initialize(device);
+        terrainMaterial.Initialize(device, textures,
+            "materials/ground/grass01_basecolor.png", "materials/ground/grass01_normal.png");
 
-        vertexShader = CompileShader(device, VertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
+        const std::string worldPreamble = std::string(WorldViewShaderSource) + WorldLightingShaderSource;
+        vertexShader = CompileShader(device, VertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, worldPreamble.c_str());
         fragmentShader = CompileShader(device, FragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT);
+        terrainVertexShader = CompileShader(device, TerrainVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
+        terrainFragmentShader = CompileShader(device, TerrainFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 2, WorldLightingShaderSource, 1);
         terrainPipeline = MakePipeline(false);
         gridPipeline = MakePipeline(true);
-        skirtVertexShader = CompileShader(device, TerrainSkirtVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
+        skirtVertexShader = CompileShader(device, TerrainSkirtVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, worldPreamble.c_str());
         skirtFragmentShader = CompileShader(device, TerrainSkirtFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 0, "", 1);
         skirtPipeline = MakeSkirtPipeline();
         waterVertexShader = CompileShader(device, WaterVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
@@ -1072,8 +1082,9 @@ private:
         }
 
         SDL_GPUGraphicsPipelineCreateInfo info{};
-        info.vertex_shader = vertexShader;
-        info.fragment_shader = fragmentShader;
+        // The grid keeps the solid-color shaders; ground uses the material pair.
+        info.vertex_shader = grid ? vertexShader : terrainVertexShader;
+        info.fragment_shader = grid ? fragmentShader : terrainFragmentShader;
         info.vertex_input_state.vertex_buffer_descriptions = &buffer;
         info.vertex_input_state.num_vertex_buffers = 1;
         info.vertex_input_state.vertex_attributes = attributes;
@@ -1368,6 +1379,7 @@ private:
         SDL_BindGPUVertexBuffers(pass, 0, &vertexBinding, 1);
         SDL_BindGPUIndexBuffer(pass, &indexBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
         SDL_PushGPUVertexUniformData(commands, 0, &view, sizeof(view));
+        terrainMaterial.Bind(commands, pass, terrainMaterialSettings);
         SDL_DrawGPUIndexedPrimitives(pass, indexCount, 1, 0, 0, 0);
 
         // Render the terrain line grid.
@@ -1459,6 +1471,8 @@ private:
     SDL_GPUShader* vertexShader = nullptr;
     SDL_GPUShader* fragmentShader = nullptr;
     SDL_GPUGraphicsPipeline* terrainPipeline = nullptr;
+    SDL_GPUShader* terrainVertexShader = nullptr;
+    SDL_GPUShader* terrainFragmentShader = nullptr;
     SDL_GPUGraphicsPipeline* gridPipeline = nullptr;
     TerrainSkirtSettings skirtSettings;
     TerrainSkirtUniforms skirtUniforms{};
@@ -1481,6 +1495,8 @@ private:
     TerrainSettings terrainSettings;
     TerrainHeightmap terrain;
     TextureManager textures;
+    TerrainMaterial terrainMaterial;
+    TerrainMaterialSettings terrainMaterialSettings;
     UiImageRenderer imageRenderer;
     UiButtons uiButtons;
     TextRenderer textRenderer;

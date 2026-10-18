@@ -8,6 +8,7 @@
 /.vscode/
 /CMakeUserPresets.json
 /assets/materials
+/docs
 
 # Downloaded project archives
 /*.zip

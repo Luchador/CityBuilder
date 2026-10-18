@@ -1,6 +1,7 @@
 // These SDL test doubles exercise ownership and upload data without a GPU.
 // They do not test SDL's PNG decoder or Direct3D 12 itself.
 #include "texture.hpp"
+#include "terrain_material.hpp"
 #include "ui_image.hpp"
 #include "ui_minimap.hpp"
 
@@ -9,6 +10,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -17,7 +19,9 @@ struct SDL_GPUTexture
 {
     SDL_GPUDevice* device;
     std::vector<Uint8> pixels;
+    SDL_GPUTextureCreateInfo info;
 };
+struct SDL_GPUSampler { SDL_GPUDevice* device; SDL_GPUSamplerCreateInfo info; };
 struct SDL_GPUTransferBuffer
 {
     SDL_GPUDevice* device;
@@ -33,6 +37,10 @@ namespace
     Failure failure = Failure::None;
     int liveTextures = 0, liveTransfers = 0, liveCommands = 0, liveSurfaces = 0, locks = 0;
     int loads = 0, uploads = 0;
+    int mipGenerations = 0, liveSamplers = 0, materialBinds = 0;
+    bool failSampler = false;
+    SDL_GPUTextureSamplerBinding boundTextures[2]{};
+    TerrainMaterialUniforms boundMaterial{};
     int imageWidth = 3;
     std::string lastPath;
     int draws = 0;
@@ -127,11 +135,57 @@ void SDLCALL SDL_UnlockSurface(SDL_Surface*) { --locks; }
 SDL_GPUTexture* SDLCALL SDL_CreateGPUTexture(SDL_GPUDevice* device, const SDL_GPUTextureCreateInfo* info)
 {
     if (failure == Failure::Texture) return nullptr;
-    Check(info->format == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM &&
-          info->usage == SDL_GPU_TEXTUREUSAGE_SAMPLER, "sampled RGBA8 texture");
-    Check(info->width == 3 && info->height == 2 && info->num_levels == 1, "image dimensions");
+    Check(info->format == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM ||
+          info->format == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB, "sampled RGBA8 texture");
+    Check(info->width == 3 && info->height == 2 &&
+          (info->num_levels == 1 || info->num_levels == 2), "image dimensions and mip count");
+    Check(info->usage == (SDL_GPU_TEXTUREUSAGE_SAMPLER |
+          (info->num_levels > 1 ? SDL_GPU_TEXTUREUSAGE_COLOR_TARGET : 0)), "mipmap usage flags");
     ++liveTextures;
-    return new SDL_GPUTexture{device, {}};
+    return new SDL_GPUTexture{device, {}, *info};
+}
+
+void SDLCALL SDL_GenerateMipmapsForGPUTexture(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* texture)
+{
+    Check(!commands->copying && !texture->pixels.empty(), "generate mips after upload and outside copy pass");
+    Check(texture->info.num_levels > 1, "generate only allocated mip chains");
+    ++mipGenerations;
+}
+
+SDL_GPUSampler* SDLCALL SDL_CreateGPUSampler(SDL_GPUDevice* device, const SDL_GPUSamplerCreateInfo* info)
+{
+    if (failSampler) return nullptr;
+    Check(info->min_filter == SDL_GPU_FILTER_LINEAR && info->mag_filter == SDL_GPU_FILTER_LINEAR &&
+          info->mipmap_mode == SDL_GPU_SAMPLERMIPMAPMODE_LINEAR, "trilinear material filtering");
+    Check(info->address_mode_u == SDL_GPU_SAMPLERADDRESSMODE_REPEAT &&
+          info->address_mode_v == SDL_GPU_SAMPLERADDRESSMODE_REPEAT, "repeat material UVs");
+    Check(info->max_lod == 1.0f && info->enable_anisotropy && info->max_anisotropy == 8.0f,
+          "expose full mip chain and anisotropic filtering");
+    ++liveSamplers;
+    return new SDL_GPUSampler{device, *info};
+}
+
+void SDLCALL SDL_ReleaseGPUSampler(SDL_GPUDevice* device, SDL_GPUSampler* sampler)
+{
+    Check(device == sampler->device, "sampler owning device");
+    delete sampler;
+    --liveSamplers;
+}
+
+void SDLCALL SDL_BindGPUFragmentSamplers(SDL_GPURenderPass*, Uint32 first,
+                                        const SDL_GPUTextureSamplerBinding* bindings, Uint32 count)
+{
+    Check(first == 0 && count == 2, "material uses fragment sampler slots 0 and 1");
+    boundTextures[0] = bindings[0];
+    boundTextures[1] = bindings[1];
+    ++materialBinds;
+}
+
+void SDLCALL SDL_PushGPUFragmentUniformData(SDL_GPUCommandBuffer*, Uint32 slot,
+                                           const void* data, Uint32 size)
+{
+    Check(slot == 0 && size == sizeof(boundMaterial), "16-byte material uniform at fragment slot 0");
+    std::memcpy(&boundMaterial, data, size);
 }
 void SDLCALL SDL_ReleaseGPUTexture(SDL_GPUDevice* device, SDL_GPUTexture* texture)
 {
@@ -233,6 +287,9 @@ int main()
         Check(&circle == &textures.Load(".\\ui\\circle.png"), "backslash and dot aliases share texture");
         Check(&circle == &textures.Load("ui/unused/../circle.png"), "normalized path reuses texture");
         Check(textures.Size() == 1 && loads == 1 && uploads == 1, "cache hit skips decode and upload");
+        Check(circle.MipLevels() == 1 && mipGenerations == 0 &&
+              circle.Handle()->info.format == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+              "default UI images retain original format and no mip generation");
         ExpectFailure([&] { textures.Initialize(&device); });
         for (const char* path : {"", ".", "ui/", "../outside.png", "ui/../../outside.png", "/abs.png", "C:\\abs.png"})
             ExpectFailure([&] { textures.Load(path); });
@@ -355,6 +412,70 @@ int main()
         }
     }
     Check(liveTextures == 0, "all test textures released");
+    imageWidth = 3;
+    {
+        TextureManager textures;
+        textures.Initialize(&device);
+        const auto& ui = textures.Load("shared.png");
+        const auto& color = textures.Load("shared.png", {TextureContent::Color, true});
+        const auto& normal = textures.Load("shared.png", {TextureContent::Data, true});
+        const auto& colorNoMips = textures.Load("shared.png", {TextureContent::Color, false});
+        Check(textures.Size() == 4 && &ui != &color && &color != &normal && &color != &colorNoMips,
+              "cache separates color, data, UI, and mip choices for the same path");
+        Check(&color == &textures.Load("./shared.png", {TextureContent::Color, true}),
+              "material cache retains normalized-path reuse");
+        Check(color.Handle()->pixels == generatedPixels && normal.Handle()->pixels == generatedPixels,
+              "material color/data channels are not premultiplied, even with zero alpha");
+        Check(color.Handle()->info.format == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB &&
+              normal.Handle()->info.format == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+              "color is sRGB and normals remain linear");
+        Check(mipGenerations == 2 && color.MipLevels() == 2 && normal.MipLevels() == 2 &&
+              colorNoMips.MipLevels() == 1, "mip generation and counts for non-power-of-two texture");
+        ExpectFailure([&] { textures.Load("invalid.png", {static_cast<TextureContent>(99), true}); });
+    }
+    {
+        TextureManager textures;
+        textures.Initialize(&device);
+        TerrainMaterial material;
+        TerrainMaterialSettings settings;
+        ExpectFailure([&] { material.Bind(nullptr, nullptr, settings); });
+        ExpectFailure([&] { material.Initialize(nullptr, textures, "grass.png", "normal.png"); });
+        failSampler = true;
+        ExpectFailure([&] { material.Initialize(&device, textures, "grass.png", "normal.png"); });
+        Check(liveSamplers == 0 && textures.Size() == 2, "sampler failure leaves cached images owned");
+        CheckNoTemporaryResources();
+        failSampler = false;
+        material.Initialize(&device, textures, "grass.png", "normal.png");
+        ExpectFailure([&] { material.Initialize(&device, textures, "grass.png", "normal.png"); });
+        material.Bind(nullptr, nullptr, settings);
+        Check(materialBinds == 1 && boundTextures[0].texture->info.format == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM_SRGB &&
+              boundTextures[1].texture->info.format == SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM,
+              "bind base color then normal map in shader order");
+        Check(boundTextures[0].sampler == boundTextures[1].sampler && boundMaterial.tilesPerRepeat == 4.0f &&
+              boundMaterial.textureBlend == 0.5f && boundMaterial.normalStrength == 0.6f && boundMaterial.normalYSign == 1.0f,
+              "bind shared sampler and default material settings");
+        settings.flipNormalY = true;
+        settings.normalStrength = 0;
+        material.Bind(nullptr, nullptr, settings);
+        Check(boundMaterial.normalYSign == -1 && boundMaterial.normalStrength == 0, "normal controls reach shader");
+        for (float bad : {0.0f, -1.0f, 1025.0f, std::numeric_limits<float>::quiet_NaN(),
+                          std::numeric_limits<float>::infinity()})
+        {
+            settings.tilesPerRepeat = bad;
+            ExpectFailure([&] { MakeTerrainMaterialUniforms(settings); });
+        }
+        settings = {};
+        settings.textureBlend = 1.01f;
+        ExpectFailure([&] { MakeTerrainMaterialUniforms(settings); });
+        settings = {};
+        settings.normalStrength = -0.01f;
+        ExpectFailure([&] { MakeTerrainMaterialUniforms(settings); });
+        material.Release();
+        material.Release();
+        Check(liveSamplers == 0 && liveTextures == 2, "material releases sampler, manager retains images");
+        material.Initialize(&device, textures, "grass.png", "normal.png");
+    }
+    Check(liveSamplers == 0 && liveTextures == 0, "material and cache destructors release resources");
     CheckNoTemporaryResources();
-    std::cout << "PASS: generated/PNG uploads, alpha, pitch, lifetime/failure recovery, diamond rendering and picking\n";
+    std::cout << "PASS: UI/material uploads, formats, mipmaps, cache, bindings, lifetime/failure recovery, minimap drawing/picking\n";
 }

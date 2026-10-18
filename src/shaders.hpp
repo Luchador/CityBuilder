@@ -26,6 +26,10 @@ float4 ProjectWorldPosition(float3 position)
     return float4(right / (camera.z * camera.w), up / camera.z, 0.5 - towardCamera / 2048.0 + style.w, 1.0);
 }
 
+)hlsl";
+
+// Shared by grid/skirt vertex shaders and the textured terrain fragment shader.
+inline constexpr char WorldLightingShaderSource[] = R"hlsl(
 float WorldBrightness(float3 normal)
 {
     const float ambientIntensity = 0.55;

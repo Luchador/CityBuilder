@@ -70,7 +70,7 @@ if(CITY_BUILD_MINIMAP_TESTS)
     add_test(NAME CityMinimapMapTests COMMAND CityMinimapMapTests)
 
     add_executable(CityMinimapTextureTests tests/minimap_texture_tests.cpp src/texture.cpp
-        src/ui_minimap.cpp src/ui_minimap_draw.cpp src/ui.cpp src/camera.cpp)
+        src/terrain_material.cpp src/ui_minimap.cpp src/ui_minimap_draw.cpp src/ui.cpp src/camera.cpp)
     target_compile_features(CityMinimapTextureTests PRIVATE cxx_std_20)
     target_include_directories(CityMinimapTextureTests PRIVATE src)
     target_link_libraries(CityMinimapTextureTests PRIVATE SDL3::Headers)

@@ -162,12 +162,12 @@ UiLayout CalculateUiLayout(float width, float height, const UiSettings& settings
     // Reserve useful space for city information and toolbar controls.
     const float maxMap = std::min({512.0f * s, layout.width - 480.0f * s, layout.height - 220.0f * s});
     const float map = std::clamp(settings.minimapSize * s, 128.0f * s, maxMap);
-    layout.world = settings.minimized
-        ? UiRect{0, 0, layout.width, layout.height}
-        : UiRect{0, 0, layout.width - right, layout.height - bottom};
+
+    layout.world = settings.minimized ? UiRect{0, 0, layout.width, layout.height} : UiRect{0, 0, layout.width - right, layout.height - bottom};
     layout.bottomBar = {0, layout.height - bottom, layout.width, bottom};
     layout.toolbar = {layout.width - right, 0, right, layout.height - bottom};
     layout.minimapPanel = {layout.width - map, layout.height - map, map, map};
+
     const float gap = 8.0f * s;
     // Both the bar and toolbar stop their content before the minimap frame.
     const float contentWidth = std::min(layout.minimapPanel.x, layout.toolbar.x) - 2 * gap;
@@ -210,7 +210,7 @@ std::vector<UiVertex> BuildUiBackground(const UiLayout& layout)
     Frame(vertices, layout.bottomBar, 2 * s, false);
 
     // Toolbar.
-    Quad(vertices, layout.toolbar, panelTop, panelBottom);
+    Quad(vertices, layout.toolbar, panelTop, panelTop);
     Frame(vertices, layout.toolbar, 2 * s, false);
 
     // News Ticker.

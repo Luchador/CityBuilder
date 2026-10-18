@@ -4,7 +4,7 @@
 // Keep the HLSL palette capacity in step with the CPU uniform layout.
 static_assert(TerrainSkirtLayerCount == 40);
 
-// Compile with WorldViewShaderSource (camera and shared world lighting).
+// Compile with WorldViewShaderSource + WorldLightingShaderSource.
 inline constexpr char TerrainSkirtVertexShaderSource[] = R"hlsl(
 struct Output {
     float4 position : SV_Position;
