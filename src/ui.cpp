@@ -300,6 +300,7 @@ UiButtonResult HandleUiButtonEvent(SDL_Window* window, const SDL_Event& event,
 void UpdateUiButtonPointer(SDL_Window* window, UiButtons& buttons, bool mousePanning)
 {
     const auto flags = SDL_GetWindowFlags(window);
+
     if (!(flags & SDL_WINDOW_INPUT_FOCUS) || mousePanning || (!(flags & SDL_WINDOW_MOUSE_FOCUS) && !buttons.HasCapture()))
     {
         CancelUiButtonInteraction(buttons);
