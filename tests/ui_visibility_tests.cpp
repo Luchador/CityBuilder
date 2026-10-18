@@ -159,7 +159,7 @@ namespace
         UiMinimap minimap;
         UiImageRenderer renderer;
         CreateUiButtons(buttons, textures);
-        Check(textures.Size() == 45, "All fifteen controls must load their three texture states");
+        Check(textures.Size() == 54, "Controls must load all three states and share the speed-square textures");
         constexpr std::array<const char*, 6> stems{"terrain", "zones", "infra", "util", "gov", "disaster"};
         for (std::size_t i = 0; i < ToolbarIds.size(); ++i)
         {
@@ -197,7 +197,7 @@ namespace
             const auto terrainBounds = buttons.Find(ToolbarIds[0])->GetBounds();
             drawn.clear();
             buttons.Draw(renderer, nullptr, nullptr, width, height);
-            Check(drawn.size() == 11, "Expanded UI must render all toolbar and minimap buttons");
+            Check(drawn.size() == 17, "Expanded UI must render toolbar, minimap, and speed buttons");
             SetUiMinimized(settings, buttons, true);
             LayoutUiButtons(buttons, minimap, CalculateUiLayout(width, height, settings));
             drawn.clear();
@@ -367,17 +367,17 @@ namespace
             const auto down = send(SDL_EVENT_MOUSE_BUTTON_DOWN, zones);
             Check(down.consumed && !down.clicked && buttons.HasCapture() && buttons.HasOpenFlyout(),
                   "Zones must open on mouse-down, before a click/release");
-            Check(drawCount() == 15, "Open menu must immediately draw its four children");
+            Check(drawCount() == 21, "Open menu must immediately draw its four children");
         };
 
-        Check(drawCount() == 11 && !buttons.HasOpenFlyout(), "Zoning children must start hidden");
+        Check(drawCount() == 17 && !buttons.HasOpenFlyout(), "Zoning children must start hidden");
         open();
         Check(send(SDL_EVENT_MOUSE_BUTTON_UP, zones).clicked == UiButtonIds::ZonesButton && buttons.HasOpenFlyout(),
               "Releasing on Zones must leave its flyout open");
         const auto res = center(UiButtonIds::ResidentialButton);
         Check(send(SDL_EVENT_MOUSE_MOTION, res).consumed, "Flyout hover must not reach world input");
-        Check(buttons.Find(UiButtonIds::ResidentialButton)->GetTexture() == &textures.Load("ui/toolbar/btn_res_hover.png"),
-              "Residential must use its actual _hover asset name");
+        Check(buttons.Find(UiButtonIds::ResidentialButton)->GetTexture() == &textures.Load("ui/toolbar/btn_res_hov.png"),
+              "Residential must use its current _hov asset name");
 
         for (UiButtonId id : ZoningIds)
         {
@@ -446,7 +446,7 @@ namespace
         SetUiMinimized(settings, buttons, true);
         Check(!buttons.HasOpenFlyout() && !buttons.HasCapture() && drawCount() == 1, "Minimizing must hide and cancel flyout");
         SetUiMinimized(settings, buttons, false);
-        Check(drawCount() == 11 && !buttons.BlocksPointer(res[0], res[1]), "Restoring must not reopen stale menu state");
+        Check(drawCount() == 17 && !buttons.BlocksPointer(res[0], res[1]), "Restoring must not reopen stale menu state");
 
         open();
         mouseX = res[0]; mouseY = res[1]; mouseButtons = SDL_BUTTON_LMASK;
@@ -462,7 +462,7 @@ namespace
         buttons.Find(UiButtonIds::ResidentialButton)->SetEnabled(true);
         open(); send(SDL_EVENT_MOUSE_MOTION, res);
         buttons.Find(UiButtonIds::ZonesButton)->SetEnabled(false);
-        Check(send(SDL_EVENT_MOUSE_BUTTON_UP, res).consumed && !buttons.HasOpenFlyout() && drawCount() == 11,
+        Check(send(SDL_EVENT_MOUSE_BUTTON_UP, res).consumed && !buttons.HasOpenFlyout() && drawCount() == 17,
               "Disabling a trigger must hide its menu and retain ownership of the canceled release");
         buttons.Find(UiButtonIds::ZonesButton)->SetEnabled(true);
         open(); send(SDL_EVENT_MOUSE_MOTION, res);

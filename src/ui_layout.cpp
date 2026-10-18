@@ -172,14 +172,20 @@ UiLayout CalculateUiLayout(float width, float height, const UiSettings& settings
     // Both the bar and toolbar stop their content before the minimap frame.
     const float contentWidth = std::min(layout.minimapPanel.x, layout.toolbar.x) - 2 * gap;
     const float demandW = 80.0f * s;
+    const float speedTickerWidth = 64.0f * s;
+    // Two 32px controls above four 16px squares, with 4px between the rows.
+    const float speedTickerHeight = 52.0f * s;
 
-    // Preserve the wide RCI gap at the normal window size, but give the four
-    // information panels priority when the window narrows or the minimap grows.
-    const float demandGap = std::clamp(contentWidth - demandW - 640.0f * s, gap, 400.0f * s);
+    // Keep room for the speed controls and a margin on each side. Any extra
+    // RCI gap can shrink to give the information panels more room in small windows.
+    const float demandGap = std::clamp(contentWidth - demandW - 640.0f * s,
+                                      speedTickerWidth + 2.0f * gap, 400.0f * s);
 
     const float tickerWidth = contentWidth - demandW - demandGap;
 
     layout.newsTicker = {gap, layout.bottomBar.y + gap, tickerWidth, 28.0f * s};
+    layout.speedTicker = {layout.newsTicker.x + layout.newsTicker.w + gap,
+                          layout.newsTicker.y, speedTickerWidth, speedTickerHeight};
 
     const float rowY = layout.newsTicker.y + layout.newsTicker.h + gap;
     const float rowH = layout.height - gap - rowY;

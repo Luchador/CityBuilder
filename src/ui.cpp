@@ -77,7 +77,29 @@ namespace
 
     void LayoutTickerButtons(UiButtons& buttons, const UiLayout& layout)
     {
+        const UiRect& area = layout.speedTicker;
+        const float controlSize = area.w * 0.5f;
+        const auto place = [&](UiButtonId id, UiRect bounds)
+        {
+            if (auto* button = buttons.Find(id)) button->SetBounds(bounds);
+        };
 
+        place(UiButtonIds::TickerPauseButton, {area.x, area.y, controlSize, controlSize});
+        place(UiButtonIds::TickerPlayButton, {area.x + controlSize, area.y, controlSize, controlSize});
+
+        constexpr std::array<UiButtonId, 4> speedIds{
+            UiButtonIds::TickerSpeedButton1, UiButtonIds::TickerSpeedButton2,
+            UiButtonIds::TickerSpeedButton3, UiButtonIds::TickerSpeedButton4
+        };
+        const float squareSize = area.w / static_cast<float>(speedIds.size());
+        const float squareY = area.y + area.h - squareSize;
+
+        for (std::size_t i = 0; i < speedIds.size(); ++i)
+        {
+            // Adjacent bounds touch exactly; there is no padding between squares.
+            place(speedIds[i], {area.x + static_cast<float>(i) * squareSize,
+                               squareY, squareSize, squareSize});
+        }
     }
 
     void LayoutToolbarButtons(UiButtons& buttons, const UiLayout& layout)
@@ -147,6 +169,11 @@ void CreateUiButtons(UiButtons& buttons, TextureManager& textures)
     }
 
     for (const auto& definition : ToolbarButtons) 
+    {
+        AddButton(buttons, textures, definition);
+    }
+
+    for (const auto& definition : TickerButtons)
     {
         AddButton(buttons, textures, definition);
     }

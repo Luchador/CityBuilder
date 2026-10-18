@@ -60,7 +60,7 @@ struct UiLayout
 {
     float width = 0, height = 0, scale = 1;
     UiRect world, bottomBar, toolbar, minimapPanel;
-    UiRect newsTicker, cityName, population, funds, date, zoneDemand;
+    UiRect newsTicker, speedTicker, cityName, population, funds, date, zoneDemand;
     UiRect toolbarContent, minimapContent;
 
     // Keep panel bounds for the restore button, but give the world the full window.
