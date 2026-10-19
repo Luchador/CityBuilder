@@ -12,7 +12,7 @@ constexpr std::uint32_t TerrainVertexCount = TerrainStride * TerrainStride;
 constexpr float TerrainHeightStep = 0.25f;
 constexpr float TerrainSeaLevel = 0.0f;
 // Broad flat land sits above the water. Keep this aligned to TerrainHeightStep.
-constexpr float TerrainBaseElevation = 1.0f;
+constexpr float TerrainBaseElevation = 0.25f;
 constexpr float TerrainMaxElevation = 256.0f;
 
 constexpr bool IsWaterElevation(float height)
