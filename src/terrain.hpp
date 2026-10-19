@@ -11,6 +11,8 @@ constexpr std::uint32_t TerrainVertexCount = TerrainStride * TerrainStride;
 // Allowed elevation increments
 constexpr float TerrainHeightStep = 0.25f;
 constexpr float TerrainSeaLevel = 0.0f;
+// Broad flat land sits above the water. Keep this aligned to TerrainHeightStep.
+constexpr float TerrainBaseElevation = 1.0f;
 constexpr float TerrainMaxElevation = 256.0f;
 
 constexpr bool IsWaterElevation(float height)
@@ -29,9 +31,9 @@ struct LakeSettings
 struct TerrainSettings
 {
     std::uint32_t seed = 1337;
-    float hillHeight = 6.0f;   // Height cap in tile units; rounded down to a height step. Range: 0..256.
+    float hillHeight = 6.0f;   // Rise above the base; step-snapped, with total elevation capped at 256. Range: 0..256.
     float hillSize = 32.0f;     // Broad noise wavelength in tiles. Range: 8..1024.
-    float flatCoverage = 0.7f;  // Fraction flattened to Y=0 before height snapping. Range: 0..1.
+    float flatCoverage = 0.7f;  // Fraction flattened to TerrainBaseElevation before height snapping. Range: 0..1.
     LakeSettings lakes;         // Second pass; count=0 or depth=0 keeps the original landscape.
 };
 

@@ -80,16 +80,22 @@ namespace
         if (maximumDepthStep * TerrainHeightStep > lakes.depth) --maximumDepthStep;
         if (lakes.count == 0 || maximumDepthStep < 1) return;
 
+        // Carve through the dry bank as well as below the water. Lake depth
+        // remains measured from sea level, independently of the raised plains.
+        const float bankHeight = TerrainBaseElevation - TerrainSeaLevel;
+        const float basinDrop = bankHeight + lakes.depth;
+        const float maximumDropSteps = bankHeight / TerrainHeightStep + maximumDepthStep;
+
         // Distance to a hill or map edge in king moves (all eight neighbors cost
         // one). This UNDERestimates Euclidean distance, giving each lake a safe
-        // footprint entirely inside the first pass's flat, sea-level land.
+        // footprint entirely inside the first pass's flat, raised land.
         std::vector<int> clearance(TerrainVertexCount);
         for (std::uint32_t z = 0; z <= MapSize; ++z)
         {
             for (std::uint32_t x = 0; x <= MapSize; ++x)
             {
                 const auto index = z * TerrainStride + x;
-                clearance[index] = terrain.heights[index] == TerrainSeaLevel
+                clearance[index] = terrain.heights[index] == TerrainBaseElevation
                     ? static_cast<int>(std::min({x, z, MapSize - x, MapSize - z})) : 0;
             }
         }
@@ -171,11 +177,11 @@ namespace
                     // The varying radius never exceeds the safe footprint above.
                     const float shoreRadius = radius * (0.65f + 0.35f * ValueNoise(fx / 7.0f, fz / 7.0f, lakeSeed));
                     const float t = std::clamp(1.0f - distance / shoreRadius, 0.0f, 1.0f);
-                    const float smoothDepth = lakes.depth * t * t * (3.0f - 2.0f * t);
-                    const float steps = std::min(std::round(smoothDepth / TerrainHeightStep), maximumDepthStep);
+                    const float smoothDrop = basinDrop * t * t * (3.0f - 2.0f * t);
+                    const float steps = std::min(std::round(smoothDrop / TerrainHeightStep), maximumDropSteps);
                     const auto index = static_cast<std::size_t>(z) * TerrainStride + static_cast<std::size_t>(x);
-                    if (terrain.heights[index] == TerrainSeaLevel && steps > 0)
-                        terrain.heights[index] = TerrainSeaLevel - steps * TerrainHeightStep;
+                    if (terrain.heights[index] == TerrainBaseElevation && steps > 0)
+                        terrain.heights[index] = TerrainBaseElevation - steps * TerrainHeightStep;
                 }
             }
             placed.push_back({cx, cz, radius});
@@ -255,9 +261,11 @@ namespace
 TerrainHeightmap GenerateHills(const TerrainSettings& settings)
 {
     TerrainHeightmap terrain;
+    const float hillHeight = std::min(settings.hillHeight, TerrainMaxElevation - TerrainBaseElevation);
 
-    if (settings.hillHeight == 0 || settings.flatCoverage == 1) 
+    if (hillHeight == 0 || settings.flatCoverage == 1)
     {
+        std::fill(terrain.heights.begin(), terrain.heights.end(), TerrainBaseElevation);
         return terrain;
     }
 
@@ -281,7 +289,7 @@ TerrainHeightmap GenerateHills(const TerrainSettings& settings)
 
     if (range <= 0)
     {
-        std::fill(terrain.heights.begin(), terrain.heights.end(), 0.0f);
+        std::fill(terrain.heights.begin(), terrain.heights.end(), TerrainBaseElevation);
 
         return terrain;
     }
@@ -289,9 +297,9 @@ TerrainHeightmap GenerateHills(const TerrainSettings& settings)
     // Use integer step counts, then convert back to world units. Clamp the step
     // count so a non-multiple hillHeight (e.g. 8.15) still respects the height cap.
     constexpr float stepsPerUnit = 1.0f / TerrainHeightStep;
-    float maximumStep = std::floor(settings.hillHeight * stepsPerUnit);
+    float maximumStep = std::floor(hillHeight * stepsPerUnit);
 
-    if (maximumStep / stepsPerUnit > settings.hillHeight)
+    if (maximumStep / stepsPerUnit > hillHeight)
     {
         --maximumStep; // Handle a floating-point value immediately below a step.
     }
@@ -301,10 +309,10 @@ TerrainHeightmap GenerateHills(const TerrainSettings& settings)
         const float t = std::clamp((height - cutoff) / range, 0.0f, 1.0f);
 
         // Shape the hills first, then snap the shared corners to TerrainHeightStep.
-        const float smoothHeight = settings.hillHeight * (t * t * (3.0f - 2.0f * t));
+        const float smoothHeight = hillHeight * (t * t * (3.0f - 2.0f * t));
         const float step = std::min(std::round(smoothHeight * stepsPerUnit), maximumStep);
 
-        height = step / stepsPerUnit;
+        height = TerrainBaseElevation + step / stepsPerUnit;
     }
 
     return terrain;
