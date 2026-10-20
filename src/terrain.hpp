@@ -1,12 +1,9 @@
 #pragma once
+#include "map_dimensions.hpp"
+
 #include <array>
 #include <cstdint>
 #include <vector>
-
-constexpr std::uint32_t MapSize = 256;
-constexpr float MapExtent = static_cast<float>(MapSize);
-constexpr std::uint32_t TerrainStride = MapSize + 1;
-constexpr std::uint32_t TerrainVertexCount = TerrainStride * TerrainStride;
 
 // Allowed elevation increments
 constexpr float TerrainHeightStep = 0.25f;
@@ -30,6 +27,7 @@ struct LakeSettings
 
 struct TerrainSettings
 {
+    MapDimensions dimensions;
     std::uint32_t seed = 1337;
     float hillHeight = 6.0f;   // Rise above the base; step-snapped, with total elevation capped at 256. Range: 0..256.
     float hillSize = 32.0f;     // Broad noise wavelength in tiles. Range: 8..1024.
@@ -73,14 +71,18 @@ TerrainColor SampleTerrainColor(float height, const TerrainPalette& palette = {}
 // queries/editing; render geometry is built from this data, not the other way round.
 struct TerrainHeightmap
 {
-    std::vector<float> heights = std::vector<float>(TerrainVertexCount, 0.0f);
+    explicit TerrainHeightmap(MapDimensions mapDimensions = MapDimensions{})
+        : dimensions(mapDimensions), heights(dimensions.CornerCount(), 0.0f) {}
+
+    MapDimensions dimensions;
+    std::vector<float> heights;
 
     void Validate() const;
 
-    // x and z must be in 0..MapSize, inclusive.
+    // x and z must be in 0..dimensions.TileCount(), inclusive.
     float Height(std::uint32_t x, std::uint32_t z) const
     {
-        return heights[z * TerrainStride + x];
+        return heights[z * dimensions.CornerStride() + x];
     }
 };
 
@@ -98,9 +100,11 @@ struct Vertex
 static_assert(sizeof(Vertex) == 36);
 
 struct TerrainMesh {
+    MapDimensions dimensions;
     std::vector<Vertex> vertices;
     std::vector<std::uint32_t> indices;
-    std::vector<Vertex> lines;
+    // Grid lines reference the same vertices as the terrain triangles.
+    std::vector<std::uint32_t> lineIndices;
 };
 
 TerrainHeightmap GenerateTerrain(const TerrainSettings& settings);

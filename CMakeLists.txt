@@ -50,6 +50,17 @@ add_custom_target(copy_assets
     VERBATIM)
 add_dependencies(CityBuilder copy_assets)
 
+option(CITY_BUILD_MAP_SIZE_TESTS "Build selectable map-size regression checks" OFF)
+if(CITY_BUILD_MAP_SIZE_TESTS)
+    enable_testing()
+    add_executable(CityMapSizeTests tests/map_size_tests.cpp
+        src/city.cpp src/terrain.cpp src/terrain_skirt.cpp src/water.cpp
+        src/minimap_map.cpp src/camera.cpp)
+    target_compile_features(CityMapSizeTests PRIVATE cxx_std_20)
+    target_include_directories(CityMapSizeTests PRIVATE src)
+    add_test(NAME CityMapSizeTests COMMAND CityMapSizeTests)
+endif()
+
 option(CITY_BUILD_UI_MANAGER_TESTS "Build UI manager input/render lifetime checks" OFF)
 if(CITY_BUILD_UI_MANAGER_TESTS)
     enable_testing()

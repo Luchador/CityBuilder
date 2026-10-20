@@ -7,8 +7,10 @@
 enum class CityDifficulty { Easy, Medium, Hard };
 enum class CityMapSize { Small, Medium, Large, Giant };
 
-// Values chosen by the creation form. Difficulty rules and variable terrain
-// dimensions are future work; retain those choices without inventing effects.
+// Convert the creation form's choice to the number of tiles on each side.
+std::uint32_t GetMapTileCount(CityMapSize size);
+
+// Values chosen by the creation form.
 struct CityCreationOptions
 {
     std::string name = "New City";

@@ -13,7 +13,8 @@ struct MinimapImage
 };
 
 // Optional tile colors for future zones/roads. Opacity 0 keeps the terrain.
-// A supplied array has MapSize * MapSize entries, indexed by z * MapSize + x.
+// A supplied array has tileCount * tileCount entries, indexed by z * tileCount + x,
+// where tileCount comes from terrain.dimensions.TileCount().
 // Water remains visible above this land overlay.
 struct MinimapTileOverlay
 {

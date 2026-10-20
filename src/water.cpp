@@ -5,13 +5,15 @@
 WaterMesh BuildWater(const TerrainHeightmap& terrain)
 {
     terrain.Validate();
+    const auto tileCount = terrain.dimensions.TileCount();
+    const auto stride = terrain.dimensions.CornerStride();
     WaterMesh mesh;
     constexpr auto missing = std::numeric_limits<std::uint32_t>::max();
-    std::vector<std::uint32_t> cornerIndices(TerrainVertexCount, missing);
+    std::vector<std::uint32_t> cornerIndices(terrain.dimensions.CornerCount(), missing);
 
     const auto corner = [&](std::uint32_t x, std::uint32_t z)
     {
-        auto& index = cornerIndices[z * TerrainStride + x];
+        auto& index = cornerIndices[z * stride + x];
         if (index == missing)
         {
             index = static_cast<std::uint32_t>(mesh.vertices.size());
@@ -21,9 +23,9 @@ WaterMesh BuildWater(const TerrainHeightmap& terrain)
         return index;
     };
 
-    for (std::uint32_t z = 0; z < MapSize; ++z)
+    for (std::uint32_t z = 0; z < tileCount; ++z)
     {
-        for (std::uint32_t x = 0; x < MapSize; ++x)
+        for (std::uint32_t x = 0; x < tileCount; ++x)
         {
             if (!IsWaterElevation(terrain.Height(x, z)) &&
                 !IsWaterElevation(terrain.Height(x + 1, z)) &&

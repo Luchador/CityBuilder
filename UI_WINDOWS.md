@@ -19,12 +19,41 @@ skirt, minimap, and City. Only after successful preparation does it publish
 the new city and let the form close. A failed attempt releases partial terrain
 buffers, displays an error in the form, and leaves Accept available for retry.
 
-The city name, mayor name, and starting year are applied. Population and funds
-start at zero; the date starts January 1 of the selected year, with simulation
-paused. Waiting in the form and generating terrain do not advance the date.
-Difficulty and map-size selections are stored on City for future use. Difficulty
-does not yet change simulation rules, and terrain still uses the existing
-fixed 256 x 256 dimensions regardless of the selected map-size label.
+The city name, mayor name, and starting year are applied. Population starts at
+zero. Starting funds are 100,000 on Easy, 50,000 on Medium, and 25,000 on Hard.
+The date starts January 1 of the selected year, with simulation paused. Waiting
+in the form and generating terrain do not advance the date.
+
+Map size is applied when Accept creates the world:
+
+| Choice | Tiles | Terrain triangles |
+| --- | --- | --- |
+| Small | 128 x 128 | 32,768 |
+| Medium | 256 x 256 | 131,072 |
+| Large | 512 x 512 | 524,288 |
+| Giant | 1024 x 1024 | 2,097,152 |
+
+`GetMapTileCount()` in `src/city.cpp` maps the choices to tile counts.
+`MapDimensions` travels with the terrain settings, heightmap, and mesh; it
+provides the tile count, corner stride, corner count, and world extent. There
+is one more corner than tiles on each axis. Terrain, grid, lakes, water,
+skirts, and minimap all use those dimensions. Camera panning, Home, minimap
+clicks, and the minimap view outline use the selected world's extent.
+
+Tile spacing, hill wavelength, lake settings, and starting zoom stay the same.
+Larger maps can zoom farther out (maximum half-height 400 for Large and 800 for
+Giant, compared with 200 for Small/Medium). The shared world shader also expands
+its depth range for large maps to avoid clipping distant terrain and skirts.
+
+Grid lines use 32-bit indices into the existing terrain vertex buffer instead
+of duplicating vertices. On Giant this saves about 128 MiB each in the CPU mesh
+and GPU grid storage. The minimap remains two pixels per tile, up to 2048 x 2048.
+The world still renders as whole meshes; chunk culling/LOD are not implemented,
+so Giant submits 16 times as many terrain triangles as Medium.
+
+Optional regression checks: configure with `-DCITY_BUILD_MAP_SIZE_TESTS=ON`,
+build the `CityMapSizeTests` target, then run
+`ctest --test-dir build -R CityMapSizeTests --output-on-failure`.
 
 The startup form is required: clicks outside it, Tab, Escape, UI minimization,
 and loss/regain of focus cannot dismiss it. Tab navigates its controls. Native

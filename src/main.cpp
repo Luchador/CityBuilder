@@ -35,10 +35,13 @@ struct Uniforms
     float centerX, centerZ, halfHeight, aspect;
     float red, green, blue, depthOffset;
     CameraOrientation orientation;
+    float mapExtent;
+    float padding[3]{};
 };
 
 static_assert(offsetof(Uniforms, orientation) == 32);
-static_assert(sizeof(Uniforms) == 48);
+static_assert(offsetof(Uniforms, mapExtent) == 48);
+static_assert(sizeof(Uniforms) == 64);
 
 class Application 
 {
@@ -136,7 +139,7 @@ public:
         uiActions.rotateCamera = [this](bool clockwise) { RotateCamera(clockwise); };
         uiActions.moveCameraToMapPoint = [this](float x, float z)
         {
-            camera.SetPosition(x * MapExtent, z * MapExtent);
+            camera.SetPosition(x * camera.GetMapExtent(), z * camera.GetMapExtent());
         };
 
         uiActions.setSimulationSpeed = [this](int speed)
@@ -241,7 +244,7 @@ public:
                     if (event.key.key == SDLK_HOME) 
                     {
                         StopMousePan();
-                        camera.SetPosition(MapExtent * 0.5f, MapExtent * 0.5f);
+                        camera.SetPosition(camera.GetMapExtent() * 0.5f, camera.GetMapExtent() * 0.5f);
                         camera.ResetZoom();
                     }
                 }
@@ -307,7 +310,7 @@ public:
     }
 
 private:
-    Camera camera{MapExtent};
+    Camera camera{0.0f}; // No world bounds until Accept creates a map.
     std::optional<City> city;
     Simulation simulation;
 
@@ -333,15 +336,16 @@ private:
         {
             terrainMaterial.Initialize(device, textures, "materials/ground/grass01_basecolor.png", "materials/ground/grass01_normal.png");
             // Terrain
+            terrainSettings.dimensions = MapDimensions(GetMapTileCount(options.mapSize));
             terrainSettings.seed = SDL_rand_bits(); // Use a fixed number here to replay a landscape.
             auto generated = GenerateTerrain(terrainSettings);
             const TerrainMesh mesh = BuildTerrain(generated);
 
             vertices = UploadBuffer(device, mesh.vertices.data(), static_cast<Uint32>(mesh.vertices.size() * sizeof(Vertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
             indices = UploadBuffer(device, mesh.indices.data(), static_cast<Uint32>(mesh.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
-            gridVertices = UploadBuffer(device, mesh.lines.data(), static_cast<Uint32>(mesh.lines.size() * sizeof(Vertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
+            gridIndices = UploadBuffer(device, mesh.lineIndices.data(), static_cast<Uint32>(mesh.lineIndices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
             indexCount = static_cast<Uint32>(mesh.indices.size());
-            lineVertexCount = static_cast<Uint32>(mesh.lines.size());
+            lineIndexCount = static_cast<Uint32>(mesh.lineIndices.size());
 
             // Terrain Skirt
             const TerrainSkirtMesh skirt = BuildTerrainSkirt(generated, skirtSettings);
@@ -366,7 +370,7 @@ private:
             terrain.emplace(std::move(generated));
             city.emplace(std::move(created));
             simulation = Simulation{}; // New cities begin paused, with no accumulated time.
-            camera = Camera(MapExtent);
+            camera = Camera(terrain->dimensions.Extent());
         }
         catch (...)
         {
@@ -380,7 +384,7 @@ private:
 
     void ReleaseTerrainBuffers()
     {
-        for (SDL_GPUBuffer** buffer : {&vertices, &indices, &gridVertices, &skirtVertices,
+        for (SDL_GPUBuffer** buffer : {&vertices, &indices, &gridIndices, &skirtVertices,
                                        &skirtIndices, &waterVertices, &waterIndices})
         {
             if (*buffer) 
@@ -390,7 +394,7 @@ private:
     
             *buffer = nullptr;
         }
-        indexCount = lineVertexCount = skirtIndexCount = waterIndexCount = 0;
+        indexCount = lineIndexCount = skirtIndexCount = waterIndexCount = 0;
     }
 
     void ToggleFullscreen()
@@ -804,13 +808,13 @@ private:
         const int worldWidth = worldRect.w;
         const int worldHeight = worldRect.h;
 
-        Uniforms view{camera.GetCenterX(), camera.GetCenterZ(), camera.GetHalfHeight(), static_cast<float>(worldWidth) / static_cast<float>(worldHeight), 1.0f, 1.0f, 1.0f, 0.0f, camera.GetOrientation()};
+        Uniforms view{camera.GetCenterX(), camera.GetCenterZ(), camera.GetHalfHeight(), static_cast<float>(worldWidth) / static_cast<float>(worldHeight), 1.0f, 1.0f, 1.0f, 0.0f, camera.GetOrientation(), camera.GetMapExtent()};
 
         // Use exactly the same camera and rounded pixel aspect as the world
         // pass. Copy the small dynamic outline before any render pass begins.
         try
         {
-            ui.UploadFrame(commands, camera, MapExtent, width, height);
+            ui.UploadFrame(commands, camera, camera.GetMapExtent(), width, height);
         }
         catch (...)
         {
@@ -854,14 +858,15 @@ private:
             constexpr float GridOpacity = 0.3f;
     
             SDL_SetGPUBlendConstants(pass, {GridOpacity, GridOpacity, GridOpacity, GridOpacity});
-            SDL_GPUBufferBinding lineBinding{gridVertices, 0};
-            SDL_BindGPUVertexBuffers(pass, 0, &lineBinding, 1);
+            SDL_GPUBufferBinding lineBinding{gridIndices, 0};
+            SDL_BindGPUVertexBuffers(pass, 0, &vertexBinding, 1);
+            SDL_BindGPUIndexBuffer(pass, &lineBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
             view.red = view.green = view.blue = 0.0f;
 
             // Bring the terrain grid slightly forward to avoid z-fighting.
             view.depthOffset = -0.00001f;
             SDL_PushGPUVertexUniformData(commands, 0, &view, sizeof(view));
-            SDL_DrawGPUPrimitives(pass, lineVertexCount, 1, 0, 0);
+            SDL_DrawGPUIndexedPrimitives(pass, lineIndexCount, 1, 0, 0, 0);
         }
 
         // Draw opaque water after the grid, covering submerged lines. The grid
@@ -924,7 +929,7 @@ private:
     Uint32 waterIndexCount = 0;
     SDL_GPUBuffer* vertices = nullptr;
     SDL_GPUBuffer* indices = nullptr;
-    SDL_GPUBuffer* gridVertices = nullptr;
+    SDL_GPUBuffer* gridIndices = nullptr;
     SDL_GPUTexture* depth = nullptr;
     TerrainSettings terrainSettings;
     std::optional<TerrainHeightmap> terrain;
@@ -934,7 +939,7 @@ private:
     UiManager ui;
     bool restoreCursor = false;
     Uint32 depthWidth = 0, depthHeight = 0;
-    Uint32 indexCount = 0, lineVertexCount = 0;
+    Uint32 indexCount = 0, lineIndexCount = 0;
     bool showGrid = true;
 };
 

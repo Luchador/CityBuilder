@@ -2,6 +2,19 @@
 
 #include <stdexcept>
 
+std::uint32_t GetMapTileCount(CityMapSize size)
+{
+    switch (size)
+    {
+        case CityMapSize::Small: return 128;
+        case CityMapSize::Medium: return 256;
+        case CityMapSize::Large: return 512;
+        case CityMapSize::Giant: return 1024;
+    }
+
+    throw std::invalid_argument("Choose a valid map size.");
+}
+
 void CityCreationOptions::Validate() const
 {
     if (name.find_first_not_of(" \t\r\n") == std::string::npos)

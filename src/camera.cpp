@@ -11,7 +11,8 @@ void Camera::Zoom(float steps)
 {
     constexpr float ZoomFactor = 0.85f;
     constexpr float MinHalfHeight = 4.0f;
-    constexpr float MaxHalfHeight = 200.0f;
+    // Preserve the existing close-up scale; larger maps can zoom farther out.
+    const float MaxHalfHeight = std::max(200.0f, mapExtent * (200.0f / 256.0f));
 
     steps = std::clamp(steps, -10.0f, 10.0f);
 

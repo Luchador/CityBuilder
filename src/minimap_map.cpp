@@ -19,9 +19,10 @@ namespace
     TerrainColor SampleTile(const TerrainMesh& terrain, std::uint32_t x, std::uint32_t z,
                             float u, float v, const MinimapTileOverlay& overlay)
     {
-        const auto a = z * TerrainStride + x;
+        const auto stride = terrain.dimensions.CornerStride();
+        const auto a = z * stride + x;
         const auto b = a + 1;
-        const auto c = a + TerrainStride;
+        const auto c = a + stride;
         const auto d = c + 1;
 
         // Match BuildTerrain and BuildWater: {a,c,b}, {b,c,d}, not bilinear
@@ -57,15 +58,17 @@ namespace
 
 MinimapImage BuildMinimapImage(const TerrainMesh& terrain, std::span<const MinimapTileOverlay> overlays)
 {
-    if (terrain.vertices.size() != TerrainVertexCount)
+    const auto tileCount = terrain.dimensions.TileCount();
+    const auto stride = terrain.dimensions.CornerStride();
+    if (terrain.vertices.size() != terrain.dimensions.CornerCount())
     {
         throw std::invalid_argument("Minimap requires the regular grid returned by BuildTerrain");
     }
-    for (std::uint32_t z = 0; z <= MapSize; ++z)
+    for (std::uint32_t z = 0; z <= tileCount; ++z)
     {
-        for (std::uint32_t x = 0; x <= MapSize; ++x)
+        for (std::uint32_t x = 0; x <= tileCount; ++x)
         {
-            const auto& vertex = terrain.vertices[z * TerrainStride + x];
+            const auto& vertex = terrain.vertices[z * stride + x];
             if (vertex.x != static_cast<float>(x) || vertex.z != static_cast<float>(z) ||
                 !std::isfinite(vertex.y) || !ValidColor({vertex.r, vertex.g, vertex.b}))
             {
@@ -73,7 +76,7 @@ MinimapImage BuildMinimapImage(const TerrainMesh& terrain, std::span<const Minim
             }
         }
     }
-    if (!overlays.empty() && overlays.size() != MapSize * MapSize)
+    if (!overlays.empty() && overlays.size() != tileCount * tileCount)
     {
         throw std::invalid_argument("Minimap overlay must contain one entry per tile");
     }
@@ -86,7 +89,7 @@ MinimapImage BuildMinimapImage(const TerrainMesh& terrain, std::span<const Minim
     }
 
     MinimapImage image;
-    image.width = image.height = MapSize * PixelsPerTile;
+    image.width = image.height = tileCount * PixelsPerTile;
     image.rgba.resize(static_cast<std::size_t>(image.width) * image.height * 4);
     constexpr float sampleWeight = 1.0f / (SamplesPerAxis * SamplesPerAxis);
 
@@ -96,7 +99,7 @@ MinimapImage BuildMinimapImage(const TerrainMesh& terrain, std::span<const Minim
         {
             const auto x = px / PixelsPerTile;
             const auto z = py / PixelsPerTile;
-            const MinimapTileOverlay overlay = overlays.empty() ? MinimapTileOverlay{} : overlays[z * MapSize + x];
+            const MinimapTileOverlay overlay = overlays.empty() ? MinimapTileOverlay{} : overlays[z * tileCount + x];
             TerrainColor color{0, 0, 0};
 
             // Four subpixel samples soften the shoreline without flooding an

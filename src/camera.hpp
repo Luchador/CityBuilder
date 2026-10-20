@@ -68,6 +68,7 @@ public:
     void SetPosition(float x, float z);
     float GetCenterX() const { return centerX; }
     float GetCenterZ() const { return centerZ; }
+    float GetMapExtent() const { return mapExtent; }
 
     void UpdatePan(float right, float down, float dt, float viewportHeight);
 

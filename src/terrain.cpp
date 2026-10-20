@@ -76,6 +76,8 @@ namespace
     void AddLakes(TerrainHeightmap& terrain, const TerrainSettings& settings)
     {
         const auto& lakes = settings.lakes;
+        const auto tileCount = terrain.dimensions.TileCount();
+        const auto stride = terrain.dimensions.CornerStride();
         float maximumDepthStep = std::floor(lakes.depth / TerrainHeightStep);
         if (maximumDepthStep * TerrainHeightStep > lakes.depth) --maximumDepthStep;
         if (lakes.count == 0 || maximumDepthStep < 1) return;
@@ -89,32 +91,32 @@ namespace
         // Distance to a hill or map edge in king moves (all eight neighbors cost
         // one). This UNDERestimates Euclidean distance, giving each lake a safe
         // footprint entirely inside the first pass's flat, raised land.
-        std::vector<int> clearance(TerrainVertexCount);
-        for (std::uint32_t z = 0; z <= MapSize; ++z)
+        std::vector<int> clearance(terrain.dimensions.CornerCount());
+        for (std::uint32_t z = 0; z <= tileCount; ++z)
         {
-            for (std::uint32_t x = 0; x <= MapSize; ++x)
+            for (std::uint32_t x = 0; x <= tileCount; ++x)
             {
-                const auto index = z * TerrainStride + x;
+                const auto index = z * stride + x;
                 clearance[index] = terrain.heights[index] == TerrainBaseElevation
-                    ? static_cast<int>(std::min({x, z, MapSize - x, MapSize - z})) : 0;
+                    ? static_cast<int>(std::min({x, z, tileCount - x, tileCount - z})) : 0;
             }
         }
-        for (std::uint32_t z = 1; z < MapSize; ++z)
+        for (std::uint32_t z = 1; z < tileCount; ++z)
         {
-            for (std::uint32_t x = 1; x < MapSize; ++x)
+            for (std::uint32_t x = 1; x < tileCount; ++x)
             {
-                const auto i = z * TerrainStride + x;
+                const auto i = z * stride + x;
                 clearance[i] = std::min(clearance[i], 1 + std::min({clearance[i - 1],
-                    clearance[i - TerrainStride - 1], clearance[i - TerrainStride], clearance[i - TerrainStride + 1]}));
+                    clearance[i - stride - 1], clearance[i - stride], clearance[i - stride + 1]}));
             }
         }
-        for (std::uint32_t z = MapSize - 1; z > 0; --z)
+        for (std::uint32_t z = tileCount - 1; z > 0; --z)
         {
-            for (std::uint32_t x = MapSize - 1; x > 0; --x)
+            for (std::uint32_t x = tileCount - 1; x > 0; --x)
             {
-                const auto i = z * TerrainStride + x;
+                const auto i = z * stride + x;
                 clearance[i] = std::min(clearance[i], 1 + std::min({clearance[i + 1],
-                    clearance[i + TerrainStride - 1], clearance[i + TerrainStride], clearance[i + TerrainStride + 1]}));
+                    clearance[i + stride - 1], clearance[i + stride], clearance[i + stride + 1]}));
             }
         }
 
@@ -122,11 +124,11 @@ namespace
         struct Lake { float x, z, radius; };
         std::vector<Candidate> candidates;
         const std::uint32_t lakeSeed = settings.seed ^ 0x6c616b65u;
-        for (std::uint32_t z = 1; z < MapSize; ++z)
+        for (std::uint32_t z = 1; z < tileCount; ++z)
         {
-            for (std::uint32_t x = 1; x < MapSize; ++x)
+            for (std::uint32_t x = 1; x < tileCount; ++x)
             {
-                if (static_cast<float>(clearance[z * TerrainStride + x]) >= lakes.minRadius + 2.0f)
+                if (static_cast<float>(clearance[z * stride + x]) >= lakes.minRadius + 2.0f)
                     candidates.push_back({x, z, LatticeValue(x, z, lakeSeed)});
             }
         }
@@ -145,7 +147,7 @@ namespace
             if (placed.size() >= lakes.count) break;
             const float cx = static_cast<float>(candidate.x);
             const float cz = static_cast<float>(candidate.z);
-            const float available = static_cast<float>(clearance[candidate.z * TerrainStride + candidate.x]) - 2.0f;
+            const float available = static_cast<float>(clearance[candidate.z * stride + candidate.x]) - 2.0f;
             const float radius = std::lerp(lakes.minRadius, std::min(lakes.maxRadius, available),
                                           LatticeValue(candidate.x, candidate.z, lakeSeed ^ 0x92d68ca2u));
             const bool overlaps = std::any_of(placed.begin(), placed.end(), [&](const Lake& other)
@@ -179,7 +181,7 @@ namespace
                     const float t = std::clamp(1.0f - distance / shoreRadius, 0.0f, 1.0f);
                     const float smoothDrop = basinDrop * t * t * (3.0f - 2.0f * t);
                     const float steps = std::min(std::round(smoothDrop / TerrainHeightStep), maximumDropSteps);
-                    const auto index = static_cast<std::size_t>(z) * TerrainStride + static_cast<std::size_t>(x);
+                    const auto index = static_cast<std::size_t>(z) * stride + static_cast<std::size_t>(x);
                     if (terrain.heights[index] == TerrainBaseElevation && steps > 0)
                         terrain.heights[index] = TerrainBaseElevation - steps * TerrainHeightStep;
                 }
@@ -260,7 +262,9 @@ namespace
 {
 TerrainHeightmap GenerateHills(const TerrainSettings& settings)
 {
-    TerrainHeightmap terrain;
+    TerrainHeightmap terrain(settings.dimensions);
+    const auto tileCount = terrain.dimensions.TileCount();
+    const auto stride = terrain.dimensions.CornerStride();
     const float hillHeight = std::min(settings.hillHeight, TerrainMaxElevation - TerrainBaseElevation);
 
     if (hillHeight == 0 || settings.flatCoverage == 1)
@@ -269,18 +273,18 @@ TerrainHeightmap GenerateHills(const TerrainSettings& settings)
         return terrain;
     }
 
-    for (std::uint32_t z = 0; z <= MapSize; ++z)
+    for (std::uint32_t z = 0; z <= tileCount; ++z)
     {
-        for (std::uint32_t x = 0; x <= MapSize; ++x)
+        for (std::uint32_t x = 0; x <= tileCount; ++x)
         {
-            terrain.heights[z * TerrainStride + x] = HillNoise(static_cast<float>(x), static_cast<float>(z), settings);
+            terrain.heights[z * stride + x] = HillNoise(static_cast<float>(x), static_cast<float>(z), settings);
         }
     }
 
     // Pick a noise threshold by coverage, so each seed has substantial level land.
     // Coherent noise makes these vertices form areas instead of isolated flat tiles.
     auto sorted = terrain.heights;
-    const auto cutoffIndex = static_cast<std::size_t>(settings.flatCoverage * static_cast<float>(TerrainVertexCount - 1));
+    const auto cutoffIndex = static_cast<std::size_t>(settings.flatCoverage * static_cast<float>(terrain.dimensions.CornerCount() - 1));
 
     std::nth_element(sorted.begin(), sorted.begin() + cutoffIndex, sorted.end());
     const float cutoff = sorted[cutoffIndex];
@@ -329,8 +333,8 @@ TerrainHeightmap GenerateTerrain(const TerrainSettings& settings)
 
 void TerrainHeightmap::Validate() const
 {
-    if (heights.size() != TerrainVertexCount || !std::all_of(heights.begin(), heights.end(), [](float h) { return std::isfinite(h) && h <= TerrainMaxElevation; }))
-        throw std::invalid_argument("Terrain heightmap must contain 257x257 finite heights at or below 256");
+    if (heights.size() != dimensions.CornerCount() || !std::all_of(heights.begin(), heights.end(), [](float h) { return std::isfinite(h) && h <= TerrainMaxElevation; }))
+        throw std::invalid_argument("Terrain heightmap must contain (tileCount + 1) squared finite heights at or below 256");
 }
 
 TerrainMesh BuildTerrain(const TerrainHeightmap& terrain, const TerrainPalette& palette)
@@ -338,18 +342,21 @@ TerrainMesh BuildTerrain(const TerrainHeightmap& terrain, const TerrainPalette& 
     terrain.Validate();
     ValidatePalette(palette);
 
+    const auto tileCount = terrain.dimensions.TileCount();
+    const auto stride = terrain.dimensions.CornerStride();
     TerrainMesh mesh;
-    mesh.vertices.reserve(TerrainVertexCount);
-    mesh.indices.reserve(MapSize * MapSize * 6);
+    mesh.dimensions = terrain.dimensions;
+    mesh.vertices.reserve(terrain.dimensions.CornerCount());
+    mesh.indices.reserve(tileCount * tileCount * 6);
 
-    for (std::uint32_t z = 0; z <= MapSize; ++z)
+    for (std::uint32_t z = 0; z <= tileCount; ++z)
     {
-        for (std::uint32_t x = 0; x <= MapSize; ++x)
+        for (std::uint32_t x = 0; x <= tileCount; ++x)
         {
             const auto left = x == 0 ? x : x - 1;
-            const auto right = std::min(x + 1, MapSize);
+            const auto right = std::min(x + 1, tileCount);
             const auto back = z == 0 ? z : z - 1;
-            const auto front = std::min(z + 1, MapSize);
+            const auto front = std::min(z + 1, tileCount);
     
             // Central differences inside, one-sided differences at map boundaries.
             const float dx = (terrain.Height(right, z) - terrain.Height(left, z)) / static_cast<float>(right - left);
@@ -363,13 +370,13 @@ TerrainMesh BuildTerrain(const TerrainHeightmap& terrain, const TerrainPalette& 
         }
     }
 
-    for (std::uint32_t z = 0; z < MapSize; ++z)
+    for (std::uint32_t z = 0; z < tileCount; ++z)
     {
-        for (std::uint32_t x = 0; x < MapSize; ++x)
+        for (std::uint32_t x = 0; x < tileCount; ++x)
         {
-            const auto a = z * TerrainStride + x;
+            const auto a = z * stride + x;
             const auto b = a + 1;
-            const auto c = a + TerrainStride;
+            const auto c = a + stride;
             const auto d = c + 1;
             // Two triangles per tile, both with an upward-facing winding.
             mesh.indices.insert(mesh.indices.end(), {a, c, b, b, c, d});
@@ -377,25 +384,26 @@ TerrainMesh BuildTerrain(const TerrainHeightmap& terrain, const TerrainPalette& 
     }
 
     // One segment per tile edge, shared between neighboring tiles. The old long
-    // map-spanning lines cannot follow hills. Reuse the exact terrain endpoints.
-    mesh.lines.reserve(4 * MapSize * TerrainStride);
-    for (std::uint32_t z = 0; z <= MapSize; ++z)
+    // map-spanning lines cannot follow hills. Share the terrain vertex buffer
+    // instead of duplicating a complete Vertex for every line endpoint.
+    mesh.lineIndices.reserve(4 * tileCount * stride);
+    for (std::uint32_t z = 0; z <= tileCount; ++z)
     {
-        for (std::uint32_t x = 0; x < MapSize; ++x)
+        for (std::uint32_t x = 0; x < tileCount; ++x)
         {
-            const auto a = z * TerrainStride + x;
-            mesh.lines.push_back(mesh.vertices[a]);
-            mesh.lines.push_back(mesh.vertices[a + 1]);
+            const auto a = z * stride + x;
+            mesh.lineIndices.push_back(a);
+            mesh.lineIndices.push_back(a + 1);
         }
     }
 
-    for (std::uint32_t x = 0; x <= MapSize; ++x)
+    for (std::uint32_t x = 0; x <= tileCount; ++x)
     {
-        for (std::uint32_t z = 0; z < MapSize; ++z)
+        for (std::uint32_t z = 0; z < tileCount; ++z)
         {
-            const auto a = z * TerrainStride + x;
-            mesh.lines.push_back(mesh.vertices[a]);
-            mesh.lines.push_back(mesh.vertices[a + TerrainStride]);
+            const auto a = z * stride + x;
+            mesh.lineIndices.push_back(a);
+            mesh.lineIndices.push_back(a + stride);
         }
     }
 

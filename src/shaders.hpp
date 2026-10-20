@@ -8,6 +8,7 @@ cbuffer View : register(b0, space1)
     float4 camera; // center X, center Z, vertical half-span, aspect ratio
     float4 style;  // RGB tint, depth offset
     float4 orientation; // cos(yaw), sin(yaw), sin(pitch), cos(pitch)
+    float4 world; // map extent, padding
 };
 
 float4 ProjectWorldPosition(float3 position)
@@ -23,7 +24,10 @@ float4 ProjectWorldPosition(float3 position)
     float up = dot(p, float3(-sinPitch * sinYaw, cosPitch, -sinPitch * cosYaw));
     float towardCamera = dot(p, float3(cosPitch * sinYaw, sinPitch, cosPitch * cosYaw));
 
-    return float4(right / (camera.z * camera.w), up / camera.z, 0.5 - towardCamera / 2048.0 + style.w, 1.0);
+    // Keep large maps inside the depth range even from an edge/corner,
+    // including elevated terrain and the skirt. All world passes share this.
+    float depthSpan = max(2048.0, 4.0 * world.x);
+    return float4(right / (camera.z * camera.w), up / camera.z, 0.5 - towardCamera / depthSpan + style.w, 1.0);
 }
 
 )hlsl";

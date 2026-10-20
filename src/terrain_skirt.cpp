@@ -51,9 +51,11 @@ TerrainSkirtMesh BuildTerrainSkirt(const TerrainHeightmap& terrain, const Terrai
     terrain.Validate();
     Validate(settings);
 
+    const auto tileCount = terrain.dimensions.TileCount();
+    const auto stride = terrain.dimensions.CornerStride();
     TerrainSkirtMesh mesh;
-    mesh.vertices.reserve(4 * TerrainStride * 2);
-    mesh.indices.reserve(4 * MapSize * 6);
+    mesh.vertices.reserve(4 * stride * 2);
+    mesh.indices.reserve(4 * tileCount * 6);
 
     // A continuous walk around the perimeter. Each wall keeps its own corner
     // normals for a sharp 90-degree edge, but corner positions match exactly.
@@ -63,10 +65,10 @@ TerrainSkirtMesh BuildTerrainSkirt(const TerrainHeightmap& terrain, const Terrai
         const float nx[] = {0, 1, 0, -1};
         const float nz[] = {-1, 0, 1, 0};
 
-        for (std::uint32_t i = 0; i <= MapSize; ++i)
+        for (std::uint32_t i = 0; i <= tileCount; ++i)
         {
-            const std::uint32_t x = side == 0 ? i : side == 1 ? MapSize : side == 2 ? MapSize - i : 0;
-            const std::uint32_t z = side == 0 ? 0 : side == 1 ? i : side == 2 ? MapSize : MapSize - i;
+            const std::uint32_t x = side == 0 ? i : side == 1 ? tileCount : side == 2 ? tileCount - i : 0;
+            const std::uint32_t z = side == 0 ? 0 : side == 1 ? i : side == 2 ? tileCount : tileCount - i;
             const float top = terrain.Height(x, z);
     
             if (top - settings.bottomY < TerrainHeightStep)
@@ -80,7 +82,7 @@ TerrainSkirtMesh BuildTerrainSkirt(const TerrainHeightmap& terrain, const Terrai
             mesh.vertices.push_back({fx, settings.bottomY, fz, nx[side], 0, nz[side], top});
         }
 
-        for (std::uint32_t i = 0; i < MapSize; ++i)
+        for (std::uint32_t i = 0; i < tileCount; ++i)
         {
             const auto a = first + i * 2; // top-left, bottom-left, top-right, bottom-right
             // Cross products point outward on all four sides. The renderer

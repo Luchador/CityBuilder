@@ -38,7 +38,7 @@ public:
     bool Contains(float x, float y) const;
 
     // Map coordinates are normalized: X/Z each range from 0 to 1.
-    // Multiply a successful result by MapExtent to get world coordinates.
+    // Multiply a successful result by the current camera's GetMapExtent().
     // On a miss, the output arguments are left unchanged.
     bool TryScreenToMap(float x, float y, float& mapX, float& mapZ) const;
     MinimapScreenPoint MapToScreen(float mapX, float mapZ) const;
