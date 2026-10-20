@@ -43,6 +43,10 @@ public:
     void Open();
     void Close(); // Keeps this instance and its control values available to reopen.
     bool IsOpen() const { return open; }
+    // Disables user dismissal (X and Escape). Application callbacks may still
+    // call Close(), for example after accepting a required form.
+    void SetClosable(bool value);
+    bool IsClosable() const { return closable; }
 
     TextLabel& AddLabel(UiControlId id, UiRect bounds, std::string_view text, TextStyle style = {});
     void AddImage(UiControlId id, UiRect bounds, const Texture& image);
@@ -120,6 +124,7 @@ private:
     Control* focusedControl = nullptr;
     Control* pressedControl = nullptr;
     bool open = true, focused = false, shown = true;
+    bool closable = true;
     bool capturing = false, dragging = false, closePressed = false, selecting = false;
     float dragX = 0, dragY = 0;
     bool caretVisible = false;

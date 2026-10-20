@@ -20,7 +20,7 @@ namespace
     }
 }
 
-void UiManager::Initialize(SDL_GPUDevice* gpu, SDL_Window* targetWindow, TextureManager& sharedTextures, const City& city, UiActions callbacks)
+void UiManager::Initialize(SDL_GPUDevice* gpu, SDL_Window* targetWindow, TextureManager& sharedTextures, UiActions callbacks)
 {
     if (initialized || device) 
     {
@@ -46,7 +46,7 @@ void UiManager::Initialize(SDL_GPUDevice* gpu, SDL_Window* targetWindow, Texture
         textVertexShader = CompileShader(device, TextVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
         textFragmentShader = CompileShader(device, TextFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
         textRenderer.Initialize(device, textVertexShader, textFragmentShader, format);
-        bottomBarText.Initialize(textRenderer, city);
+        bottomBarText.Initialize(textRenderer);
         imageVertexShader = CompileShader(device, UiImageVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
         imageFragmentShader = CompileShader(device, UiImageFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
         imageRenderer.Initialize(device, imageVertexShader, imageFragmentShader, format);
@@ -56,6 +56,7 @@ void UiManager::Initialize(SDL_GPUDevice* gpu, SDL_Window* targetWindow, Texture
         SetUiMinimized(settings, buttons, settings.minimized);
         initialized = true;
         RefreshLayout();
+        cityCreationPending = true;
         CreateNewCityWindow();
     }
     catch (...)
@@ -108,6 +109,7 @@ void UiManager::Release()
     focusedWindow = capturedWindow = nullptr;
     nextWindowId = 1;
     createCityWindowId = 0;
+    cityCreationPending = false;
     windowSkin = {};
     outlineTransfer = nullptr;
     vertexCount = outlineVertexCount = 0;
@@ -162,7 +164,7 @@ void UiManager::PrepareFrame(bool mousePanning)
     RefreshLayout();
     float mouseX = 0, mouseY = 0;
     SDL_GetMouseState(&mouseX, &mouseY);
-    const bool windowOwnsPointer = capturedWindow || (!buttons.HasCapture() && WindowAt(mouseX, mouseY));
+    const bool windowOwnsPointer = cityCreationPending || capturedWindow || (!buttons.HasCapture() && WindowAt(mouseX, mouseY));
 
     if (windowOwnsPointer) 
     {
@@ -175,7 +177,7 @@ void UiManager::PrepareFrame(bool mousePanning)
 
     // Poll the pointer first so hover follows resize, focus, and capture changes.
     UpdateTickerHover();
-    if (!layout.minimized) 
+    if (!layout.minimized && !cityCreationPending)
     {
         EnsureGeometry();
     }
@@ -202,7 +204,7 @@ void UiManager::PrepareFrame(bool mousePanning)
 
 void UiManager::UploadFrame(SDL_GPUCommandBuffer* commands, const Camera& camera, float mapExtent, Uint32 pixelWidth, Uint32 pixelHeight)
 {
-    if (layout.minimized) 
+    if (layout.minimized || cityCreationPending)
     {
         return;
     }
@@ -353,7 +355,7 @@ void UiManager::Draw(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target, Uin
     SDL_SetGPUViewport(pass, &uiViewport);
     SDL_SetGPUScissor(pass, &uiScissor);
 
-    if (!layout.minimized)
+    if (!layout.minimized && !cityCreationPending)
     {
         SDL_BindGPUGraphicsPipeline(pass, pipeline);
         SDL_GPUBufferBinding uiBinding{vertices, 0};
@@ -381,14 +383,15 @@ void UiManager::Draw(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target, Uin
         textRenderer.Draw(commands, pass, layout.width, layout.height, width, height);
     }
 
-    buttons.Draw(imageRenderer, commands, pass, layout.width, layout.height);
+    if (!cityCreationPending) buttons.Draw(imageRenderer, commands, pass, layout.width, layout.height);
 
     if (!layout.minimized) 
     {
         DrawWindows(commands, pass, width, height);
     }
 
-    panOverlay.Draw(imageRenderer, commands, pass, layout.width, layout.height, camera.GetMousePan(), camera.GetPanSettings());
+    if (!cityCreationPending)
+        panOverlay.Draw(imageRenderer, commands, pass, layout.width, layout.height, camera.GetMousePan(), camera.GetPanSettings());
     SDL_EndGPURenderPass(pass);
 
 }

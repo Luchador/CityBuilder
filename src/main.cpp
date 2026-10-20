@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstddef>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <utility>
@@ -51,6 +52,7 @@ public:
         {
             SDL_WaitForGPUIdle(device);
             ui.Release();
+            ReleaseTerrainBuffers();
             terrainMaterial.Release();
             textures.Release();
             if (terrainPipeline) SDL_ReleaseGPUGraphicsPipeline(device, terrainPipeline);
@@ -59,19 +61,12 @@ public:
             if (skirtPipeline) SDL_ReleaseGPUGraphicsPipeline(device, skirtPipeline);
             if (skirtVertexShader) SDL_ReleaseGPUShader(device, skirtVertexShader);
             if (skirtFragmentShader) SDL_ReleaseGPUShader(device, skirtFragmentShader);
-            if (skirtVertices) SDL_ReleaseGPUBuffer(device, skirtVertices);
-            if (skirtIndices) SDL_ReleaseGPUBuffer(device, skirtIndices);
             if (waterPipeline) SDL_ReleaseGPUGraphicsPipeline(device, waterPipeline);
             if (waterVertexShader) SDL_ReleaseGPUShader(device, waterVertexShader);
             if (waterFragmentShader) SDL_ReleaseGPUShader(device, waterFragmentShader);
-            if (waterVertices) SDL_ReleaseGPUBuffer(device, waterVertices);
-            if (waterIndices) SDL_ReleaseGPUBuffer(device, waterIndices);
             if (gridPipeline) SDL_ReleaseGPUGraphicsPipeline(device, gridPipeline);
             if (vertexShader) SDL_ReleaseGPUShader(device, vertexShader);
             if (fragmentShader) SDL_ReleaseGPUShader(device, fragmentShader);
-            if (vertices) SDL_ReleaseGPUBuffer(device, vertices);
-            if (indices) SDL_ReleaseGPUBuffer(device, indices);
-            if (gridVertices) SDL_ReleaseGPUBuffer(device, gridVertices);
             if (depth) SDL_ReleaseGPUTexture(device, depth);
             if (claimed) SDL_ReleaseWindowFromGPUDevice(device, window);
             SDL_DestroyGPUDevice(device);
@@ -108,7 +103,6 @@ public:
 
         claimed = true;
         textures.Initialize(device);
-        terrainMaterial.Initialize(device, textures, "materials/ground/grass01_basecolor.png", "materials/ground/grass01_normal.png");
 
         const std::string worldPreamble = std::string(WorldViewShaderSource) + WorldLightingShaderSource;
         vertexShader = CompileShader(device, VertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, worldPreamble.c_str());
@@ -166,7 +160,8 @@ public:
         };
 
         uiActions.cancelWorldInteraction = [this] { StopMousePan(); };
-        ui.Initialize(device, window, textures, city, std::move(uiActions));
+        uiActions.createCity = [this](const CityCreationOptions& options) { CreateCity(options); };
+        ui.Initialize(device, window, textures, std::move(uiActions));
 
         // Load sound effects.
         zoomInSound.Load("sfx/ui/sfx_zoom_in.wav");
@@ -175,43 +170,6 @@ public:
         playSound.Load("sfx/ui/sfx_play.wav");
         pauseSound.Load("sfx/ui/sfx_pause.wav");
         buttonClick.Load("sfx/ui/sfx_click.wav");
-
-        // Terrain
-        terrainSettings.seed = SDL_rand_bits(); // Use a fixed number here to replay a landscape.
-        SDL_Log("Terrain seed: %u", static_cast<unsigned int>(terrainSettings.seed));
-        terrain = GenerateTerrain(terrainSettings);
-        const TerrainMesh mesh = BuildTerrain(terrain);
-
-        ui.RebuildMinimap(mesh);
-
-        vertices = UploadBuffer(device, mesh.vertices.data(), static_cast<Uint32>(mesh.vertices.size() * sizeof(Vertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
-        indices = UploadBuffer(device, mesh.indices.data(), static_cast<Uint32>(mesh.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
-        gridVertices = UploadBuffer(device, mesh.lines.data(), static_cast<Uint32>(mesh.lines.size() * sizeof(Vertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
-        indexCount = static_cast<Uint32>(mesh.indices.size());
-        lineVertexCount = static_cast<Uint32>(mesh.lines.size());
-
-        // Terrain Skirt
-        const TerrainSkirtMesh skirt = BuildTerrainSkirt(terrain, skirtSettings);
-        skirtUniforms = MakeTerrainSkirtUniforms(skirtSettings, terrainSettings.seed);
-        skirtVertices = UploadBuffer(device, skirt.vertices.data(), static_cast<Uint32>(skirt.vertices.size() * sizeof(TerrainSkirtVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
-        skirtIndices = UploadBuffer(device, skirt.indices.data(), static_cast<Uint32>(skirt.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
-        skirtIndexCount = static_cast<Uint32>(skirt.indices.size());
-
-        // Water
-        const WaterMesh water = BuildWater(terrain);
-        waterIndexCount = static_cast<Uint32>(water.indices.size());
-
-        if (waterIndexCount > 0)
-        {
-            waterVertices = UploadBuffer(device, water.vertices.data(), static_cast<Uint32>(water.vertices.size() * sizeof(WaterVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
-            waterIndices = UploadBuffer(device, water.indices.data(), static_cast<Uint32>(water.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
-        }
-
-        city.name = "New City";
-
-        const int startingYear = 1950;
-
-        city.date = std::chrono::sys_days {std::chrono::year{startingYear} / std::chrono::January / 1 };
     }
 
     void Run()
@@ -221,6 +179,7 @@ public:
 
         while (running) 
         {
+            const bool hadCity = city.has_value();
             const Uint64 now = SDL_GetTicksNS();
 
             // Collect elapsed milliseconds for game simulation logic.
@@ -239,12 +198,19 @@ public:
                     continue;
                 }
 
-                HandlePanEvent(event);
-
-                if (event.type == SDL_EVENT_QUIT) 
+                if (event.type == SDL_EVENT_QUIT)
                 {
                     running = false;
+                    continue;
                 }
+                if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
+                    (event.key.key == SDLK_F11 || (event.key.key == SDLK_RETURN && (event.key.mod & SDL_KMOD_ALT))))
+                {
+                    ToggleFullscreen();
+                    continue;
+                }
+                if (!city) continue;
+                HandlePanEvent(event);
     
                 if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) 
                 {
@@ -274,13 +240,6 @@ public:
                         camera.SetPosition(MapExtent * 0.5f, MapExtent * 0.5f);
                         camera.ResetZoom();
                     }
-
-                    const bool altEnter = event.key.key == SDLK_RETURN && (event.key.mod & SDL_KMOD_ALT) != 0;
-
-                    if (event.key.key == SDLK_F11 || altEnter)
-                    {
-                        ToggleFullscreen();
-                    }
                 }
 
                 if (event.type == SDL_EVENT_MOUSE_WHEEL) 
@@ -301,11 +260,12 @@ public:
                 break;
             }
 
-            // Main simulation logic
-            simulation.Update(city, elapsedMilliseconds);
-
-            // Keep the bottom bar text and ticker synchronized with simulation state.
-            ui.Update(city, simulation.GetSimulationSpeed());
+            if (!hadCity && city) previous = SDL_GetTicksNS();
+            if (city)
+            {
+                if (hadCity) simulation.Update(*city, elapsedMilliseconds);
+                ui.Update(*city, simulation.GetSimulationSpeed());
+            }
 
             if (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) 
             {
@@ -336,7 +296,7 @@ public:
 
 private:
     Camera camera{MapExtent};
-    City city;
+    std::optional<City> city;
     Simulation simulation;
 
     SoundEffect zoomInSound;
@@ -345,6 +305,73 @@ private:
     SoundEffect playSound;
     SoundEffect pauseSound;
     SoundEffect buttonClick;
+
+    // Invoked only by the creation form's Accept action. The optional City and
+    // heightmap stay empty until all world resources have been prepared.
+    void CreateCity(const CityCreationOptions& options)
+    {
+        if (city) throw std::logic_error("A city has already been created.");
+        City created(options);
+        try
+        {
+            terrainMaterial.Initialize(device, textures, "materials/ground/grass01_basecolor.png", "materials/ground/grass01_normal.png");
+            // Terrain
+            terrainSettings.seed = SDL_rand_bits(); // Use a fixed number here to replay a landscape.
+            SDL_Log("Terrain seed: %u", static_cast<unsigned int>(terrainSettings.seed));
+            auto generated = GenerateTerrain(terrainSettings);
+            const TerrainMesh mesh = BuildTerrain(generated);
+
+            vertices = UploadBuffer(device, mesh.vertices.data(), static_cast<Uint32>(mesh.vertices.size() * sizeof(Vertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
+            indices = UploadBuffer(device, mesh.indices.data(), static_cast<Uint32>(mesh.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
+            gridVertices = UploadBuffer(device, mesh.lines.data(), static_cast<Uint32>(mesh.lines.size() * sizeof(Vertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
+            indexCount = static_cast<Uint32>(mesh.indices.size());
+            lineVertexCount = static_cast<Uint32>(mesh.lines.size());
+
+            // Terrain Skirt
+            const TerrainSkirtMesh skirt = BuildTerrainSkirt(generated, skirtSettings);
+            skirtUniforms = MakeTerrainSkirtUniforms(skirtSettings, terrainSettings.seed);
+            skirtVertices = UploadBuffer(device, skirt.vertices.data(), static_cast<Uint32>(skirt.vertices.size() * sizeof(TerrainSkirtVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
+            skirtIndices = UploadBuffer(device, skirt.indices.data(), static_cast<Uint32>(skirt.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
+            skirtIndexCount = static_cast<Uint32>(skirt.indices.size());
+
+            // Water
+            const WaterMesh water = BuildWater(generated);
+            waterIndexCount = static_cast<Uint32>(water.indices.size());
+
+            if (waterIndexCount > 0)
+            {
+                waterVertices = UploadBuffer(device, water.vertices.data(), static_cast<Uint32>(water.vertices.size() * sizeof(WaterVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
+                waterIndices = UploadBuffer(device, water.indices.data(), static_cast<Uint32>(water.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
+            }
+
+            // Prepare dependent UI before publishing the live game state.
+            ui.Update(created, 0);
+            ui.RebuildMinimap(mesh);
+            terrain.emplace(std::move(generated));
+            city.emplace(std::move(created));
+            simulation = Simulation{}; // New cities begin paused, with no accumulated time.
+            camera = Camera(MapExtent);
+        }
+        catch (...)
+        {
+            ReleaseTerrainBuffers();
+            terrainMaterial.Release();
+            terrain.reset();
+            city.reset();
+            throw; // UiManager displays the error and keeps Accept available.
+        }
+    }
+
+    void ReleaseTerrainBuffers()
+    {
+        for (SDL_GPUBuffer** buffer : {&vertices, &indices, &gridVertices, &skirtVertices,
+                                       &skirtIndices, &waterVertices, &waterIndices})
+        {
+            if (*buffer) SDL_ReleaseGPUBuffer(device, *buffer);
+            *buffer = nullptr;
+        }
+        indexCount = lineVertexCount = skirtIndexCount = waterIndexCount = 0;
+    }
 
     void ToggleFullscreen()
     {
@@ -648,7 +675,7 @@ private:
 
     void PanCamera(float dt)
     {
-        if (ui.BlocksWorldKeyboard()) return;
+        if (!city || ui.BlocksWorldKeyboard()) return;
         const auto& layout = ui.GetLayout();
 
         const bool* keys = SDL_GetKeyboardState(nullptr);
@@ -691,6 +718,27 @@ private:
 
             SDL_Delay(16);
 
+            return;
+        }
+
+        if (!city)
+        {
+            SDL_GPUColorTargetInfo background{};
+            background.texture = swapchain;
+            background.clear_color = {0.08f, 0.12f, 0.18f, 1.0f};
+            background.load_op = SDL_GPU_LOADOP_CLEAR;
+            background.store_op = SDL_GPU_STOREOP_STORE;
+            SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &background, 1, nullptr);
+            if (!pass)
+            {
+                const std::string error = SDL_GetError();
+                SDL_SubmitGPUCommandBuffer(commands);
+                throw std::runtime_error("Begin startup background pass: " + error);
+            }
+            SDL_EndGPURenderPass(pass);
+            try { ui.Draw(commands, swapchain, width, height, camera); }
+            catch (...) { SDL_SubmitGPUCommandBuffer(commands); throw; }
+            if (!SDL_SubmitGPUCommandBuffer(commands)) Fail("Submit startup frame");
             return;
         }
 
@@ -845,7 +893,7 @@ private:
     SDL_GPUBuffer* gridVertices = nullptr;
     SDL_GPUTexture* depth = nullptr;
     TerrainSettings terrainSettings;
-    TerrainHeightmap terrain;
+    std::optional<TerrainHeightmap> terrain;
     TextureManager textures;
     TerrainMaterial terrainMaterial;
     TerrainMaterialSettings terrainMaterialSettings;

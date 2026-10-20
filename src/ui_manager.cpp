@@ -59,7 +59,7 @@ const UiLayout& UiManager::GetLayout()
 
 bool UiManager::IsWorldPoint(float x, float y)
 {
-    return GetLayout().IsWorldPoint(x, y) && !buttons.BlocksPointer(x, y) && !WindowAt(x, y);
+    return !cityCreationPending && GetLayout().IsWorldPoint(x, y) && !buttons.BlocksPointer(x, y) && !WindowAt(x, y);
 }
 
 SDL_Rect UiManager::GetWorldViewport(Uint32 pixelWidth, Uint32 pixelHeight)
@@ -77,6 +77,7 @@ void UiManager::CancelInteraction()
 
 void UiManager::SetMinimized(bool minimized)
 {
+    if (minimized && cityCreationPending) return;
     if (settings.minimized == minimized) 
     {
         return;
@@ -100,6 +101,13 @@ void UiManager::ToggleMinimized()
 
 void UiManager::SetSettings(const UiSettings& next)
 {
+    if (next.minimized && cityCreationPending)
+    {
+        auto visibleSettings = next;
+        visibleSettings.minimized = false;
+        SetSettings(visibleSettings);
+        return;
+    }
     if (settings.barSlimDimension == next.barSlimDimension && settings.minimapSize == next.minimapSize && settings.minimized == next.minimized) 
     {
         return;
@@ -265,6 +273,18 @@ bool UiManager::HandleEvent(const SDL_Event& event)
     if (HandleWindowEvent(event)) 
     {
         return true;
+    }
+
+    if (cityCreationPending)
+    {
+        // Keep native quit/window events and fullscreen shortcuts available.
+        // Everything else belongs to the required creation form, never the docks.
+        if (event.type == SDL_EVENT_KEY_DOWN && (event.key.key == SDLK_F11 ||
+            (event.key.key == SDLK_RETURN && (event.key.mod & SDL_KMOD_ALT)))) return false;
+        return event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_KEY_UP ||
+               event.type == SDL_EVENT_TEXT_INPUT || event.type == SDL_EVENT_TEXT_EDITING ||
+               event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_BUTTON_UP ||
+               event.type == SDL_EVENT_MOUSE_MOTION || event.type == SDL_EVENT_MOUSE_WHEEL;
     }
 
     // Dock controls handle their own flyouts and capture.

@@ -315,7 +315,7 @@ void UiWindow::SetChecked(UiControlId controlId)
 void UiWindow::LayoutControls()
 {
     closeButton.SetBounds(GetCloseBounds());
-    title->SetBounds({bounds.x + 12, bounds.y, std::max(0.0f, bounds.w - 52), TitleHeight});
+    title->SetBounds({bounds.x + 12, bounds.y, std::max(0.0f, bounds.w - (closable ? 52 : 24)), TitleHeight});
 
     for (auto& item : controls)
     {
@@ -349,6 +349,14 @@ void UiWindow::LayoutControls()
         control.label->SetBounds(textBounds);
         control.label->SetClip(control.footer ? std::optional<UiRect>{bounds} : GetContentBounds());
     }
+}
+
+void UiWindow::SetClosable(bool value)
+{
+    closable = value;
+    closePressed = false;
+    closeButton.SetVisible(value);
+    LayoutControls();
 }
 
 void UiWindow::Open() 
@@ -453,7 +461,7 @@ void UiWindow::PlaceCaret(Control& control, float x, bool extend)
 void UiWindow::PointerDown(float x, float y)
 {
     capturing = true; // Even blank content owns the complete press/release pair.
-    closePressed = closeButton.PointerDown(x, y);
+    closePressed = closable && closeButton.PointerDown(x, y);
 
     if (closePressed) 
     {
@@ -665,11 +673,8 @@ bool UiWindow::HandleKey(const SDL_Event& event)
 
     if (key == SDLK_ESCAPE) 
     { 
-        if (!event.key.repeat) 
-        {
-            Close(); 
-            return true; 
-        }
+        if (closable && !event.key.repeat) Close();
+        return true;
     }
 
     if (key == SDLK_TAB) 

@@ -21,6 +21,9 @@ struct UiActions
     std::function<void(UiButtonId)> buttonClicked; // Future tools and speed controls.
     std::function<void(int)> setSimulationSpeed;
     std::function<void()> resumeSimulation;
+    // Build the city/world synchronously. Throw on failure: the form reports
+    // the error and stays open so the user can correct the input and retry.
+    std::function<void(const CityCreationOptions&)> createCity;
 };
 
 // Application's single entry point for UI state, input, layout, and rendering.
@@ -35,7 +38,7 @@ public:
 
     // The window, GPU, texture cache, and callback targets must outlive this UI.
     void Initialize(SDL_GPUDevice* gpu, SDL_Window* targetWindow, TextureManager& textures,
-                    const City& city, UiActions callbacks);
+                    UiActions callbacks);
     // Call after GPU idle and before destroying the GPU or shared texture cache.
     void Release();
 
@@ -50,6 +53,7 @@ public:
     const UiLayout& GetLayout();
     bool IsWorldPoint(float x, float y);
     bool BlocksWorldKeyboard() const;
+    bool IsCreatingCity() const { return cityCreationPending; }
     // References remain valid until Release(); Close() hides a reusable window.
     UiWindow& AddWindow(std::string_view title, UiRect bounds);
     UiWindow* FindWindow(UiWindowId id);
@@ -86,6 +90,7 @@ private:
     void PrepareWindows(bool mousePanning, float rasterScale);
     void DrawWindows(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, Uint32 width, Uint32 height);
     void CreateNewCityWindow();
+    UiWindow* RequiredWindow() const;
 
     SDL_Window* window = nullptr;
     SDL_GPUDevice* device = nullptr;
@@ -111,6 +116,7 @@ private:
     UiWindow* focusedWindow = nullptr;
     UiWindow* capturedWindow = nullptr;
     UiWindowId nextWindowId = 1, createCityWindowId = 0;
+    bool cityCreationPending = false;
     bool textInputActive = false;
     const void* textInputOwner = nullptr;
     struct WindowDrawRange { UiWindow* window; Uint32 first, count; };

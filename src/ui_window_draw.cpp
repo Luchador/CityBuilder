@@ -117,7 +117,8 @@ void UiWindow::DrawImages(UiImageRenderer& images, SDL_GPUCommandBuffer* command
     }
 
     Scissor(pass, bounds, width, height, pixelWidth, pixelHeight);
-    images.Draw(commands, pass, *closeButton.GetTexture(), closeButton.GetBounds(), width, height);
+    if (closable)
+        images.Draw(commands, pass, *closeButton.GetTexture(), closeButton.GetBounds(), width, height);
 
     for (const auto& control : controls)
     {

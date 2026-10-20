@@ -70,6 +70,7 @@ void UiManager::OpenWindow(UiWindowId id)
 
 UiWindow* UiManager::WindowAt(float x, float y) const
 {
+    if (auto* required = RequiredWindow()) return required->HitTest(x, y) ? required : nullptr;
     if (settings.minimized) 
     {
         return nullptr;
@@ -88,11 +89,24 @@ UiWindow* UiManager::WindowAt(float x, float y) const
 
 bool UiManager::BlocksWorldKeyboard() const
 {
-    return !settings.minimized && focusedWindow && focusedWindow->BlocksKeyboard();
+    return cityCreationPending || (!settings.minimized && focusedWindow && focusedWindow->BlocksKeyboard());
+}
+
+UiWindow* UiManager::RequiredWindow() const
+{
+    if (!cityCreationPending) return nullptr;
+    for (const auto& panel : windows)
+        if (panel->GetId() == createCityWindowId) return panel.get();
+    return nullptr;
 }
 
 void UiManager::FocusWindow(UiWindow* target)
 {
+    if (auto* required = RequiredWindow())
+    {
+        target = required;
+        target->Open();
+    }
     if (focusedWindow == target) 
     {
         return;
@@ -185,15 +199,7 @@ bool UiManager::HandleWindowEvent(const SDL_Event& event)
         return false;
     }
 
-    if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F2)
-    {
-        if (!event.key.repeat && createCityWindowId) 
-        {
-            OpenWindow(createCityWindowId);
-        }
-
-        return true;
-    }
+    if (RequiredWindow()) FocusWindow(RequiredWindow());
 
     if (settings.minimized) 
     {
@@ -329,6 +335,10 @@ void UiManager::PrepareWindows(bool mousePanning, float scale)
     {
         CancelWindowInteraction();
     }
+    else if (RequiredWindow())
+    {
+        FocusWindow(RequiredWindow());
+    }
 
     if (focusedWindow && !focusedWindow->IsOpen()) 
     {
@@ -358,7 +368,7 @@ void UiManager::PrepareWindows(bool mousePanning, float scale)
             panel->PointerLeave();
         }
 
-        panel->Prepare(!settings.minimized, scale);
+        panel->Prepare(!settings.minimized && (!cityCreationPending || panel.get() == RequiredWindow()), scale);
     }
 
     SyncTextInput();

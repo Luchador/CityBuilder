@@ -4,7 +4,7 @@
 #include <chrono>
 #include <format>
 
-void BottomBarText::Initialize(TextRenderer& renderer, const City& city)
+void BottomBarText::Initialize(TextRenderer& renderer)
 {
     news = &renderer.CreateLabel("");
 
@@ -16,7 +16,6 @@ void BottomBarText::Initialize(TextRenderer& renderer, const City& city)
         values[i] = &renderer.CreateLabel("");
     }
 
-    UpdateText(city);
 }
 
 void BottomBarText::UpdateText(const City& city)
