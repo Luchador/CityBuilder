@@ -28,6 +28,10 @@ namespace UiButtonIds
     inline constexpr UiButtonId GovernmentButton = 104;
     inline constexpr UiButtonId BulldozerButton = 105;
     inline constexpr UiButtonId DisastersButton = 106;
+    inline constexpr UiButtonId OptionsButton = 107;
+    inline constexpr UiButtonId DataButton = 108;
+    inline constexpr UiButtonId MeetButton = 109;
+    inline constexpr UiButtonId DayButton = 110;
 
     inline constexpr UiButtonId ResidentialButton = 200;
     inline constexpr UiButtonId CommercialButton = 201;

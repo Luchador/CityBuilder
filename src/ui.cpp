@@ -32,6 +32,7 @@ namespace
     constexpr float ToolbarButtonWidth = 84.0f;
     constexpr float ToolbarButtonHeight = 50.0f;
     constexpr float ToolbarButtonGap = 16.0f;
+    constexpr float MinimumToolbarButtonGap = 4.0f;
 
     struct ToolbarButtonDefinition
     {
@@ -49,6 +50,14 @@ namespace
         {{UiButtonIds::GovernmentButton, "ui/toolbar/btn_gov"}},
         {{UiButtonIds::BulldozerButton, "ui/toolbar/btn_bulldozer"}, 48.0f, 24.0f},
         {{UiButtonIds::DisastersButton, "ui/toolbar/btn_disaster"}, 48.0f, 24.0f}
+    }};
+
+    // Bottom to top, anchored above the minimap rather than below the top group.
+    constexpr std::array<ToolbarButtonDefinition, 4> BottomToolbarButtons{{
+        {{UiButtonIds::OptionsButton, "ui/toolbar/btn_options"}},
+        {{UiButtonIds::DataButton, "ui/toolbar/btn_data"}},
+        {{UiButtonIds::MeetButton, "ui/toolbar/btn_meet"}},
+        {{UiButtonIds::DayButton, "ui/toolbar/btn_day"}}
     }};
 
     // Nearest the toolbar first, extending to the left. These are placeholders;
@@ -118,21 +127,28 @@ namespace
     void LayoutToolbarButtons(UiButtons& buttons, const UiLayout& layout)
     {
         const UiRect& area = layout.toolbarContent;
-        constexpr float count = static_cast<float>(ToolbarButtons.size());
+        constexpr float count = static_cast<float>(ToolbarButtons.size() + BottomToolbarButtons.size());
+        constexpr float gapCount = count - 1.0f; // Includes separation between groups.
         float stackWidth = 0.0f;
-        float stackHeight = (count - 1.0f) * ToolbarButtonGap;
-        for (const auto& definition : ToolbarButtons)
+        float buttonHeight = 0.0f;
+        const auto measure = [&](const auto& definitions)
         {
-            stackWidth = std::max(stackWidth, definition.width);
-            stackHeight += definition.height;
-        }
+            for (const auto& definition : definitions)
+            {
+                stackWidth = std::max(stackWidth, definition.width);
+                buttonHeight += definition.height;
+            }
+        };
+        measure(ToolbarButtons);
+        measure(BottomToolbarButtons);
 
-        // Fit the mixed button sizes and gaps into the space above the minimap.
-        const float scale = std::max(0.0f, std::min({layout.scale, area.w / stackWidth, area.h / stackHeight}));
-        const float gap = ToolbarButtonGap * scale;
-        float y = area.y;
+        // Tighten the gaps first, then scale both groups together if still needed.
+        // One shared budget keeps the groups apart as window/minimap sizes change.
+        const float minimumStackHeight = buttonHeight + gapCount * MinimumToolbarButtonGap;
+        const float scale = std::max(0.0f, std::min({layout.scale, area.w / stackWidth, area.h / minimumStackHeight}));
+        const float gap = std::max(0.0f, std::min(ToolbarButtonGap * scale, (area.h - buttonHeight * scale) / gapCount));
 
-        for (const auto& definition : ToolbarButtons)
+        const auto place = [&](const ToolbarButtonDefinition& definition, float y)
         {
             const float width = definition.width * scale;
             const float height = definition.height * scale;
@@ -141,7 +157,23 @@ namespace
             {
                 button->SetBounds({x, y, width, height});
             }
-            y += height + gap;
+        };
+
+        float y = area.y;
+        for (const auto& definition : ToolbarButtons)
+        {
+            place(definition, y);
+            y += definition.height * scale + gap;
+        }
+
+        // Extra room stays between the groups; Options always touches the bottom
+        // of the usable toolbar area. Hit bounds follow the same scaled rectangles.
+        y = area.y + area.h;
+        for (const auto& definition : BottomToolbarButtons)
+        {
+            y -= definition.height * scale;
+            place(definition, y);
+            y -= gap;
         }
     }
 
@@ -192,6 +224,11 @@ void CreateUiButtons(UiButtons& buttons, TextureManager& textures)
     }
 
     for (const auto& definition : ToolbarButtons) 
+    {
+        AddButton(buttons, textures, definition.button);
+    }
+
+    for (const auto& definition : BottomToolbarButtons)
     {
         AddButton(buttons, textures, definition.button);
     }
