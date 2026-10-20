@@ -255,12 +255,14 @@ void CreateUiButtons(UiButtons& buttons, TextureManager& textures)
     }
 
     buttons.AddFlyout(UiButtonIds::ZonesButton, children);
+    CreateTransportationButtons(buttons, textures);
 }
 
 void LayoutUiButtons(UiButtons& buttons, UiMinimap& minimap, const UiLayout& layout)
 {
     LayoutToolbarButtons(buttons, layout);
     LayoutZoningButtons(buttons, layout);
+    LayoutTransportationButtons(buttons, layout);
     LayoutTickerButtons(buttons, layout);
 
     // Refresh the diamond's bounds before positioning its buttons.

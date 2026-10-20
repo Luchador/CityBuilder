@@ -44,6 +44,40 @@ namespace UiButtonIds
     inline constexpr UiButtonId TickerSpeedButton3 = 303;
     inline constexpr UiButtonId TickerSpeedButton4 = 304;
     inline constexpr UiButtonId TickerPlayButton = 305;
+
+    inline constexpr UiButtonId RoadsMenuButton = 400;
+    inline constexpr UiButtonId HighwaysMenuButton = 401;
+    inline constexpr UiButtonId RailroadsMenuButton = 402;
+    inline constexpr UiButtonId CommuterRailMenuButton = 403;
+    inline constexpr UiButtonId SeaMenuButton = 404;
+    inline constexpr UiButtonId AirportMenuButton = 405;
+
+    inline constexpr UiButtonId DirtRoadButton = 410;
+    inline constexpr UiButtonId RoadButton = 411;
+    inline constexpr UiButtonId AvenueButton = 412;
+    inline constexpr UiButtonId OneWayRoadButton = 413;
+    inline constexpr UiButtonId TramButton = 414;
+    inline constexpr UiButtonId TramStationButton = 415;
+    // 420-429 reserved for future highway tools.
+    inline constexpr UiButtonId RailroadButton = 430;
+    inline constexpr UiButtonId RailroadPassengerStationButton = 431;
+    inline constexpr UiButtonId RailroadFreightStationButton = 432;
+    inline constexpr UiButtonId GrandStationButton = 433;
+
+    inline constexpr UiButtonId SubwayButton = 440;
+    inline constexpr UiButtonId SubwayStationButton = 441;
+    inline constexpr UiButtonId ElevatedRailButton = 442;
+    inline constexpr UiButtonId ElevatedRailStationButton = 443;
+    inline constexpr UiButtonId SubwayElevatedConnectorButton = 444;
+    inline constexpr UiButtonId MonorailButton = 445;
+    inline constexpr UiButtonId MonorailStationButton = 446;
+
+    inline constexpr UiButtonId FerryButton = 450;
+    inline constexpr UiButtonId SeaportButton = 451;
+    inline constexpr UiButtonId AirportButton = 460;
+    inline constexpr UiButtonId RunwayButton = 461;
+    inline constexpr UiButtonId TarmacButton = 462;
+    inline constexpr UiButtonId TerminalButton = 463;
 }
 
 struct UiRect
@@ -94,6 +128,9 @@ std::vector<UiVertex> BuildUiBackground(const UiLayout& layout);
 // Application-level UI composition. TextureManager must outlive the buttons.
 void CreateUiButtons(UiButtons& buttons, TextureManager& textures);
 void LayoutUiButtons(UiButtons& buttons, UiMinimap& minimap, const UiLayout& layout);
+// Transportation definitions and texture assignments live in ui_transport.cpp.
+void CreateTransportationButtons(UiButtons& buttons, TextureManager& textures);
+void LayoutTransportationButtons(UiButtons& buttons, const UiLayout& layout);
 void SetUiMinimized(UiSettings& settings, UiButtons& buttons, bool minimized);
 void CancelUiButtonInteraction(UiButtons& buttons);
 

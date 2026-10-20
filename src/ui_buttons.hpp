@@ -33,8 +33,9 @@ public:
     // Individual visibility/enabled/selected states are preserved.
     void ShowOnly(std::optional<UiButtonId> id);
 
-    // First-level flyouts open on trigger press. Add children last so they draw
-    // on top. Their individual visible/enabled/selected settings are preserved.
+    // Root flyouts open on press; child triggers open on hover. Register each
+    // child with one parent only, and add descendants last for correct drawing.
+    // Individual visible/enabled/selected settings are preserved.
     void AddFlyout(UiButtonId trigger, std::span<const UiButtonId> children);
     // Includes gaps and the connection to the trigger, preventing click-through.
     void SetFlyoutBounds(UiButtonId trigger, UiRect bounds);
@@ -60,13 +61,18 @@ private:
         UiRect bounds{};
     };
     const Flyout* FindFlyout(UiButtonId trigger) const;
-    const Flyout* ActiveFlyout() const;
+    const Flyout* ParentFlyout(UiButtonId child) const;
+    std::size_t ActiveFlyoutCount() const;
+    bool IsFlyoutOpen(UiButtonId trigger) const;
+    bool ContainsFlyoutPoint(float x, float y) const;
+    void OpenFlyout(UiButtonId trigger);
+    void UpdateHoveredFlyout(UiButtonId id);
     bool IsInActiveFlyout(UiButtonId id) const;
     const Entry* TopButton(float x, float y) const;
     bool IsShown(const Entry& entry) const;
     std::vector<Entry> entries;
     std::vector<Flyout> flyouts;
-    std::optional<UiButtonId> openFlyout;
+    std::vector<UiButtonId> openFlyouts; // Root, followed by one branch per level.
     std::optional<UiButtonId> onlyShown;
     bool capturing = false;
     std::optional<UiButtonId> capturedId;
