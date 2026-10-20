@@ -179,7 +179,7 @@ public:
 
         while (running) 
         {
-            const bool hadCity = city.has_value();
+            const bool cityHasBeenMade = city.has_value();
             const Uint64 now = SDL_GetTicksNS();
 
             // Collect elapsed milliseconds for game simulation logic.
@@ -203,13 +203,17 @@ public:
                     running = false;
                     continue;
                 }
-                if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
-                    (event.key.key == SDLK_F11 || (event.key.key == SDLK_RETURN && (event.key.mod & SDL_KMOD_ALT))))
+
+                if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && (event.key.key == SDLK_F11 || (event.key.key == SDLK_RETURN && (event.key.mod & SDL_KMOD_ALT))))
                 {
                     ToggleFullscreen();
                     continue;
                 }
-                if (!city) continue;
+    
+                if (!city) 
+                {
+                    continue;
+                }
                 HandlePanEvent(event);
     
                 if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) 
@@ -260,10 +264,18 @@ public:
                 break;
             }
 
-            if (!hadCity && city) previous = SDL_GetTicksNS();
+            if (!cityHasBeenMade && city) 
+            {
+                previous = SDL_GetTicksNS();
+            }
+    
             if (city)
             {
-                if (hadCity) simulation.Update(*city, elapsedMilliseconds);
+                if (cityHasBeenMade) 
+                {
+                    simulation.Update(*city, elapsedMilliseconds);
+                }
+    
                 ui.Update(*city, simulation.GetSimulationSpeed());
             }
 
@@ -310,14 +322,18 @@ private:
     // heightmap stay empty until all world resources have been prepared.
     void CreateCity(const CityCreationOptions& options)
     {
-        if (city) throw std::logic_error("A city has already been created.");
+        if (city) 
+        {
+            throw std::logic_error("A city has already been created.");
+        }
+
         City created(options);
+
         try
         {
             terrainMaterial.Initialize(device, textures, "materials/ground/grass01_basecolor.png", "materials/ground/grass01_normal.png");
             // Terrain
             terrainSettings.seed = SDL_rand_bits(); // Use a fixed number here to replay a landscape.
-            SDL_Log("Terrain seed: %u", static_cast<unsigned int>(terrainSettings.seed));
             auto generated = GenerateTerrain(terrainSettings);
             const TerrainMesh mesh = BuildTerrain(generated);
 
@@ -367,7 +383,11 @@ private:
         for (SDL_GPUBuffer** buffer : {&vertices, &indices, &gridVertices, &skirtVertices,
                                        &skirtIndices, &waterVertices, &waterIndices})
         {
-            if (*buffer) SDL_ReleaseGPUBuffer(device, *buffer);
+            if (*buffer) 
+            {
+                SDL_ReleaseGPUBuffer(device, *buffer);
+            }
+    
             *buffer = nullptr;
         }
         indexCount = lineVertexCount = skirtIndexCount = waterIndexCount = 0;
@@ -729,16 +749,30 @@ private:
             background.load_op = SDL_GPU_LOADOP_CLEAR;
             background.store_op = SDL_GPU_STOREOP_STORE;
             SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &background, 1, nullptr);
+    
             if (!pass)
             {
                 const std::string error = SDL_GetError();
                 SDL_SubmitGPUCommandBuffer(commands);
                 throw std::runtime_error("Begin startup background pass: " + error);
             }
+    
             SDL_EndGPURenderPass(pass);
-            try { ui.Draw(commands, swapchain, width, height, camera); }
-            catch (...) { SDL_SubmitGPUCommandBuffer(commands); throw; }
-            if (!SDL_SubmitGPUCommandBuffer(commands)) Fail("Submit startup frame");
+            try 
+            { 
+                ui.Draw(commands, swapchain, width, height, camera); 
+            }
+            catch (...) 
+            { 
+                SDL_SubmitGPUCommandBuffer(commands); 
+                throw; 
+            }
+        
+            if (!SDL_SubmitGPUCommandBuffer(commands)) 
+            {
+                Fail("Submit startup frame");
+            }
+    
             return;
         }
 

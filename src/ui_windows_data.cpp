@@ -7,7 +7,12 @@ namespace
     std::string TrimName(const std::string& value)
     {
         const auto begin = value.find_first_not_of(" \t\r\n");
-        if (begin == std::string::npos) return {};
+
+        if (begin == std::string::npos) 
+        {
+            return {};
+        }
+
         return value.substr(begin, value.find_last_not_of(" \t\r\n") - begin + 1);
     }
 }
@@ -47,20 +52,25 @@ void UiManager::CreateNewCityWindow()
     createCity.AddLabel(20, {0, 362, 548, 44}, "", errorStyle);
     createCity.AddFooterButton(19, "Accept", [this](UiWindow& panel)
     {
-        if (!cityCreationPending) return;
+        if (!cityCreationPending) 
+        {
+            return;
+        }
         try
         {
             CityCreationOptions options;
             options.name = TrimName(panel.GetText(2));
             options.mayorName = TrimName(panel.GetText(4));
-            options.difficulty = panel.IsChecked(7) ? CityDifficulty::Easy :
-                                 panel.IsChecked(9) ? CityDifficulty::Hard : CityDifficulty::Medium;
+            options.difficulty = panel.IsChecked(7) ? CityDifficulty::Easy : panel.IsChecked(9) ? CityDifficulty::Hard : CityDifficulty::Medium;
             options.startingYear = panel.IsChecked(11) ? 1900 : panel.IsChecked(13) ? 2000 : 1950;
-            options.mapSize = panel.IsChecked(15) ? CityMapSize::Small :
-                              panel.IsChecked(17) ? CityMapSize::Large :
-                              panel.IsChecked(18) ? CityMapSize::Giant : CityMapSize::Medium;
+            options.mapSize = panel.IsChecked(15) ? CityMapSize::Small : panel.IsChecked(17) ? CityMapSize::Large : panel.IsChecked(18) ? CityMapSize::Giant : CityMapSize::Medium;
             options.Validate();
-            if (!actions.createCity) throw std::runtime_error("City creation is not available.");
+    
+            if (!actions.createCity) 
+            {
+                throw std::runtime_error("City creation is not available.");
+            }
+
             actions.createCity(options);
             panel.SetText(20, "");
             cityCreationPending = false;
