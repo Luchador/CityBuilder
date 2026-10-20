@@ -42,13 +42,21 @@ namespace
         if(material.alphaMode==AlphaMode::Opaque)return true;
         const Vec2 uv=UvAt(triangle,material,u,v);
         float alpha=material.baseFactor.a*ColorAt(triangle,u,v).a;
-        if(material.baseColor)alpha*=material.baseColor->Sample(uv,material.wrapU,material.wrapV).a;
+        if(material.baseColor && material.useBaseColorAlpha)alpha*=material.baseColor->Sample(uv,material.wrapU,material.wrapV).a;
         if(material.opacity)
         {
-            const Vec4 opacity=material.opacity->Sample(uv,material.wrapU,material.wrapV);
-            alpha*=material.opacityChannel==OpacityChannel::Alpha?opacity.a:
+            const auto& vertices=triangle.vertices;
+            const Vec2 opacityUv=material.separateOpacityUv ? Vec2{
+                vertices[0].uv[1].x*(1-u-v)+vertices[1].uv[1].x*u+vertices[2].uv[1].x*v,
+                vertices[0].uv[1].y*(1-u-v)+vertices[1].uv[1].y*u+vertices[2].uv[1].y*v} : uv;
+            const Vec4 opacity=material.opacity->Sample(opacityUv,
+                material.separateOpacityUv?material.opacityWrapU:material.wrapU,
+                material.separateOpacityUv?material.opacityWrapV:material.wrapV);
+            float mask=material.opacityChannel==OpacityChannel::Alpha?opacity.a:
                    material.opacityChannel==OpacityChannel::Red?opacity.r:
                    .2126f*opacity.r+.7152f*opacity.g+.0722f*opacity.b;
+            mask=std::clamp(mask*material.opacityStrength,0.0f,1.0f);
+            alpha*=material.invertOpacity?1-mask:mask;
         }
         return alpha>=material.cutoff;
     }

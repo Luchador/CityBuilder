@@ -4,6 +4,7 @@
 #include <cgltf.h>
 
 #include <cstdlib>
+#include <cctype>
 #include <cstring>
 #include <fstream>
 #include <functional>
@@ -172,6 +173,9 @@ void Geometry::BuildAcceleration()
            !std::isfinite(vertex.color.b) || !std::isfinite(vertex.color.a))
             throw std::runtime_error("Model has nonfinite positions, normals or colors");
         bounds.Include(vertex.position);
+        for(const auto uv:vertex.uv)
+            if(!std::isfinite(uv.x) || !std::isfinite(uv.y))
+                throw std::runtime_error("Model has nonfinite texture coordinates");
     }
     nodes.reserve(triangles.size()*2);
     const auto build=[&](auto&& self,std::uint32_t first,std::uint32_t count)->std::uint32_t
@@ -198,6 +202,16 @@ void Geometry::BuildAcceleration()
         nodes[node].left=left;nodes[node].right=right;return node;
     };
     build(build,0,static_cast<std::uint32_t>(triangles.size()));
+}
+
+Scene LoadModel(const std::filesystem::path& path)
+{
+    auto extension=Utf8Path(path.extension());
+    std::transform(extension.begin(),extension.end(),extension.begin(),
+        [](unsigned char c){return static_cast<char>(std::tolower(c));});
+    if(extension==".glb")return LoadGlb(path);
+    if(extension==".fbx")return LoadFbx(path);
+    throw std::runtime_error("Unsupported model format. Choose a .glb or .fbx file.");
 }
 
 Scene LoadGlb(const std::filesystem::path& path)

@@ -133,7 +133,7 @@ namespace
             SetText(modelPath,path);
             BeginJob(JobKind::Import,1,[path](auto,auto&)
             {
-                Result result;result.kind=JobKind::Import;result.scene=rk::LoadGlb(rk::NativePath(path));return result;
+                Result result;result.kind=JobKind::Import;result.scene=rk::LoadModel(rk::NativePath(path));return result;
             });
             status="Importing model...";
         }
@@ -155,7 +155,7 @@ namespace
                             auto path=rk::NativePath(event.drop.data);
                             auto extension=path.extension().string();
                             std::transform(extension.begin(),extension.end(),extension.begin(),[](unsigned char c){return static_cast<char>(std::tolower(c));});
-                            if(extension==".glb")Load(event.drop.data);
+                            if(extension==".glb" || extension==".fbx")Load(event.drop.data);
                             else if(extension==".png" && scene)LoadTexture(event.drop.data,JobKind::BaseColor,selectedMaterial);
                         }
                         catch(const std::exception& e){status=e.what();}
@@ -251,7 +251,13 @@ namespace
                         {
                             auto& material=scene->materials[static_cast<std::size_t>(result.material)];
                             if(result.kind==JobKind::BaseColor)material.baseColor=std::move(result.texture);
-                            else material.opacity=std::move(result.texture);
+                            else
+                            {
+                                material.opacity=std::move(result.texture);
+                                material.invertOpacity=false;material.opacityStrength=1;
+                                material.opacityChannel=rk::OpacityChannel::Luminance;
+                                // Preserve FBX's imported mask mapping when replacing its image.
+                            }
                             status="PNG assigned.";Changed();
                         }
                         break;
@@ -289,10 +295,10 @@ namespace
             if(job || inbox->pending)return;
             inbox->pending=true;
             auto* request=new DialogRequest{inbox,kind,material,kind==JobKind::Export?outputDirectory:modelPath};
-            static const SDL_DialogFileFilter glb[]={ {"glTF binary model","glb"} };
+            static const SDL_DialogFileFilter models[]={ {"GLB or FBX model","glb;fbx"} };
             static const SDL_DialogFileFilter png[]={ {"PNG image","png"} };
             if(kind==JobKind::Export)SDL_ShowOpenFolderDialog(DialogDone,request,window,request->location.c_str(),false);
-            else SDL_ShowOpenFileDialog(DialogDone,request,window,kind==JobKind::Import?glb:png,1,request->location.empty()?nullptr:request->location.c_str(),false);
+            else SDL_ShowOpenFileDialog(DialogDone,request,window,kind==JobKind::Import?models:png,1,request->location.empty()?nullptr:request->location.c_str(),false);
         }
         void PollDialogs()
         {
@@ -331,11 +337,11 @@ namespace
         {
             ImGui::TextColored({.39f,.86f,.76f,1},"MODEL & MATERIALS");
             ImGui::BeginDisabled(job || inbox->pending);
-            if(ImGui::Button("Import GLB...",{-1,0}))Browse(JobKind::Import);
-            ImGui::SetNextItemWidth(-1);ImGui::InputTextWithHint("##modelPath","Model path (.glb)",modelPath,sizeof(modelPath));
+            if(ImGui::Button("Import model...",{-1,0}))Browse(JobKind::Import);
+            ImGui::SetNextItemWidth(-1);ImGui::InputTextWithHint("##modelPath","Model path (.glb / .fbx)",modelPath,sizeof(modelPath));
             if(ImGui::Button("Load path",{-1,0}) && modelPath[0])Load(modelPath);
             ImGui::EndDisabled();
-            if(!scene){ImGui::TextWrapped("Import or drop a GLB model here. PNG files can be assigned to each material.");return;}
+            if(!scene){ImGui::TextWrapped("Import or drop a GLB or FBX model here. PNG files can be assigned to each material.");return;}
             ImGui::Text("%zu triangles | %zu materials",scene->geometry->triangles.size(),scene->materials.size());
             ImGui::Separator();
             ImGui::BeginChild("Material list",{0,140},ImGuiChildFlags_Borders);
@@ -369,14 +375,19 @@ namespace
             ImGui::TextWrapped("%s",material.opacity?material.opacity->name.c_str():"No separate opacity texture");
             ImGui::BeginDisabled(job || inbox->pending);
             if(ImGui::Button("Assign opacity..."))Browse(JobKind::Opacity,selectedMaterial);
-            ImGui::SameLine();if(ImGui::Button("Clear##opacity")){material.opacity.reset();Changed();}
+            ImGui::SameLine();if(ImGui::Button("Clear##opacity")){material.opacity.reset();material.useBaseColorAlpha=true;Changed();}
             ImGui::EndDisabled();
             int channel=static_cast<int>(material.opacityChannel);
             if(ImGui::Combo("Channel",&channel,"Grayscale / luminance\0Alpha\0Red\0")){material.opacityChannel=static_cast<rk::OpacityChannel>(channel);Changed();}
-            ImGui::TextWrapped("Cut-out multiplies base-color alpha, factor alpha, vertex alpha and the opacity map. Rejected pixels reveal surfaces behind them.");
+            if(ImGui::Checkbox("Use base-color alpha",&material.useBaseColorAlpha))Changed();
+            if(ImGui::Checkbox("Invert opacity",&material.invertOpacity))Changed();
+            if(ImGui::SliderFloat("Map strength",&material.opacityStrength,0,1))Changed();
+            if(material.separateOpacityUv)ImGui::TextWrapped("Opacity uses its imported FBX UV mapping.");
+            ImGui::TextWrapped("Cut-out combines the enabled alpha sources. Invert opacity is for masks where white means transparent. Rejected pixels reveal surfaces behind them.");
             if(ImGui::TreeNode("UV settings"))
             {
                 if(ImGui::Combo("UV set",&material.texcoord,"TEXCOORD_0\0TEXCOORD_1\0"))Changed();
+                if(ImGui::Checkbox("Opacity uses separate UV 1",&material.separateOpacityUv))Changed();
                 float scale[2]={material.uvScale.x,material.uvScale.y},offset[2]={material.uvOffset.x,material.uvOffset.y};
                 if(ImGui::DragFloat2("Scale",scale,.01f,-100,100)){material.uvScale={scale[0],scale[1]};Changed();}
                 if(ImGui::DragFloat2("Offset",offset,.01f,-100,100)){material.uvOffset={offset[0],offset[1]};Changed();}
@@ -466,7 +477,7 @@ namespace
                 draw->AddImage(static_cast<ImTextureID>(reinterpret_cast<std::uintptr_t>(preview.get())),start,end);
                 draw->PopClipRect();draw->AddRect(start,end,IM_COL32(83,105,118,255));
             }
-            else draw->AddText({top.x+24,top.y+height*.45f},IM_COL32(165,182,191,255),"Import a GLB to preview your sprite.");
+            else draw->AddText({top.x+24,top.y+height*.45f},IM_COL32(165,182,191,255),"Import a GLB or FBX to preview your sprite.");
             ImGui::Dummy({width,height});
         }
         void Draw()
@@ -509,7 +520,7 @@ namespace
         std::unique_ptr<Job> job;
         std::shared_ptr<DialogInbox> inbox=std::make_shared<DialogInbox>();
         char modelPath[4096]{},outputDirectory[4096]{},prefix[96]="sprite";
-        std::string status="Import a GLB model to begin. PNG drop assigns base color to the selected material.";
+        std::string status="Import a GLB or FBX model to begin. PNG drop assigns base color to the selected material.";
         std::filesystem::path lastExport;
     };
 }
@@ -520,12 +531,12 @@ int main(int argc,char** argv)
         // The same renderer can be used without a window for automated exports.
         if(argc>=2 && std::string_view(argv[1])=="--render")
         {
-            if(argc<4 || argc>6)throw std::invalid_argument("Usage: RenderKit --render model.glb output_folder [width height]");
+            if(argc<4 || argc>6)throw std::invalid_argument("Usage: RenderKit --render model.glb|model.fbx output_folder [width height]");
             if(!SDL_Init(0))throw std::runtime_error(SDL_GetError());
             rk::RenderSettings settings;
             if(argc>=5)settings.width=settings.height=std::stoi(argv[4]);
             if(argc==6)settings.height=std::stoi(argv[5]);
-            const auto scene=rk::LoadGlb(rk::NativePath(argv[2]));
+            const auto scene=rk::LoadModel(rk::NativePath(argv[2]));
             const auto folder=rk::ExportViews(scene,settings,rk::NativePath(argv[3]),"sprite",true);
             std::cout<<"Exported to "<<rk::Utf8Path(folder)<<'\n';SDL_Quit();return 0;
         }

@@ -19,14 +19,23 @@ FetchContent_Declare(renderkit_cgltf
     GIT_TAG 85cd62382dfea638278962690cf515023f33ed00
     SOURCE_SUBDIR render_kit_no_subproject)
 FetchContent_MakeAvailable(renderkit_cgltf)
+FetchContent_Declare(renderkit_ufbx
+    GIT_REPOSITORY https://github.com/ufbx/ufbx.git
+    GIT_TAG 5955c5c0b042ac2dc6f32955ab206aaec0620cfc
+    SOURCE_SUBDIR render_kit_no_subproject)
+FetchContent_MakeAvailable(renderkit_ufbx)
+add_library(RenderKitUfbx STATIC "${renderkit_ufbx_SOURCE_DIR}/ufbx.c")
+target_compile_features(RenderKitUfbx PRIVATE c_std_99)
+target_include_directories(RenderKitUfbx SYSTEM PUBLIC "${renderkit_ufbx_SOURCE_DIR}")
 find_package(Threads REQUIRED)
 
 add_library(RenderKitCore STATIC
-    src/scene.cpp src/render.cpp src/export.cpp ../src/camera.cpp)
+    src/scene.cpp src/import_fbx.cpp src/render.cpp src/export.cpp ../src/camera.cpp)
 target_compile_features(RenderKitCore PUBLIC cxx_std_20)
 target_include_directories(RenderKitCore PUBLIC src ../src)
 target_include_directories(RenderKitCore SYSTEM PRIVATE "${renderkit_cgltf_SOURCE_DIR}")
 target_link_libraries(RenderKitCore PUBLIC SDL3::SDL3 Threads::Threads)
+target_link_libraries(RenderKitCore PRIVATE RenderKitUfbx)
 target_compile_definitions(RenderKitCore PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 
 FetchContent_Declare(renderkit_imgui
@@ -65,6 +74,9 @@ add_custom_command(TARGET RenderKit POST_BUILD
         "${renderkit_cgltf_SOURCE_DIR}/LICENSE"
         "$<TARGET_FILE_DIR:RenderKit>/render-kit-data/cgltf-license.txt"
     COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+        "${renderkit_ufbx_SOURCE_DIR}/LICENSE"
+        "$<TARGET_FILE_DIR:RenderKit>/render-kit-data/ufbx-license.txt"
+    COMMAND "${CMAKE_COMMAND}" -E copy_if_different
         "${CMAKE_CURRENT_SOURCE_DIR}/../vendored/SDL/LICENSE.txt"
         "$<TARGET_FILE_DIR:RenderKit>/render-kit-data/sdl-license.txt"
     VERBATIM)
@@ -79,8 +91,9 @@ endif()
 option(RENDER_KIT_BUILD_TESTS "Build importer, cutout and sprite export regression checks" OFF)
 if(RENDER_KIT_BUILD_TESTS)
     enable_testing()
-    add_executable(RenderKitTests tests/render_kit_tests.cpp)
+    add_executable(RenderKitTests tests/render_kit_tests.cpp tests/fbx_tests.cpp)
     target_link_libraries(RenderKitTests PRIVATE RenderKitCore)
+    target_compile_definitions(RenderKitTests PRIVATE RENDER_KIT_FBX_TEST_DATA="${renderkit_ufbx_SOURCE_DIR}/data")
     if(MSVC)
         target_compile_options(RenderKitTests PRIVATE /utf-8)
     endif()

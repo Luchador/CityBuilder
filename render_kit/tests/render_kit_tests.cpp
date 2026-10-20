@@ -7,6 +7,7 @@
 #include <stdexcept>
 
 namespace rk=renderkit;
+void FbxTests(const std::filesystem::path& folder);
 namespace
 {
     void Check(bool ok,const char* message){if(!ok)throw std::runtime_error(message);}
@@ -70,7 +71,7 @@ namespace
         const auto png=folder/rk::NativePath("texture_é.png");rk::SavePng(png,2,2,pixels);
         const auto image=rk::LoadPng(png);Check(image->rgba==pixels,"PNG roundtrip changed RGBA");
         const auto glb=folder/rk::NativePath("model_é.glb");FixtureGlb(glb,png);
-        auto scene=rk::LoadGlb(glb);Check(scene.geometry->triangles.size()==1,"Inactive scene imported");
+        auto scene=rk::LoadModel(glb);Check(scene.geometry->triangles.size()==1,"Inactive scene imported");
         Check(scene.geometry->bounds.min.x==5 && scene.geometry->bounds.max.x==9,"Hierarchy/negative scale transform incorrect");
         Check(scene.materials.size()==1 && scene.materials[0].alphaMode==rk::AlphaMode::Cutout && scene.materials[0].cutoff==.4f,"Material mode lost");
         Check(scene.materials[0].baseColor && scene.materials[0].baseColor->rgba==pixels,"Embedded PNG missing");
@@ -158,7 +159,7 @@ int main()
     {
         if(!SDL_Init(0))throw std::runtime_error(SDL_GetError());
         std::filesystem::create_directory(folder);
-        ImportTests(folder);RayTests();RenderTests(folder);
+        ImportTests(folder);FbxTests(folder);RayTests();RenderTests(folder);
         std::filesystem::remove_all(folder);SDL_Quit();return 0;
     }
     catch(const std::exception& e)

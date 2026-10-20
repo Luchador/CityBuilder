@@ -31,7 +31,7 @@ namespace renderkit
     struct Material
     {
         std::string name = "Default";
-        Vec4 baseFactor{}; // glTF linear factors; image RGB is sRGB, alpha is linear.
+        Vec4 baseFactor{}; // Linear factors; image RGB is sRGB, alpha is linear.
         std::shared_ptr<const Image> baseColor, opacity;
         AlphaMode alphaMode = AlphaMode::Opaque;
         OpacityChannel opacityChannel = OpacityChannel::Luminance;
@@ -41,6 +41,13 @@ namespace renderkit
         Vec2 uvOffset{}, uvScale{1,1};
         float uvRotation = 0;
         Wrap wrapU = Wrap::Repeat, wrapV = Wrap::Repeat;
+        bool useBaseColorAlpha = true;
+        bool invertOpacity = false;
+        float opacityStrength = 1;
+        // FBX imports bake each texture's named UV set/transform into slots 0/1.
+        // GLB opacity maps reuse the base-color mapping by default.
+        bool separateOpacityUv = false;
+        Wrap opacityWrapU = Wrap::Repeat, opacityWrapV = Wrap::Repeat;
     };
     struct Vertex
     {
@@ -74,4 +81,6 @@ namespace renderkit
         std::vector<std::string> warnings;
     };
     Scene LoadGlb(const std::filesystem::path& path);
+    Scene LoadFbx(const std::filesystem::path& path);
+    Scene LoadModel(const std::filesystem::path& path);
 }

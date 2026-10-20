@@ -1,6 +1,6 @@
 # Cities Unlimited Render Kit
 
-A separate C++20/SDL3 desktop tool for turning static GLB models into four
+A separate C++20/SDL3 desktop tool for turning static GLB and FBX models into four
 transparent sprites with the game's orthographic camera. The renderer traces
 rays on CPU worker threads; SDL displays the preview and Dear ImGui provides
 the editor controls. No Blender installation or additional GPU API setup is
@@ -16,7 +16,7 @@ run-render-kit.bat
 ```
 
 The first run configures a separate Release build and downloads pinned revisions
-of Dear ImGui and cgltf. Later runs build changes and launch the editor. This
+of Dear ImGui, cgltf and ufbx. Later runs build changes and launch the editor. This
 build uses the existing vendored SDL and does not need the game's SDL_ttf build
 or terrain textures. Release mode matters for CPU rendering performance.
 
@@ -36,10 +36,10 @@ configure the root with `-DCITY_BUILD_RENDER_KIT=ON` and build target `RenderKit
 
 ## Use the editor
 
-1. Choose **Import GLB**, paste a path and click **Load path**, or drop a GLB onto
-   the window. The active glTF scene is imported, including node transforms and
-   instanced references to ordinary meshes. Embedded or referenced PNG base
-   textures are read automatically.
+1. Choose **Import model**, paste a path and click **Load path**, or drop a GLB
+   or FBX onto the window. Node transforms, static mesh instances and material
+   assignments are retained. Embedded or referenced PNG base textures are
+   read automatically. See the FBX notes below for axes, units and foliage.
 2. Select a material in the left panel. Assign **base color** and/or **opacity**
    PNGs. Dropping a PNG assigns it as the selected material's base color.
 3. Choose **Opaque** or **Alpha cut-out**. For cut-out, adjust **Cut-off** from
@@ -58,7 +58,7 @@ responsiveness; exports always use the requested full size. The preview's
 **Display** selector shows the lit sprite, alpha, unlit color, or sun mask.
 Texture filtering is bilinear; preview display uses nearest-neighbor scaling
 so alpha edges can be inspected. This first version keeps material edits in
-memory; it does not modify the source GLB or save editor projects.
+memory; it does not modify the source model or save editor projects.
 
 ## Camera and alignment
 
@@ -73,7 +73,8 @@ Camera orientation comes directly from the game's `GetCameraOrientation()`:
 
 Increasing the view number matches the game's clockwise camera rotation.
 Geometry and light stay in world space; only the camera rotates. glTF's Y-up
-coordinates are kept. There is no perspective foreshortening.
+coordinates are kept; FBX axes are converted to right-handed Y-up and units
+are converted to meters. There is no perspective foreshortening.
 
 All four images share one frame center, world-space scale, width and height.
 They are not independently cropped. A ground pivot is placed at the horizontal
@@ -82,11 +83,13 @@ pivot's image coordinates, the frame center, pixel scale and camera bases.
 When importing sprites into the game, use that pivot rather than the image's
 bottom-center. One model unit is treated as one game tile; author models at
 the desired scale or use the recorded pixels-per-model-unit when placing them.
+For FBX, one normalized meter is one model unit (regardless of whether the
+exporter stored centimeters or meters). Auto-fit adjusts framing, not model scale.
 
 ## Materials and alpha
 
 Opaque materials always count as hits, even if their texture has transparent
-pixels. Cut-out opacity is:
+pixels. By default, cut-out opacity is:
 
 ```
 baseColorTexture.alpha * baseColorFactor.alpha * vertexColor.alpha * opacityMap
@@ -96,7 +99,17 @@ Missing textures contribute 1. The opacity map defaults to grayscale/luminance;
 choose **Alpha** for a PNG whose mask is in its alpha channel, or **Red** for a
 single-channel mask. Opacity data is sampled without gamma correction. The
 opacity map uses the material's selected UV set/transform/wrap settings, like
-the base-color map. UV sets 0 and 1 and `KHR_texture_transform` are supported.
+the base-color map. UV sets 0 and 1 and `KHR_texture_transform` are supported
+for GLB. FBX bakes each base-color and opacity texture's named UV set and
+transform into slots 0 and 1, respectively. Separate imported opacity mapping
+can be disabled with **Opacity uses separate UV 1** in **UV settings**.
+
+**Use base-color alpha** lets you exclude the base PNG's alpha when a separate
+mask should control the silhouette. **Map strength** scales the selected opacity
+channel, then **Invert opacity** changes it to `1 - mask`. Inversion is useful
+for legacy FBX transparency maps where white means transparent. Manually
+assigning a new opacity PNG resets inversion/strength/channel to ordinary
+white-opaque grayscale; an existing FBX opacity UV mapping is retained.
 
 A sample below the cutoff is discarded. The ray continues to other triangles
 behind it, so windows, leaves, fences and stacked cut-out surfaces work. Cut-out
@@ -161,9 +174,49 @@ build-render-kit\RenderKit.exe --render building.glb C:\Sprites 1024 1024
 
 This uses imported material settings, default lighting, auto-fit and day/night
 layers. It creates another numbered `sprite_###` folder. You can also launch
-`RenderKit.exe building.glb` to open a model in the editor.
+`RenderKit.exe building.glb` to open a model in the editor. Both commands also
+accept `.fbx`, for example:
 
-## Import scope
+```bat
+build-render-kit\RenderKit.exe --render oak.fbx C:\Sprites 1024 1024
+```
+
+## SpeedTree / FBX workflow
+
+1. Export a **static FBX mesh** from SpeedTree. Both binary and ASCII FBX are
+   accepted. Export the intended LOD only, and disable/bake wind, growth, skins
+   and deformers. The tool does not automatically choose between exported LODs.
+2. Preserve material assignments and export the base-color and opacity textures
+   as PNG. Keep the textures beside the FBX or in its referenced subfolders.
+   Old absolute paths are a fallback; portable relative paths take priority.
+3. Import the FBX. Bark normally starts opaque. Materials with base PNG alpha or
+   an opacity map start as cut-out with a 0.5 cutoff and, unless explicitly
+   specified otherwise, double-sided rendering for leaf cards.
+4. Check leaves in the preview's **Alpha** display. If needed, assign the PNGs
+   manually, select the opacity channel and adjust the cutoff. When a legacy
+   transparency map uses the opposite convention, toggle **Invert opacity**.
+
+The importer preserves supplied normals, vertex colors, face materials,
+per-instance materials, geometry transforms and polygon UV seams. It generates
+normals when missing and triangulates quads/polygons. FBX UVs are flipped
+vertically to match the renderer's PNG convention. Ordinary mesh instances are
+flattened into the static scene; hidden nodes and their children are skipped.
+
+Diffuse/base-color factors are treated as linear multipliers. Embedded and
+external PNGs are supported. Recognized PBR opacity is white-opaque; legacy
+FBX transparency maps are white-transparent by default, with an import note.
+A diffuse PNG also connected as legacy transparency uses its alpha just once.
+A separately imported opacity image controls coverage without also multiplying
+the base PNG's alpha. These choices remain editable in Materials.
+
+SpeedTree shader graphs, `.stmat` sidecars, wind and growth are not interpreted.
+Layered/procedural textures must be baked to PNG. FBX does not have a universal
+alpha-cutoff or foliage-culling convention, so review the suggested settings.
+Missing/unsupported images produce import notes and can be replaced manually.
+Geometry with skins, morphs or vertex caches produces a clear error requiring
+static export. Animation tracks otherwise use the default static node pose.
+
+## GLB import scope
 
 Supports indexed/non-indexed triangles, triangle strips/fans, nested node
 transforms, ordinary mesh instances, inverse-transpose normals, mirrored
@@ -187,16 +240,21 @@ cmake --build build-render-kit --target RenderKitTests
 ctest --test-dir build-render-kit --output-on-failure
 ```
 
-Tests cover GLB transforms/active scenes/embedded PNGs, mirrored normals, binary
-alpha, cutoff changes, multiple cut-out layers, camera fitting, reconstruction
-from lighting layers, PNG roundtrips and cancellation/overwrite protection.
+Tests cover GLB transforms/active scenes/embedded PNGs and binary/ASCII FBX,
+Unicode paths, axis/unit conversion, geometric/mirrored transforms, per-instance
+materials, external/embedded PNGs, independent opacity UVs and alpha inversion.
+Both formats exercise the same binary-alpha renderer and four-view export.
+The FBX tests also use small exporter fixtures from the pinned ufbx source.
+Existing checks cover cutoff changes, stacked cut-out layers, camera fitting,
+lighting-layer reconstruction and cancellation/overwrite protection.
 
 The standalone project also supports an installed SDL3 via
 `-DRENDER_KIT_USE_INSTALLED_SDL=ON`. A window smoke test for development is
-`RenderKit --smoke-test model.glb editor-capture.png`; it loads and renders a
+`RenderKit --smoke-test model.fbx editor-capture.png` (or `.glb`); it loads and renders a
 preview, captures the editor, then exits.
 
 Dependencies: [SDL3](https://github.com/libsdl-org/SDL),
 [Dear ImGui](https://github.com/ocornut/imgui),
-[cgltf](https://github.com/jkuhlmann/cgltf). Their revisions/licenses are included
+[cgltf](https://github.com/jkuhlmann/cgltf),
+[ufbx](https://github.com/ufbx/ufbx). Their revisions/licenses are included
 in the build setup; generated sprites have no dependency on the editor UI.
