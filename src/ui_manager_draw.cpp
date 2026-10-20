@@ -54,8 +54,12 @@ void UiManager::Initialize(SDL_GPUDevice* gpu, SDL_Window* targetWindow, Texture
         CreateUiButtons(buttons, sharedTextures);
         windowSkin.Load(sharedTextures);
         SetUiMinimized(settings, buttons, settings.minimized);
+
         initialized = true;
         RefreshLayout();
+
+        CreateMeetWindow();
+
         cityCreationPending = true;
         CreateNewCityWindow();
     }

@@ -42,6 +42,7 @@ void Simulation::Update(City& city, double elapsedMilliseconds)
         {
             break;
         }
+        // Shuffle
         case 1:
         {
             if(timeAccumulated > ACCUMULATION_THRESHOLD_SPEED1)
@@ -51,6 +52,7 @@ void Simulation::Update(City& city, double elapsedMilliseconds)
             }
             break;
         }
+        // Stroll
         case 2:
         {
             if(timeAccumulated > ACCUMULATION_THRESHOLD_SPEED2)
@@ -60,20 +62,22 @@ void Simulation::Update(City& city, double elapsedMilliseconds)
             }
             break;
         }
+        // Canter
         case 3:
         {
-            if(timeAccumulated > ACCUMULATION_THRESHOLD_SPEED3)
+            if(timeAccumulated > ACCUMULATION_THRESHOLD_SPEED3 * 3)
             {
-                city.date += std::chrono::days{1};
+                city.date += std::chrono::days{3};
                 timeAccumulated = 0.0;
             }
             break;
         }
+        // Dash
         case 4:
         {
-            if(timeAccumulated > ACCUMULATION_THRESHOLD_SPEED4)
+            if(timeAccumulated > ACCUMULATION_THRESHOLD_SPEED4 * 6)
             {
-                city.date += std::chrono::days{1};
+                city.date += std::chrono::days{6};
                 timeAccumulated = 0.0;
             }
             break;

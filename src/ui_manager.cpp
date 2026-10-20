@@ -223,6 +223,11 @@ void UiManager::OnUiButtonClicked(UiButtonId id)
             }
             break;
         }
+        case UiButtonIds::MeetButton:
+        {
+            OpenWindow(meetWindowId);
+            break;
+        }
         default:
         {
             if (actions.buttonClicked) 
