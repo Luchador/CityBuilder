@@ -11,4 +11,6 @@ class City {
         unsigned int population = 0;
         std::int64_t funds = 0;
         std::chrono::sys_days date { std::chrono::year{1900} / std::chrono::January / 1 };
+
+        void CreateCity();
 };

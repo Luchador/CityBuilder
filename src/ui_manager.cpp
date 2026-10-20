@@ -262,7 +262,10 @@ bool UiManager::HandleEvent(const SDL_Event& event)
     RefreshLayout();
 
     // Floating windows are drawn above the docks and get first refusal.
-    if (HandleWindowEvent(event)) return true;
+    if (HandleWindowEvent(event)) 
+    {
+        return true;
+    }
 
     // Dock controls handle their own flyouts and capture.
     const auto result = HandleUiButtonEvent(window, event, settings, buttons, minimap);

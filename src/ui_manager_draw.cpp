@@ -56,7 +56,7 @@ void UiManager::Initialize(SDL_GPUDevice* gpu, SDL_Window* targetWindow, Texture
         SetUiMinimized(settings, buttons, settings.minimized);
         initialized = true;
         RefreshLayout();
-        CreateNewCityWindow(city);
+        CreateNewCityWindow();
     }
     catch (...)
     {
@@ -107,7 +107,7 @@ void UiManager::Release()
     windowVertices = nullptr;
     focusedWindow = capturedWindow = nullptr;
     nextWindowId = 1;
-    demoWindowId = 0;
+    createCityWindowId = 0;
     windowSkin = {};
     outlineTransfer = nullptr;
     vertexCount = outlineVertexCount = 0;

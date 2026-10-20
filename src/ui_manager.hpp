@@ -85,7 +85,7 @@ private:
     void SyncTextInput();
     void PrepareWindows(bool mousePanning, float rasterScale);
     void DrawWindows(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, Uint32 width, Uint32 height);
-    void CreateNewCityWindow(const City& city);
+    void CreateNewCityWindow();
 
     SDL_Window* window = nullptr;
     SDL_GPUDevice* device = nullptr;
@@ -110,7 +110,7 @@ private:
     std::vector<std::unique_ptr<UiWindow>> windows; // Back to front.
     UiWindow* focusedWindow = nullptr;
     UiWindow* capturedWindow = nullptr;
-    UiWindowId nextWindowId = 1, demoWindowId = 0;
+    UiWindowId nextWindowId = 1, createCityWindowId = 0;
     bool textInputActive = false;
     const void* textInputOwner = nullptr;
     struct WindowDrawRange { UiWindow* window; Uint32 first, count; };

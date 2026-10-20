@@ -187,9 +187,9 @@ bool UiManager::HandleWindowEvent(const SDL_Event& event)
 
     if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F2)
     {
-        if (!event.key.repeat && demoWindowId) 
+        if (!event.key.repeat && createCityWindowId) 
         {
-            OpenWindow(demoWindowId);
+            OpenWindow(createCityWindowId);
         }
 
         return true;
