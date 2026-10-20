@@ -50,6 +50,11 @@ add_custom_target(copy_assets
     VERBATIM)
 add_dependencies(CityBuilder copy_assets)
 
+option(CITY_BUILD_RENDER_KIT "Build the Cities Unlimited sprite authoring companion" OFF)
+if(CITY_BUILD_RENDER_KIT)
+    add_subdirectory(render_kit)
+endif()
+
 option(CITY_BUILD_MAP_SIZE_TESTS "Build selectable map-size regression checks" OFF)
 if(CITY_BUILD_MAP_SIZE_TESTS)
     enable_testing()
