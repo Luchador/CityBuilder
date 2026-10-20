@@ -2,6 +2,7 @@
 /build/
 /build-*/
 /out/
+/assets/
 
 # Local editor settings
 /.vs/
