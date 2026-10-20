@@ -16,7 +16,7 @@ run-render-kit.bat
 ```
 
 The first run configures a separate Release build and downloads pinned revisions
-of Dear ImGui, cgltf and ufbx. Later runs build changes and launch the editor. This
+of Dear ImGui, cgltf, ufbx and nlohmann/json. Later runs build changes and launch the editor. This
 build uses the existing vendored SDL and does not need the game's SDL_ttf build
 or terrain textures. Release mode matters for CPU rendering performance.
 
@@ -57,8 +57,48 @@ Panels scroll on smaller windows. The preview is capped in resolution for
 responsiveness; exports always use the requested full size. The preview's
 **Display** selector shows the lit sprite, alpha, unlit color, or sun mask.
 Texture filtering is bilinear; preview display uses nearest-neighbor scaling
-so alpha edges can be inspected. This first version keeps material edits in
-memory; it does not modify the source model or save editor projects.
+so alpha edges can be inspected. Use **Save Scene...** in the top bar to keep
+those edits between sessions. Source models and textures are not modified.
+
+## Save and load scenes (.rks)
+
+The top bar has **Save Scene...** and **Load Scene...** buttons. Import a model
+and set it up, then choose **Save Scene...** and a filename such as `oak.rks`.
+The `.rks` extension is added if omitted. Choose **Load Scene...** to restore it.
+You can also drop a `.rks` onto the window or launch `RenderKit.exe oak.rks`.
+Saving is available after importing a model; file operations wait for any active
+preview/export job to finish.
+
+A scene stores:
+
+- The GLB or FBX model reference.
+- Each material's base-color and opacity image references, including cleared
+  slots and images embedded in the source model.
+- Tint, factor alpha, opaque/cut-out mode, cutoff, double-sided rendering,
+  opacity channel/inversion/strength, base-alpha toggle, UV settings and wrapping.
+- Ambient/directional colors and intensities, plus self-shadow settings.
+- Output dimensions, auto-fit/padding/manual scale, export folder, filename
+  prefix and whether to export day/night layers.
+- The selected preview view, display channel and material.
+
+Scenes contain **references, not copies of model/PNG data**. Paths are relative
+to the `.rks` wherever possible (absolute when the asset is on another Windows
+drive). Keep assets with the scene when moving a project folder. Saving to a
+new folder recalculates the references. Embedded images are read from the model
+again. Replacing or editing a referenced asset affects subsequent loads.
+
+A load is applied only after the scene and required assets are ready. Missing
+models/textures, malformed files and incompatible material lists report an error
+and keep the current scene. Restore a missing asset to its referenced location
+or update its path in the `.rks`; there is no asset-relinking dialog yet. A missing
+export folder is restored as a setting with an import note; choose an existing
+folder before exporting. Changing a model's material count/names/order requires
+reimporting it and saving a new scene to avoid applying settings to wrong slots.
+
+Saves write a complete temporary file before replacing the chosen `.rks`. Load
+Scene replaces the current setup; save changes you want to keep first. Scene
+files use UTF-8 JSON with a format tag and version, allowing future migrations.
+They do not save preview images, generated sprites, undo history or UI layout.
 
 ## Camera and alignment
 
@@ -181,6 +221,16 @@ accept `.fbx`, for example:
 build-render-kit\RenderKit.exe --render oak.fbx C:\Sprites 1024 1024
 ```
 
+You can render a saved scene with its material, lighting and output options:
+
+```bat
+build-render-kit\RenderKit.exe --render oak.rks C:\Sprites
+```
+
+The command-line export folder overrides the saved folder. Optional width/height
+arguments override the saved dimensions; the saved prefix and lighting-layer
+choice are retained.
+
 ## SpeedTree / FBX workflow
 
 1. Export a **static FBX mesh** from SpeedTree. Both binary and ASCII FBX are
@@ -246,7 +296,9 @@ materials, external/embedded PNGs, independent opacity UVs and alpha inversion.
 Both formats exercise the same binary-alpha renderer and four-view export.
 The FBX tests also use small exporter fixtures from the pinned ufbx source.
 Existing checks cover cutoff changes, stacked cut-out layers, camera fitting,
-lighting-layer reconstruction and cancellation/overwrite protection.
+lighting-layer reconstruction and cancellation/overwrite protection. Scene-file
+checks cover GLB/FBX save/load, all settings, embedded/assigned/cleared textures,
+relative-path relocation, missing assets, invalid data and safe replacement.
 
 The standalone project also supports an installed SDL3 via
 `-DRENDER_KIT_USE_INSTALLED_SDL=ON`. A window smoke test for development is
@@ -256,5 +308,6 @@ preview, captures the editor, then exits.
 Dependencies: [SDL3](https://github.com/libsdl-org/SDL),
 [Dear ImGui](https://github.com/ocornut/imgui),
 [cgltf](https://github.com/jkuhlmann/cgltf),
-[ufbx](https://github.com/ufbx/ufbx). Their revisions/licenses are included
+[ufbx](https://github.com/ufbx/ufbx),
+[nlohmann/json](https://github.com/nlohmann/json). Their revisions/licenses are included
 in the build setup; generated sprites have no dependency on the editor UI.

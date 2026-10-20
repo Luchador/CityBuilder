@@ -39,7 +39,7 @@ namespace
             throw std::runtime_error("Cannot read " + Utf8Path(path));
         return data;
     }
-    std::shared_ptr<const Image> ReadSurface(SDL_Surface* loaded, const std::string& name)
+    std::shared_ptr<Image> ReadSurface(SDL_Surface* loaded, const std::string& name)
     {
         Surface original(loaded, SDL_DestroySurface);
         if (!original) throw std::runtime_error("Load PNG '" + name + "': " + SDL_GetError());
@@ -142,7 +142,9 @@ Vec4 Image::Sample(Vec2 uv, Wrap u, Wrap v, bool linearRgb) const
 }
 std::shared_ptr<const Image> LoadPng(const std::filesystem::path& path)
 {
-    return ReadSurface(SDL_LoadPNG(Utf8Path(path).c_str()),Utf8Path(path));
+    const auto absolute=std::filesystem::absolute(path).lexically_normal();
+    auto image=ReadSurface(SDL_LoadPNG(Utf8Path(absolute).c_str()),Utf8Path(absolute));
+    image->sourcePath=absolute;return image;
 }
 std::shared_ptr<const Image> DecodePng(std::span<const std::uint8_t> bytes, const std::string& name)
 {
@@ -230,7 +232,7 @@ Scene LoadGlb(const std::filesystem::path& path)
         if(extension!="KHR_texture_transform" && extension!="KHR_mesh_quantization" && extension!="KHR_materials_unlit")
             throw std::runtime_error("Unsupported required glTF extension: "+extension+". Export an uncompressed static GLB.");
     }
-    Scene scene;scene.source=Utf8Path(path);
+    Scene scene;scene.source=Utf8Path(std::filesystem::absolute(path).lexically_normal());
     if(data->animations_count) scene.warnings.push_back("Animations are not played; rendering the model's default static pose.");
     auto geometry=std::make_shared<Geometry>();
     std::unordered_map<const cgltf_image*,std::shared_ptr<const Image>> images;

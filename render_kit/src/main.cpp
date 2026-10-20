@@ -5,6 +5,7 @@
 #include <imgui_impl_sdlrenderer3.h>
 
 #include "export.hpp"
+#include "scene_file.hpp"
 #include <chrono>
 #include <cctype>
 #include <cstdio>
@@ -17,13 +18,14 @@
 namespace rk=renderkit;
 namespace
 {
-    enum class JobKind { Import, BaseColor, Opacity, Preview, Export };
+    enum class JobKind { Import, BaseColor, Opacity, Preview, Export, SaveScene, LoadScene };
     struct Result
     {
         JobKind kind{};
         std::uint64_t revision=0;
         int material=0;
         std::optional<rk::Scene> scene;
+        std::optional<rk::SceneDocument> document;
         std::shared_ptr<const rk::Image> texture;
         std::optional<rk::RenderImage> image;
         std::filesystem::path folder;
@@ -130,6 +132,16 @@ namespace
         void Load(const std::string& path)
         {
             if(job)return;
+            if(rk::IsSceneFile(rk::NativePath(path)))
+            {
+                BeginJob(JobKind::LoadScene,1,[path](auto stop,auto&)
+                {
+                    Result result;result.kind=JobKind::LoadScene;
+                    result.document=rk::LoadSceneFile(rk::NativePath(path),stop);
+                    result.folder=std::filesystem::absolute(rk::NativePath(path)).lexically_normal();return result;
+                });
+                status="Loading scene and referenced assets...";return;
+            }
             SetText(modelPath,path);
             BeginJob(JobKind::Import,1,[path](auto,auto&)
             {
@@ -155,7 +167,7 @@ namespace
                             auto path=rk::NativePath(event.drop.data);
                             auto extension=path.extension().string();
                             std::transform(extension.begin(),extension.end(),extension.begin(),[](unsigned char c){return static_cast<char>(std::tolower(c));});
-                            if(extension==".glb" || extension==".fbx")Load(event.drop.data);
+                            if(extension==".glb" || extension==".fbx" || extension==".rks")Load(event.drop.data);
                             else if(extension==".png" && scene)LoadTexture(event.drop.data,JobKind::BaseColor,selectedMaterial);
                         }
                         catch(const std::exception& e){status=e.what();}
@@ -204,6 +216,35 @@ namespace
             });
             status="Loading PNG...";
         }
+        void SaveScene(const std::string& requestedPath)
+        {
+            if(job || !scene)return;
+            auto path=rk::NativePath(requestedPath);
+            if(!rk::IsSceneFile(path))
+            {
+                path+=".rks";
+                // The native dialog confirmed the typed path, not this appended name.
+                if(std::filesystem::exists(path))
+                {
+                    const std::string message="Replace the existing scene?\n"+rk::Utf8Path(path);
+                    const SDL_MessageBoxButtonData buttons[]={
+                        {SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT,0,"Cancel"},
+                        {SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT,1,"Replace"}};
+                    const SDL_MessageBoxData question{SDL_MESSAGEBOX_WARNING,window,"Save Scene",message.c_str(),2,buttons,nullptr};
+                    int answer=0;if(!SDL_ShowMessageBox(&question,&answer) || answer!=1)return;
+                }
+            }
+            rk::SceneDocument document;
+            document.scene=*scene;document.settings=settings;document.outputDirectory=rk::NativePath(outputDirectory);
+            document.outputPrefix=prefix;document.exportLayers=exportLayers;document.view=view;
+            document.previewChannel=previewChannel;document.selectedMaterial=selectedMaterial;
+            path=std::filesystem::absolute(path).lexically_normal();
+            BeginJob(JobKind::SaveScene,1,[path,document=std::move(document)](auto,auto&)
+            {
+                rk::SaveSceneFile(path,document);Result result;result.kind=JobKind::SaveScene;result.folder=path;return result;
+            });
+            status="Saving scene...";
+        }
         void StartPreview()
         {
             try
@@ -244,7 +285,23 @@ namespace
                 {
                     case JobKind::Import:
                         scene=std::move(result.scene);selectedMaterial=0;preview.reset();previewImage.reset();
+                        scenePath.clear();
                         status="Model loaded. Choose a material to edit its textures and cut-out settings.";Changed();break;
+                    case JobKind::LoadScene:
+                    {
+                        auto& document=*result.document;
+                        const auto model=document.scene.source,output=rk::Utf8Path(document.outputDirectory);
+                        // Validate fixed UI buffers before replacing any part of the active scene.
+                        if(model.size()>=sizeof(modelPath) || output.size()>=sizeof(outputDirectory) || document.outputPrefix.size()>=sizeof(prefix))
+                            throw std::runtime_error("Scene paths are too long for the editor");
+                        SetText(modelPath,model);SetText(outputDirectory,output);SetText(prefix,document.outputPrefix);
+                        scene=std::move(document.scene);settings=document.settings;exportLayers=document.exportLayers;
+                        view=document.view;previewChannel=document.previewChannel;selectedMaterial=document.selectedMaterial;
+                        scenePath=std::move(result.folder);lastExport.clear();preview.reset();previewImage.reset();
+                        status="Loaded scene: "+rk::Utf8Path(scenePath);Changed();break;
+                    }
+                    case JobKind::SaveScene:
+                        scenePath=std::move(result.folder);status="Saved scene: "+rk::Utf8Path(scenePath);break;
                     case JobKind::BaseColor:
                     case JobKind::Opacity:
                         if(scene && result.material>=0 && result.material<static_cast<int>(scene->materials.size()))
@@ -294,10 +351,20 @@ namespace
         {
             if(job || inbox->pending)return;
             inbox->pending=true;
-            auto* request=new DialogRequest{inbox,kind,material,kind==JobKind::Export?outputDirectory:modelPath};
+            std::string location=kind==JobKind::Export?outputDirectory:modelPath;
+            if(kind==JobKind::SaveScene || kind==JobKind::LoadScene)
+            {
+                auto suggested=scenePath;
+                if(suggested.empty() && scene){suggested=rk::NativePath(scene->source);suggested.replace_extension(".rks");}
+                location=rk::Utf8Path(suggested);
+            }
+            auto* request=new DialogRequest{inbox,kind,material,std::move(location)};
             static const SDL_DialogFileFilter models[]={ {"GLB or FBX model","glb;fbx"} };
             static const SDL_DialogFileFilter png[]={ {"PNG image","png"} };
+            static const SDL_DialogFileFilter scenes[]={ {"Render Kit scene","rks"} };
             if(kind==JobKind::Export)SDL_ShowOpenFolderDialog(DialogDone,request,window,request->location.c_str(),false);
+            else if(kind==JobKind::SaveScene)SDL_ShowSaveFileDialog(DialogDone,request,window,scenes,1,request->location.empty()?nullptr:request->location.c_str());
+            else if(kind==JobKind::LoadScene)SDL_ShowOpenFileDialog(DialogDone,request,window,scenes,1,request->location.empty()?nullptr:request->location.c_str(),false);
             else SDL_ShowOpenFileDialog(DialogDone,request,window,kind==JobKind::Import?models:png,1,request->location.empty()?nullptr:request->location.c_str(),false);
         }
         void PollDialogs()
@@ -310,7 +377,8 @@ namespace
                 {
                     if(!result.error.empty()){status=result.error;continue;}
                     if(result.path.empty())continue;
-                    if(result.kind==JobKind::Import)Load(result.path);
+                    if(result.kind==JobKind::Import || result.kind==JobKind::LoadScene)Load(result.path);
+                    else if(result.kind==JobKind::SaveScene)SaveScene(result.path);
                     else if(result.kind==JobKind::Export)SetText(outputDirectory,result.path);
                     else LoadTexture(result.path,result.kind,result.material);
                 }
@@ -485,24 +553,33 @@ namespace
             const auto* viewport=ImGui::GetMainViewport();
             ImGui::SetNextWindowPos(viewport->WorkPos);ImGui::SetNextWindowSize(viewport->WorkSize);
             ImGui::Begin("Render Kit",nullptr,ImGuiWindowFlags_NoDecoration|ImGuiWindowFlags_NoMove|ImGuiWindowFlags_NoSavedSettings);
-            ImGui::TextColored({.75f,.94f,.90f,1},"RENDER KIT");ImGui::SameLine();ImGui::TextDisabled("/  CITIES UNLIMITED");
+            ImGui::BeginDisabled(job || inbox->pending);
+            ImGui::BeginDisabled(!scene);
+            if(ImGui::Button("Save Scene..."))Browse(JobKind::SaveScene);
+            ImGui::EndDisabled();ImGui::SameLine();
+            if(ImGui::Button("Load Scene..."))Browse(JobKind::LoadScene);
+            ImGui::EndDisabled();
             ImGui::Separator();
+            const bool editingBlocked=inbox->pending || (job && job->kind!=JobKind::Preview);
             const float height=std::max(200.0f,ImGui::GetContentRegionAvail().y-88);
             const float panelWidth=std::clamp(ImGui::GetContentRegionAvail().x*.25f,285.0f,350.0f);
             ImGui::BeginChild("Materials",{panelWidth,height},ImGuiChildFlags_Borders);
             ImGui::PushItemWidth(-125);
-            ImGui::BeginDisabled(job && job->kind==JobKind::Export);MaterialPanel();ImGui::EndDisabled();ImGui::PopItemWidth();ImGui::EndChild();
+            ImGui::BeginDisabled(editingBlocked);MaterialPanel();ImGui::EndDisabled();ImGui::PopItemWidth();ImGui::EndChild();
             ImGui::SameLine();
             const float middle=std::max(220.0f,ImGui::GetContentRegionAvail().x-panelWidth-ImGui::GetStyle().ItemSpacing.x);
-            ImGui::BeginChild("Preview",{middle,height},ImGuiChildFlags_Borders);PreviewPanel();ImGui::EndChild();
+            ImGui::BeginChild("Preview",{middle,height},ImGuiChildFlags_Borders);
+            ImGui::BeginDisabled(editingBlocked);PreviewPanel();ImGui::EndDisabled();ImGui::EndChild();
             ImGui::SameLine();ImGui::BeginChild("Output",{0,height},ImGuiChildFlags_Borders);
             ImGui::PushItemWidth(-125);
-            ImGui::BeginDisabled(job && job->kind==JobKind::Export);OutputPanel();ImGui::EndDisabled();ImGui::PopItemWidth();ImGui::EndChild();
+            ImGui::BeginDisabled(editingBlocked);OutputPanel();ImGui::EndDisabled();ImGui::PopItemWidth();ImGui::EndChild();
             if(job)
             {
                 const float fraction=std::clamp(static_cast<float>(job->rows.load())/job->totalRows,0.0f,1.0f);
                 ImGui::ProgressBar(fraction,{ImGui::GetContentRegionAvail().x-105,20});ImGui::SameLine();
+                ImGui::BeginDisabled(job->kind==JobKind::SaveScene);
                 if(ImGui::Button("Cancel"))job->worker.request_stop();
+                ImGui::EndDisabled();
             }
             ImGui::TextWrapped("%s",status.c_str());
             ImGui::End();
@@ -521,7 +598,7 @@ namespace
         std::shared_ptr<DialogInbox> inbox=std::make_shared<DialogInbox>();
         char modelPath[4096]{},outputDirectory[4096]{},prefix[96]="sprite";
         std::string status="Import a GLB or FBX model to begin. PNG drop assigns base color to the selected material.";
-        std::filesystem::path lastExport;
+        std::filesystem::path lastExport,scenePath;
     };
 }
 int main(int argc,char** argv)
@@ -531,13 +608,15 @@ int main(int argc,char** argv)
         // The same renderer can be used without a window for automated exports.
         if(argc>=2 && std::string_view(argv[1])=="--render")
         {
-            if(argc<4 || argc>6)throw std::invalid_argument("Usage: RenderKit --render model.glb|model.fbx output_folder [width height]");
+            if(argc<4 || argc>6)throw std::invalid_argument("Usage: RenderKit --render model.glb|model.fbx|scene.rks output_folder [width height]");
             if(!SDL_Init(0))throw std::runtime_error(SDL_GetError());
-            rk::RenderSettings settings;
+            const auto input=rk::NativePath(argv[2]);rk::SceneDocument document;
+            if(rk::IsSceneFile(input))document=rk::LoadSceneFile(input);
+            else document.scene=rk::LoadModel(input);
+            auto& settings=document.settings;
             if(argc>=5)settings.width=settings.height=std::stoi(argv[4]);
             if(argc==6)settings.height=std::stoi(argv[5]);
-            const auto scene=rk::LoadModel(rk::NativePath(argv[2]));
-            const auto folder=rk::ExportViews(scene,settings,rk::NativePath(argv[3]),"sprite",true);
+            const auto folder=rk::ExportViews(document.scene,settings,rk::NativePath(argv[3]),document.outputPrefix,document.exportLayers);
             std::cout<<"Exported to "<<rk::Utf8Path(folder)<<'\n';SDL_Quit();return 0;
         }
         if(!SDL_Init(SDL_INIT_VIDEO))throw std::runtime_error(SDL_GetError());

@@ -20,6 +20,8 @@ namespace renderkit
         int width = 0, height = 0;
         std::vector<std::uint8_t> rgba;
         std::string name;
+        // Empty for images embedded in the model; external PNGs retain their path.
+        std::filesystem::path sourcePath;
         Vec4 Sample(Vec2 uv, Wrap u = Wrap::Repeat, Wrap v = Wrap::Repeat, bool linearRgb = false) const;
     };
     std::shared_ptr<const Image> LoadPng(const std::filesystem::path& path);

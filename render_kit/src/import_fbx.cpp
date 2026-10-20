@@ -86,7 +86,7 @@ Scene LoadFbx(const std::filesystem::path& path)
         char message[1024]{};ufbx_format_error(message,sizeof(message),&error);
         throw std::runtime_error(std::string("Import FBX: ")+message);
     }
-    Scene scene;scene.source=Utf8Path(path);
+    Scene scene;scene.source=Utf8Path(std::filesystem::absolute(path).lexically_normal());
     if(input->anim_stacks.count)scene.warnings.push_back("FBX animations are not played; importing the default static pose. Bake wind/growth before export.");
     for(const auto& warning:input->metadata.warnings)scene.warnings.push_back("FBX: "+Text(warning.description));
     scene.warnings.push_back("FBX axes converted to right-handed Y-up; file units converted to meters. One meter is one Render Kit model unit.");
