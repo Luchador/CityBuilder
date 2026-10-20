@@ -23,11 +23,11 @@ namespace
     };
 
     constexpr std::array<ButtonDefinition, 5> MinimapButtons{{
-        {UiButtonIds::ZoomInButton, "ui/btn_zoom_in", "Zoom in", UiButtonShape::Circle},
-        {UiButtonIds::ZoomOutButton, "ui/btn_zoom_out", "Zoom out", UiButtonShape::Circle},
-        {UiButtonIds::RotateClockwiseButton, "ui/btn_rotate_cw", "Rotate clockwise\nShortcut: ,"},
-        {UiButtonIds::RotateCounterClockwiseButton, "ui/btn_rotate_ccw", "Rotate counterclockwise\nShortcut: ."},
-        {UiButtonIds::MinimizeUIButton, "ui/btn_minimize", "Hide / show the UI\nShortcut: Tab"}
+        {UiButtonIds::ZoomInButton, "ui/btn_zoom_in", "Zoom In", UiButtonShape::Circle},
+        {UiButtonIds::ZoomOutButton, "ui/btn_zoom_out", "Zoom Out", UiButtonShape::Circle},
+        {UiButtonIds::RotateClockwiseButton, "ui/btn_rotate_cw", "Rotate Clockwise\nShortcut: ,"},
+        {UiButtonIds::RotateCounterClockwiseButton, "ui/btn_rotate_ccw", "Rotate Counterclockwise\nShortcut: ."},
+        {UiButtonIds::MinimizeUIButton, "ui/btn_minimize", "Minimize UI\nShortcut: Tab"}
     }};
 
     constexpr float ToolbarButtonWidth = 84.0f;
@@ -58,15 +58,15 @@ namespace
         {{UiButtonIds::OptionsButton, "ui/toolbar/btn_options", "Options"}},
         {{UiButtonIds::DataButton, "ui/toolbar/btn_data", "Data"}},
         {{UiButtonIds::MeetButton, "ui/toolbar/btn_meet", "Meet with Advisors"}},
-        {{UiButtonIds::DayButton, "ui/toolbar/btn_day", "Day / night"}}
+        {{UiButtonIds::DayButton, "ui/toolbar/btn_day", "Day / Night"}}
     }};
 
     // Nearest the toolbar first, extending to the left. These are placeholders;
     // IDs are returned on release, ready for tool actions or more menus later.
     constexpr std::array<ButtonDefinition, 4> ZoningButtons{{
-        {UiButtonIds::ResidentialButton, "ui/toolbar/btn_res", "Residential zoning", UiButtonShape::Circle},
-        {UiButtonIds::CommercialButton, "ui/toolbar/btn_com", "Commercial zoning", UiButtonShape::Circle},
-        {UiButtonIds::IndustrialButton, "ui/toolbar/btn_ind", "Industrial zoning", UiButtonShape::Circle},
+        {UiButtonIds::ResidentialButton, "ui/toolbar/btn_res", "Residential Zoning", UiButtonShape::Circle},
+        {UiButtonIds::CommercialButton, "ui/toolbar/btn_com", "Commercial Zoning", UiButtonShape::Circle},
+        {UiButtonIds::IndustrialButton, "ui/toolbar/btn_ind", "Industrial Zoning", UiButtonShape::Circle},
         {UiButtonIds::DezoneButton, "ui/toolbar/btn_dezone", "Dezone", UiButtonShape::Circle}
     }};
     constexpr float ZoningButtonSize = 48.0f;
@@ -74,10 +74,10 @@ namespace
 
     constexpr std::array<ButtonDefinition, 6> TickerButtons{{
         {UiButtonIds::TickerPauseButton, "ui/ticker/btn_pause", "Pause simulation"},
-        {UiButtonIds::TickerSpeedButton1, "ui/ticker/btn_tickersquare", "Simulation speed: 1"},
-        {UiButtonIds::TickerSpeedButton2, "ui/ticker/btn_tickersquare", "Simulation speed: 2"},
-        {UiButtonIds::TickerSpeedButton3, "ui/ticker/btn_tickersquare", "Simulation speed: 3"},
-        {UiButtonIds::TickerSpeedButton4, "ui/ticker/btn_tickersquare", "Simulation speed: 4"},
+        {UiButtonIds::TickerSpeedButton1, "ui/ticker/btn_tickersquare", "Shuffle"},
+        {UiButtonIds::TickerSpeedButton2, "ui/ticker/btn_tickersquare", "Stroll"},
+        {UiButtonIds::TickerSpeedButton3, "ui/ticker/btn_tickersquare", "Canter"},
+        {UiButtonIds::TickerSpeedButton4, "ui/ticker/btn_tickersquare", "Dash"},
         {UiButtonIds::TickerPlayButton, "ui/ticker/btn_play", "Resume simulation"}
     }};
 
@@ -133,6 +133,7 @@ namespace
         constexpr float gapCount = count - 1.0f; // Includes separation between groups.
         float stackWidth = 0.0f;
         float buttonHeight = 0.0f;
+
         const auto measure = [&](const auto& definitions)
         {
             for (const auto& definition : definitions)
@@ -141,6 +142,7 @@ namespace
                 buttonHeight += definition.height;
             }
         };
+
         measure(ToolbarButtons);
         measure(BottomToolbarButtons);
 
@@ -162,6 +164,7 @@ namespace
         };
 
         float y = area.y;
+
         for (const auto& definition : ToolbarButtons)
         {
             place(definition, y);
@@ -171,6 +174,7 @@ namespace
         // Extra room stays between the groups; Options always touches the bottom
         // of the usable toolbar area. Hit bounds follow the same scaled rectangles.
         y = area.y + area.h;
+
         for (const auto& definition : BottomToolbarButtons)
         {
             y -= definition.height * scale;

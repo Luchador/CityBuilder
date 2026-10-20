@@ -41,7 +41,12 @@ void UiManager::RefreshLayout()
     layout = next;
     LayoutUiButtons(buttons, minimap, layout);
     bottomBarText.SetLayout(layout);
-    for (auto& panel : windows) panel->SetScreenSize(layout.width, layout.height);
+
+    for (auto& panel : windows) 
+    {
+        panel->SetScreenSize(layout.width, layout.height);
+    }
+
     layoutDirty = false;
     geometryDirty = outlineDirty = true;
 }
