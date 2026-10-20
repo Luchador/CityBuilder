@@ -24,21 +24,25 @@ void UiManager::CreateNewCityWindow()
     createCity.SetClosable(false);
     const CityCreationOptions defaults;
 
+    // City and Mayor name fields.
     createCity.AddLabel(1, {0, 0, 380, 22}, "City Name");
     createCity.AddTextBox(2, {0, 26, 400, 34}, defaults.name);
     createCity.AddLabel(3, {0, 72, 380, 22}, "Mayor Name");
     createCity.AddTextBox(4, {0, 98, 400, 34}, defaults.mayorName);
 
+    // Difficulty options
     createCity.AddLabel(6, {0, 148, 480, 22}, "Difficulty");
-    createCity.AddRadioButton(7, 1, {0, 178, 100, 28}, "Easy");
-    createCity.AddRadioButton(8, 1, {120, 178, 100, 28}, "Medium", true);
-    createCity.AddRadioButton(9, 1, {240, 178, 100, 28}, "Hard");
+    createCity.AddRadioButton(7, 1, {0, 178, 140, 28}, "Easy ($100k)");
+    createCity.AddRadioButton(8, 1, {160, 178, 140, 28}, "Medium ($50k)", true);
+    createCity.AddRadioButton(9, 1, {320, 178, 140, 28}, "Hard ($25k)");
 
+    // Starting year options
     createCity.AddLabel(10, {0, 218, 480, 22}, "Start Year");
     createCity.AddRadioButton(11, 2, {0, 248, 100, 28}, "1900");
     createCity.AddRadioButton(12, 2, {120, 248, 100, 28}, "1950", true);
     createCity.AddRadioButton(13, 2, {240, 248, 100, 28}, "2000");
 
+    // Map size options
     createCity.AddLabel(14, {0, 288, 480, 22}, "Map Size ");
     createCity.AddRadioButton(15, 3, {0, 318, 100, 28}, "Small");
     createCity.AddRadioButton(16, 3, {120, 318, 100, 28}, "Medium", true);
@@ -49,6 +53,7 @@ void UiManager::CreateNewCityWindow()
     errorStyle.size = 14;
     errorStyle.wrap = true;
     errorStyle.color = {1.0f, 0.75f, 0.65f, 1.0f};
+
     createCity.AddLabel(20, {0, 362, 548, 44}, "", errorStyle);
     createCity.AddFooterButton(19, "Accept", [this](UiWindow& panel)
     {

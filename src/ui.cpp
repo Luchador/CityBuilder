@@ -73,12 +73,12 @@ namespace
     constexpr float ZoningButtonGap = 8.0f;
 
     constexpr std::array<ButtonDefinition, 6> TickerButtons{{
-        {UiButtonIds::TickerPauseButton, "ui/ticker/btn_pause", "Pause simulation"},
+        {UiButtonIds::TickerPauseButton, "ui/ticker/btn_pause", "Pause Simulation"},
         {UiButtonIds::TickerSpeedButton1, "ui/ticker/btn_tickersquare", "Shuffle"},
         {UiButtonIds::TickerSpeedButton2, "ui/ticker/btn_tickersquare", "Stroll"},
         {UiButtonIds::TickerSpeedButton3, "ui/ticker/btn_tickersquare", "Canter"},
         {UiButtonIds::TickerSpeedButton4, "ui/ticker/btn_tickersquare", "Dash"},
-        {UiButtonIds::TickerPlayButton, "ui/ticker/btn_play", "Resume simulation"}
+        {UiButtonIds::TickerPlayButton, "ui/ticker/btn_play", "Resume Simulation"}
     }};
 
     void AddButton(UiButtons& buttons, TextureManager& textures, const ButtonDefinition& definition)
