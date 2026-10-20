@@ -83,3 +83,12 @@ void UiManager::CreateNewCityWindow()
         }
     });
 }
+
+void UiManager::CreateMeetWindow()
+{
+    UiWindow& meet = AddWindow("Meet with Advisors", {(layout.width - 580) * 0.5f, (layout.height - 520) * 0.5f, 580, 520});
+    meetWindowId = meet.GetId();
+
+    // Start hidden until the player opens it.
+    meet.Close();
+}

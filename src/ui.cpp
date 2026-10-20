@@ -45,7 +45,7 @@ namespace
     constexpr std::array<ToolbarButtonDefinition, 7> ToolbarButtons{{
         {{UiButtonIds::TerrainButton, "ui/toolbar/btn_terrain"}},
         {{UiButtonIds::ZonesButton, "ui/toolbar/btn_zones"}},
-        {{UiButtonIds::InfrastructureButton, "ui/toolbar/btn_infra"}},
+        {{UiButtonIds::TransportationButton, "ui/toolbar/btn_transp"}},
         {{UiButtonIds::UtilitiesButton, "ui/toolbar/btn_util"}},
         {{UiButtonIds::GovernmentButton, "ui/toolbar/btn_gov"}},
         {{UiButtonIds::BulldozerButton, "ui/toolbar/btn_bulldozer"}, 48.0f, 24.0f},

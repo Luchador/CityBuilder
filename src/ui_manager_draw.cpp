@@ -109,6 +109,7 @@ void UiManager::Release()
     focusedWindow = capturedWindow = nullptr;
     nextWindowId = 1;
     createCityWindowId = 0;
+    meetWindowId = 0;
     cityCreationPending = false;
     windowSkin = {};
     outlineTransfer = nullptr;

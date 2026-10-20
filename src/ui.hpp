@@ -23,7 +23,7 @@ namespace UiButtonIds
 
     inline constexpr UiButtonId TerrainButton = 100;
     inline constexpr UiButtonId ZonesButton = 101;
-    inline constexpr UiButtonId InfrastructureButton = 102;
+    inline constexpr UiButtonId TransportationButton = 102;
     inline constexpr UiButtonId UtilitiesButton = 103;
     inline constexpr UiButtonId GovernmentButton = 104;
     inline constexpr UiButtonId BulldozerButton = 105;

@@ -90,6 +90,7 @@ private:
     void PrepareWindows(bool mousePanning, float rasterScale);
     void DrawWindows(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, Uint32 width, Uint32 height);
     void CreateNewCityWindow();
+    void CreateMeetWindow();
     UiWindow* RequiredWindow() const;
 
     SDL_Window* window = nullptr;
@@ -115,7 +116,13 @@ private:
     std::vector<std::unique_ptr<UiWindow>> windows; // Back to front.
     UiWindow* focusedWindow = nullptr;
     UiWindow* capturedWindow = nullptr;
-    UiWindowId nextWindowId = 1, createCityWindowId = 0;
+
+    UiWindowId nextWindowId = 1;
+
+    // AddWindow() function assigns unique IDs automatically.
+    UiWindowId createCityWindowId = 0;
+    UiWindowId meetWindowId = 0;
+
     bool cityCreationPending = false;
     bool textInputActive = false;
     const void* textInputOwner = nullptr;
