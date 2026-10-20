@@ -29,20 +29,27 @@ namespace
         {UiButtonIds::MinimizeUIButton, "ui/btn_minimize"}
     }};
 
-    // Display order, top to bottom. These buttons have no game actions yet.
-    constexpr std::array<ButtonDefinition, 7> ToolbarButtons{{
-        {UiButtonIds::TerrainButton, "ui/toolbar/btn_terrain"},
-        {UiButtonIds::ZonesButton, "ui/toolbar/btn_zones"},
-        {UiButtonIds::InfrastructureButton, "ui/toolbar/btn_infra"},
-        {UiButtonIds::UtilitiesButton, "ui/toolbar/btn_util"},
-        {UiButtonIds::GovernmentButton, "ui/toolbar/btn_gov"},
-        {UiButtonIds::GovernmentButton, "ui/toolbar/btn_bulldozer"},
-        {UiButtonIds::DisastersButton, "ui/toolbar/btn_disaster"}
-    }};
-
     constexpr float ToolbarButtonWidth = 84.0f;
     constexpr float ToolbarButtonHeight = 50.0f;
     constexpr float ToolbarButtonGap = 8.0f;
+
+    struct ToolbarButtonDefinition
+    {
+        ButtonDefinition button;
+        float width = ToolbarButtonWidth;
+        float height = ToolbarButtonHeight;
+    };
+
+    // Display order, top to bottom. Sizes are before the common UI scale.
+    constexpr std::array<ToolbarButtonDefinition, 7> ToolbarButtons{{
+        {{UiButtonIds::TerrainButton, "ui/toolbar/btn_terrain"}},
+        {{UiButtonIds::ZonesButton, "ui/toolbar/btn_zones"}},
+        {{UiButtonIds::InfrastructureButton, "ui/toolbar/btn_infra"}},
+        {{UiButtonIds::UtilitiesButton, "ui/toolbar/btn_util"}},
+        {{UiButtonIds::GovernmentButton, "ui/toolbar/btn_gov"}},
+        {{UiButtonIds::BulldozerButton, "ui/toolbar/btn_bulldozer"}, 48.0f, 24.0f},
+        {{UiButtonIds::DisastersButton, "ui/toolbar/btn_disaster"}, 48.0f, 24.0f}
+    }};
 
     // Nearest the toolbar first, extending to the left. These are placeholders;
     // IDs are returned on release, ready for tool actions or more menus later.
@@ -112,19 +119,25 @@ namespace
     {
         const UiRect& area = layout.toolbarContent;
         constexpr float count = static_cast<float>(ToolbarButtons.size());
-        constexpr float stackHeight = count * ToolbarButtonHeight + (count - 1.0f) * ToolbarButtonGap;
+        float stackWidth = 0.0f;
+        float stackHeight = (count - 1.0f) * ToolbarButtonGap;
+        for (const auto& definition : ToolbarButtons)
+        {
+            stackWidth = std::max(stackWidth, definition.width);
+            stackHeight += definition.height;
+        }
 
-        // Preserve the art's proportions and fit the whole stack above the map.
-        const float scale = std::max(0.0f, std::min({layout.scale, area.w / ToolbarButtonWidth, area.h / stackHeight}));
-        const float width = ToolbarButtonWidth * scale;
-        const float height = ToolbarButtonHeight * scale;
+        // Fit the mixed button sizes and gaps into the space above the minimap.
+        const float scale = std::max(0.0f, std::min({layout.scale, area.w / stackWidth, area.h / stackHeight}));
         const float gap = ToolbarButtonGap * scale;
-        const float x = area.x + (area.w - width) * 0.5f;
         float y = area.y;
 
         for (const auto& definition : ToolbarButtons)
         {
-            if (auto* button = buttons.Find(definition.id))
+            const float width = definition.width * scale;
+            const float height = definition.height * scale;
+            const float x = area.x + (area.w - width) * 0.5f;
+            if (auto* button = buttons.Find(definition.button.id))
             {
                 button->SetBounds({x, y, width, height});
             }
@@ -180,7 +193,7 @@ void CreateUiButtons(UiButtons& buttons, TextureManager& textures)
 
     for (const auto& definition : ToolbarButtons) 
     {
-        AddButton(buttons, textures, definition);
+        AddButton(buttons, textures, definition.button);
     }
 
     for (const auto& definition : TickerButtons)
