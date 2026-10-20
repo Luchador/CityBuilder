@@ -55,6 +55,7 @@ if(CITY_BUILD_UI_MANAGER_TESTS)
     enable_testing()
     add_executable(CityUiManagerTests tests/ui_manager_tests.cpp
         src/ui_manager.cpp src/ui_manager_draw.cpp src/ui.cpp src/ui_layout.cpp
+        src/ui_manager_windows.cpp src/ui_window.cpp src/ui_window_draw.cpp src/ui_text_input.cpp
         src/ui_button.cpp src/ui_buttons.cpp src/ui_buttons_draw.cpp
         src/ui_minimap.cpp src/ui_minimap_draw.cpp src/ui_text.cpp
         src/pan_overlay.cpp src/minimap_map.cpp src/camera.cpp)

@@ -5,6 +5,7 @@
 #include "ui_buttons.hpp"
 #include "ui_minimap.hpp"
 #include "ui_text.hpp"
+#include "ui_window.hpp"
 
 #include <functional>
 #include <memory>
@@ -48,6 +49,11 @@ public:
     void SetSettings(const UiSettings& next);
     const UiLayout& GetLayout();
     bool IsWorldPoint(float x, float y);
+    bool BlocksWorldKeyboard() const;
+    // References remain valid until Release(); Close() hides a reusable window.
+    UiWindow& AddWindow(std::string_view title, UiRect bounds);
+    UiWindow* FindWindow(UiWindowId id);
+    void OpenWindow(UiWindowId id);
     SDL_Rect GetWorldViewport(Uint32 pixelWidth, Uint32 pixelHeight);
 
     // Supply the actual simulation speed each frame: 0 = paused, 1..4 = running.
@@ -72,6 +78,14 @@ private:
     SDL_GPUGraphicsPipeline* MakePipeline();
     void EnsureGeometry();
     void UpdateMinimapOutline(SDL_GPUCommandBuffer* commands, const MinimapView& view);
+    bool HandleWindowEvent(const SDL_Event& event);
+    UiWindow* WindowAt(float x, float y) const;
+    void FocusWindow(UiWindow* target);
+    void CancelWindowInteraction();
+    void SyncTextInput();
+    void PrepareWindows(bool mousePanning, float rasterScale);
+    void DrawWindows(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, Uint32 width, Uint32 height);
+    void CreateNewCityWindow(const City& city);
 
     SDL_Window* window = nullptr;
     SDL_GPUDevice* device = nullptr;
@@ -92,6 +106,17 @@ private:
     static constexpr Uint64 PauseFlashIntervalMs = 500;
     Uint64 pauseFlashStart = 0;
     bool tickerPaused = false;
+    UiWindowSkin windowSkin;
+    std::vector<std::unique_ptr<UiWindow>> windows; // Back to front.
+    UiWindow* focusedWindow = nullptr;
+    UiWindow* capturedWindow = nullptr;
+    UiWindowId nextWindowId = 1, demoWindowId = 0;
+    bool textInputActive = false;
+    const void* textInputOwner = nullptr;
+    struct WindowDrawRange { UiWindow* window; Uint32 first, count; };
+    std::vector<WindowDrawRange> windowRanges;
+    std::vector<UiVertex> windowMesh;
+    SDL_GPUBuffer* windowVertices = nullptr;
 
     SDL_GPUShader* vertexShader = nullptr;
     SDL_GPUShader* fragmentShader = nullptr;

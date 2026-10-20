@@ -2,6 +2,7 @@
 
 #include "texture.hpp"
 #include "ui_buttons.hpp"
+#include "ui_manager.hpp"
 #include "ui_minimap.hpp"
 
 #include <SDL3/SDL.h>

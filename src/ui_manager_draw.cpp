@@ -20,15 +20,23 @@ namespace
     }
 }
 
-void UiManager::Initialize(SDL_GPUDevice* gpu, SDL_Window* targetWindow, TextureManager& sharedTextures,
-                           const City& city, UiActions callbacks)
+void UiManager::Initialize(SDL_GPUDevice* gpu, SDL_Window* targetWindow, TextureManager& sharedTextures, const City& city, UiActions callbacks)
 {
-    if (initialized || device) throw std::logic_error("Release UI before initializing it again");
-    if (!gpu || !targetWindow) throw std::invalid_argument("UI requires a GPU device and window");
+    if (initialized || device) 
+    {
+        throw std::logic_error("Release UI before initializing it again");
+    }
+
+    if (!gpu || !targetWindow) 
+    {
+        throw std::invalid_argument("UI requires a GPU device and window");
+    }
+
     device = gpu;
     window = targetWindow;
     textures = &sharedTextures;
     actions = std::move(callbacks);
+
     try
     {
         const auto format = SDL_GetGPUSwapchainTextureFormat(device, window);
@@ -44,9 +52,11 @@ void UiManager::Initialize(SDL_GPUDevice* gpu, SDL_Window* targetWindow, Texture
         imageRenderer.Initialize(device, imageVertexShader, imageFragmentShader, format);
         panOverlay.Initialize(sharedTextures);
         CreateUiButtons(buttons, sharedTextures);
+        windowSkin.Load(sharedTextures);
         SetUiMinimized(settings, buttons, settings.minimized);
         initialized = true;
         RefreshLayout();
+        CreateNewCityWindow(city);
     }
     catch (...)
     {
@@ -60,25 +70,45 @@ void UiManager::Release()
     CancelInteraction();
     initialized = false;
     buttons.Clear();
+    windows.clear(); // Destroy their labels before the shared text renderer.
+    windowRanges.clear();
+    windowMesh.clear();
     panOverlay.Release();
     bottomBarText = {};
     textRenderer.Release();
     imageRenderer.Release();
     minimapTexture.reset();
+
     if (device)
     {
-        if (pipeline) SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
-        for (auto* shader : {vertexShader, fragmentShader, textVertexShader, textFragmentShader,
-                             imageVertexShader, imageFragmentShader})
-            if (shader) SDL_ReleaseGPUShader(device, shader);
+        if (pipeline) 
+        {
+            SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
+        }
+    
+        for (auto* shader : {vertexShader, fragmentShader, textVertexShader, textFragmentShader, imageVertexShader, imageFragmentShader})
+        {
+            if (shader) 
+            {
+                SDL_ReleaseGPUShader(device, shader);
+            }
+        }
+    
         if (vertices) SDL_ReleaseGPUBuffer(device, vertices);
+        if (windowVertices) SDL_ReleaseGPUBuffer(device, windowVertices);
         if (outlineVertices) SDL_ReleaseGPUBuffer(device, outlineVertices);
         if (outlineTransfer) SDL_ReleaseGPUTransferBuffer(device, outlineTransfer);
     }
+
     vertexShader = fragmentShader = textVertexShader = textFragmentShader = nullptr;
     imageVertexShader = imageFragmentShader = nullptr;
     pipeline = nullptr;
     vertices = outlineVertices = nullptr;
+    windowVertices = nullptr;
+    focusedWindow = capturedWindow = nullptr;
+    nextWindowId = 1;
+    demoWindowId = 0;
+    windowSkin = {};
     outlineTransfer = nullptr;
     vertexCount = outlineVertexCount = 0;
     outlineMesh.clear();
@@ -96,12 +126,20 @@ void UiManager::Release()
 
 void UiManager::EnsureGeometry()
 {
-    if (!geometryDirty) return;
+    if (!geometryDirty) 
+    {
+        return;
+    }
+
     auto mesh = BuildUiBackground(layout);
     minimap.AppendGeometry(mesh);
-    SDL_GPUBuffer* replacement = UploadBuffer(device, mesh.data(),
-        static_cast<Uint32>(mesh.size() * sizeof(UiVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
-    if (vertices) SDL_ReleaseGPUBuffer(device, vertices);
+    SDL_GPUBuffer* replacement = UploadBuffer(device, mesh.data(), static_cast<Uint32>(mesh.size() * sizeof(UiVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
+
+    if (vertices) 
+    {
+        SDL_ReleaseGPUBuffer(device, vertices);
+    }
+
     vertices = replacement;
     vertexCount = static_cast<Uint32>(mesh.size());
     geometryDirty = false;
@@ -109,7 +147,11 @@ void UiManager::EnsureGeometry()
 
 void UiManager::RebuildMinimap(const TerrainMesh& terrain, std::span<const MinimapTileOverlay> overlays)
 {
-    if (!initialized) throw std::logic_error("Initialize UI before rebuilding the minimap");
+    if (!initialized) 
+    {
+        throw std::logic_error("Initialize UI before rebuilding the minimap");
+    }
+
     // Camera movement and panel resizing do not rebuild the terrain image.
     const auto image = BuildMinimapImage(terrain, overlays);
     minimapTexture = textures->CreateRgba(image.width, image.height, image.rgba);
@@ -118,26 +160,55 @@ void UiManager::RebuildMinimap(const TerrainMesh& terrain, std::span<const Minim
 void UiManager::PrepareFrame(bool mousePanning)
 {
     RefreshLayout();
-    UpdateUiButtonPointer(window, buttons, mousePanning);
+    float mouseX = 0, mouseY = 0;
+    SDL_GetMouseState(&mouseX, &mouseY);
+    const bool windowOwnsPointer = capturedWindow || (!buttons.HasCapture() && WindowAt(mouseX, mouseY));
+
+    if (windowOwnsPointer) 
+    {
+        buttons.PointerMove(-1, -1);
+    }
+    else 
+    {
+        UpdateUiButtonPointer(window, buttons, mousePanning);
+    }
+
     // Poll the pointer first so hover follows resize, focus, and capture changes.
     UpdateTickerHover();
-    if (layout.minimized) return;
-    EnsureGeometry();
+    if (!layout.minimized) 
+    {
+        EnsureGeometry();
+    }
 
     int pixelWidth = 0, pixelHeight = 0;
-    if (!SDL_GetWindowSizeInPixels(window, &pixelWidth, &pixelHeight)) Fail("Get text pixel scale");
+
+    if (!SDL_GetWindowSizeInPixels(window, &pixelWidth, &pixelHeight)) 
+    {
+        Fail("Get text pixel scale");
+    }
+
     if (pixelWidth > 0 && pixelHeight > 0)
-        textRenderer.Prepare(std::max(static_cast<float>(pixelWidth) / layout.width,
-                                     static_cast<float>(pixelHeight) / layout.height));
+    {
+        const float scale = std::max(static_cast<float>(pixelWidth) / layout.width, static_cast<float>(pixelHeight) / layout.height);
+
+        PrepareWindows(mousePanning, scale);
+
+        if (!layout.minimized) 
+        {
+            textRenderer.Prepare(scale);
+        }
+    }
 }
 
-void UiManager::UploadFrame(SDL_GPUCommandBuffer* commands, const Camera& camera, float mapExtent,
-                            Uint32 pixelWidth, Uint32 pixelHeight)
+void UiManager::UploadFrame(SDL_GPUCommandBuffer* commands, const Camera& camera, float mapExtent, Uint32 pixelWidth, Uint32 pixelHeight)
 {
-    if (layout.minimized) return;
+    if (layout.minimized) 
+    {
+        return;
+    }
+
     const auto viewport = GetWorldViewport(pixelWidth, pixelHeight);
-    UpdateMinimapOutline(commands, {camera.GetCenterX(), camera.GetCenterZ(), camera.GetHalfHeight(),
-        static_cast<float>(viewport.w) / static_cast<float>(viewport.h), mapExtent, camera.GetQuarterTurns()});
+    UpdateMinimapOutline(commands, {camera.GetCenterX(), camera.GetCenterZ(), camera.GetHalfHeight(), static_cast<float>(viewport.w) / static_cast<float>(viewport.h), mapExtent, camera.GetQuarterTurns()});
 }
 
 SDL_GPUGraphicsPipeline* UiManager::MakePipeline()
@@ -213,7 +284,11 @@ void UiManager::UpdateMinimapOutline(SDL_GPUCommandBuffer* commands, const Minim
             info.usage = SDL_GPU_BUFFERUSAGE_VERTEX;
             info.size = MaxOutlineVertices * static_cast<Uint32>(sizeof(UiVertex));
             outlineVertices = SDL_CreateGPUBuffer(device, &info);
-            if (!outlineVertices) Fail("Create minimap outline buffer");
+
+            if (!outlineVertices) 
+            {
+                Fail("Create minimap outline buffer");
+            }
         }
 
         if (!outlineTransfer)
@@ -222,7 +297,11 @@ void UiManager::UpdateMinimapOutline(SDL_GPUCommandBuffer* commands, const Minim
             info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
             info.size = MaxOutlineVertices * static_cast<Uint32>(sizeof(UiVertex));
             outlineTransfer = SDL_CreateGPUTransferBuffer(device, &info);
-            if (!outlineTransfer) Fail("Create minimap outline transfer buffer");
+    
+            if (!outlineTransfer) 
+            {
+                Fail("Create minimap outline transfer buffer");
+            }
         }
 
         const Uint32 bytes = count * static_cast<Uint32>(sizeof(UiVertex));
@@ -255,8 +334,7 @@ void UiManager::UpdateMinimapOutline(SDL_GPUCommandBuffer* commands, const Minim
     outlineDirty = false;
 }
 
-void UiManager::Draw(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target, Uint32 width,
-                      Uint32 height, const Camera& camera)
+void UiManager::Draw(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target, Uint32 width, Uint32 height, const Camera& camera)
 {
     SDL_GPUColorTargetInfo color{};
     color.texture = target;
@@ -264,7 +342,12 @@ void UiManager::Draw(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target, Uin
     // Preserve the city image and cover the docks with opaque UI geometry.
     color.load_op = SDL_GPU_LOADOP_LOAD;
     SDL_GPURenderPass* pass = SDL_BeginGPURenderPass(commands, &color, 1, nullptr);
-    if (!pass) Fail("Begin UI render pass");
+
+    if (!pass) 
+    {
+        Fail("Begin UI render pass");
+    }
+
     SDL_GPUViewport uiViewport{0, 0, static_cast<float>(width), static_cast<float>(height), 0, 1};
     SDL_Rect uiScissor{0, 0, static_cast<int>(width), static_cast<int>(height)};
     SDL_SetGPUViewport(pass, &uiViewport);
@@ -299,6 +382,12 @@ void UiManager::Draw(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target, Uin
     }
 
     buttons.Draw(imageRenderer, commands, pass, layout.width, layout.height);
+
+    if (!layout.minimized) 
+    {
+        DrawWindows(commands, pass, width, height);
+    }
+
     panOverlay.Draw(imageRenderer, commands, pass, layout.width, layout.height, camera.GetMousePan(), camera.GetPanSettings());
     SDL_EndGPURenderPass(pass);
 

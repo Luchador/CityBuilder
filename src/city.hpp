@@ -6,7 +6,7 @@
 
 class City {
     public:
-        std::string name;
+        std::string name = "New City";
         std::string mayor_name = "El Jefe";
         unsigned int population = 0;
         std::int64_t funds = 0;

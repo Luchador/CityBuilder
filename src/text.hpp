@@ -5,6 +5,7 @@
 
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -39,6 +40,10 @@ public:
     void SetText(std::string_view utf8);
     void SetStyle(const TextStyle& next);
     void SetBounds(UiRect next);
+    void SetVisible(bool next);
+    void SetGroup(std::uint32_t next);
+    void SetClip(std::optional<UiRect> next);
+    void SetHorizontalOffset(float next);
     SDL_FPoint Measure() const noexcept { return measured; } // After Prepare().
 
 private:
@@ -49,6 +54,10 @@ private:
     std::string value;
     TextStyle style;
     UiRect bounds;
+    std::optional<UiRect> clip;
+    std::uint32_t group = 0; // 0 = docks; each floating window gets its own group.
+    bool visible = true;
+    float horizontalOffset = 0;
     TTF_Text* text = nullptr;
     TTF_Font* font = nullptr; // Borrowed from the renderer's font cache.
     int wrapWidth = 0;
@@ -71,8 +80,10 @@ public:
     TextLabel& CreateLabel(std::string_view utf8, const TextStyle& style = {});
     void DestroyLabel(TextLabel& label);
     void Prepare(float pixelsPerUnit = 1.0f);
+    SDL_FPoint MeasureText(std::string_view utf8, const TextStyle& style, float scale = 1.0f);
     void Draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
-              float logicalWidth, float logicalHeight, Uint32 pixelWidth, Uint32 pixelHeight) const;
+              float logicalWidth, float logicalHeight, Uint32 pixelWidth, Uint32 pixelHeight,
+              std::uint32_t group = 0) const;
     void Release() noexcept; // Destroy before the SDL_GPUDevice.
 
 private:
@@ -81,6 +92,7 @@ private:
         SDL_GPUTexture* atlas;
         Uint32 first, count;
         UiRect clip;
+        std::uint32_t group;
     };
     TTF_Font* GetFont(const TextStyle& style, float scale);
 

@@ -648,6 +648,7 @@ private:
 
     void PanCamera(float dt)
     {
+        if (ui.BlocksWorldKeyboard()) return;
         const auto& layout = ui.GetLayout();
 
         const bool* keys = SDL_GetKeyboardState(nullptr);

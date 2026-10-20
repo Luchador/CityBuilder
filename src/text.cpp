@@ -76,7 +76,10 @@ namespace
 
 TextLabel::~TextLabel()
 {
-    if (text) TTF_DestroyText(text);
+    if (text) 
+    {
+        TTF_DestroyText(text);
+    }
 }
 
 void TextLabel::SetText(std::string_view utf8)
@@ -94,36 +97,105 @@ void TextLabel::SetText(std::string_view utf8)
 void TextLabel::SetStyle(const TextStyle& next)
 {
     if (!std::isfinite(next.size) || next.size <= 0 || next.fontAsset.empty())
+    {
         throw std::invalid_argument("Text needs a font asset and a positive finite size");
-    if (style.fontAsset == next.fontAsset && style.size == next.size &&
-        SameColor(style.color, next.color) && style.align == next.align &&
-        style.verticalAlign == next.verticalAlign && style.wrap == next.wrap) return;
+    }
+
+    if (style.fontAsset == next.fontAsset && style.size == next.size && SameColor(style.color, next.color) && style.align == next.align && style.verticalAlign == next.verticalAlign && style.wrap == next.wrap) 
+    {
+        return;
+    }
+
     style = next;
     rendererDirty = true;
 }
 
 void TextLabel::SetBounds(UiRect next)
 {
-    if (!std::isfinite(next.x) || !std::isfinite(next.y) ||
-        !std::isfinite(next.w) || !std::isfinite(next.h) || next.w < 0 || next.h < 0)
+    if (!std::isfinite(next.x) || !std::isfinite(next.y) || !std::isfinite(next.w) || !std::isfinite(next.h) || next.w < 0 || next.h < 0)
+    {
         throw std::invalid_argument("Text bounds must be finite and have nonnegative size");
-    if (bounds.x == next.x && bounds.y == next.y && bounds.w == next.w && bounds.h == next.h) return;
+    }
+
+    if (bounds.x == next.x && bounds.y == next.y && bounds.w == next.w && bounds.h == next.h) 
+    {
+        return;
+    }
+
     bounds = next;
     rendererDirty = true;
 }
 
-void TextRenderer::Initialize(SDL_GPUDevice* gpu, SDL_GPUShader* vertex, SDL_GPUShader* fragment,
-                              SDL_GPUTextureFormat targetFormat)
+void TextLabel::SetVisible(bool next)
 {
-    if (device || !gpu) throw std::logic_error("Initialize text renderer once with a valid GPU device");
+    if (visible != next) 
+    { 
+        visible = next; rendererDirty = true; 
+    }
+}
+
+void TextLabel::SetGroup(std::uint32_t next)
+{
+    if (group != next) 
+    { 
+        group = next; rendererDirty = true; 
+    }
+}
+
+void TextLabel::SetClip(std::optional<UiRect> next)
+{
+    if (!clip && !next) 
+    {
+        return;
+    }
+
+    if (clip && next && clip->x == next->x && clip->y == next->y && clip->w == next->w && clip->h == next->h) 
+    {
+        return;
+    }
+
+    clip = next;
+    rendererDirty = true;
+}
+
+void TextLabel::SetHorizontalOffset(float next)
+{
+    if (horizontalOffset != next) 
+    { 
+        horizontalOffset = next; 
+        rendererDirty = true; 
+    }
+}
+
+void TextRenderer::Initialize(SDL_GPUDevice* gpu, SDL_GPUShader* vertex, SDL_GPUShader* fragment, SDL_GPUTextureFormat targetFormat)
+{
+    if (device || !gpu) 
+    {
+        throw std::logic_error("Initialize text renderer once with a valid GPU device");
+    }
+
     device = gpu;
-    if (!TTF_Init()) FailText("Initialize SDL_ttf");
+
+    if (!TTF_Init()) 
+    {
+        FailText("Initialize SDL_ttf");
+    }
+
     ttfInitialized = true;
     const char* base = SDL_GetBasePath();
-    if (!base) FailText("Get font asset directory");
+
+    if (!base) 
+    {
+        FailText("Get font asset directory");
+    }
+
     assetRoot = std::string(base) + "assets/";
     engine = TTF_CreateGPUTextEngine(device);
-    if (!engine) FailText("Create GPU text engine");
+
+    if (!engine) 
+    {
+        FailText("Create GPU text engine");
+    }
 
     SDL_GPUVertexBufferDescription buffer{};
     buffer.pitch = sizeof(TextVertex);
@@ -160,30 +232,48 @@ void TextRenderer::Initialize(SDL_GPUDevice* gpu, SDL_GPUShader* vertex, SDL_GPU
     info.target_info.color_target_descriptions = &color;
     info.target_info.num_color_targets = 1;
     pipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
-    if (!pipeline) FailText("Create text pipeline");
+
+    if (!pipeline) 
+    {
+        FailText("Create text pipeline");
+    }
+
     SDL_GPUSamplerCreateInfo sampling{};
     sampling.min_filter = sampling.mag_filter = SDL_GPU_FILTER_LINEAR;
     sampling.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
     sampling.address_mode_u = sampling.address_mode_v = sampling.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
     sampler = SDL_CreateGPUSampler(device, &sampling);
-    if (!sampler) FailText("Create text sampler");
+
+    if (!sampler) 
+    {
+        FailText("Create text sampler");
+    }
 }
 
 TextLabel& TextRenderer::CreateLabel(std::string_view utf8, const TextStyle& style)
 {
-    if (!engine) throw std::logic_error("Initialize the text renderer before creating labels");
+    if (!engine) 
+    {
+        throw std::logic_error("Initialize the text renderer before creating labels");
+    }
+
     auto label = std::unique_ptr<TextLabel>(new TextLabel(dirty));
     label->SetStyle(style);
     label->SetText(utf8);
     labels.push_back(std::move(label));
     dirty = true;
+
     return *labels.back();
 }
 
 void TextRenderer::DestroyLabel(TextLabel& label)
 {
     const auto found = std::find_if(labels.begin(), labels.end(), [&label](const auto& item) { return item.get() == &label; });
-    if (found == labels.end()) throw std::invalid_argument("Label belongs to a different text renderer");
+    if (found == labels.end()) 
+    {
+        throw std::invalid_argument("Label belongs to a different text renderer");
+    }
+
     labels.erase(found);
     dirty = true;
 }
@@ -192,95 +282,229 @@ TTF_Font* TextRenderer::GetFont(const TextStyle& style, float scale)
 {
     const float pixels = std::round(style.size * scale);
     if (pixels < 1 || pixels > 256)
+    {
         throw std::invalid_argument("Font raster size must be between 1 and 256 pixels");
+    }
+
     const auto key = std::make_pair(style.fontAsset, static_cast<int>(pixels));
-    if (const auto found = fonts.find(key); found != fonts.end()) return found->second;
+
+    if (const auto found = fonts.find(key); found != fonts.end()) 
+    {
+        return found->second;
+    }
+
     const std::string path = assetRoot + style.fontAsset;
     TTF_Font* font = TTF_OpenFont(path.c_str(), pixels);
-    if (!font) FailText("Open font " + path);
-    try { fonts.emplace(key, font); }
-    catch (...) { TTF_CloseFont(font); throw; }
+    if (!font) 
+    {
+        FailText("Open font " + path);
+    }
+
+    try 
+    { 
+        fonts.emplace(key, font); 
+    }
+    catch (...) 
+    { 
+        TTF_CloseFont(font); 
+        throw; 
+    }
+
     return font;
 }
 
 void TextRenderer::Prepare(float pixelsPerUnit)
 {
-    if (!engine) throw std::logic_error("Initialize text renderer before preparing text");
+    if (!engine) 
+    {
+        throw std::logic_error("Initialize text renderer before preparing text");
+    }
+
     if (!std::isfinite(pixelsPerUnit) || pixelsPerUnit <= 0)
+    {
         throw std::invalid_argument("Text pixel scale must be positive and finite");
-    if (rasterScale != pixelsPerUnit) dirty = true;
-    if (!dirty) return;
+    }
+
+    if (rasterScale != pixelsPerUnit) 
+    {
+        dirty = true;
+    }
+
+    if (!dirty) 
+    {
+        return;
+    }
+
     std::vector<TextVertex> mesh;
     std::vector<Batch> nextBatches;
+
     for (auto& item : labels)
     {
         auto& label = *item;
+    
+        if (!label.visible) 
+        {
+            continue;
+        }
+
         TTF_Font* font = GetFont(label.style, pixelsPerUnit);
+    
         if (!label.text)
         {
             label.text = TTF_CreateText(engine, font, label.value.c_str(), label.value.size());
-            if (!label.text) FailText("Create text label");
+
+            if (!label.text) 
+            {
+                FailText("Create text label");
+            }
+
             label.font = font;
             label.stringDirty = false;
         }
+
         if (label.font != font)
         {
-            if (!TTF_SetTextFont(label.text, font)) FailText("Set label font");
+            if (!TTF_SetTextFont(label.text, font)) 
+            {
+                FailText("Set label font");
+            }
+
             label.font = font;
         }
+
         if (label.stringDirty)
         {
-            if (!TTF_SetTextString(label.text, label.value.c_str(), label.value.size())) FailText("Set label text");
+            if (!TTF_SetTextString(label.text, label.value.c_str(), label.value.size())) 
+            {
+                FailText("Set label text");
+            }
+
             label.stringDirty = false;
         }
+
         const int wrapWidth = label.style.wrap ? std::max(1, static_cast<int>(label.bounds.w * pixelsPerUnit)) : 0;
+
         if (label.wrapWidth != wrapWidth)
         {
-            if (!TTF_SetTextWrapWidth(label.text, wrapWidth)) FailText("Set text wrapping");
+            if (!TTF_SetTextWrapWidth(label.text, wrapWidth)) 
+            {
+                FailText("Set text wrapping");
+            }
+
             label.wrapWidth = wrapWidth;
         }
-        if (!TTF_UpdateText(label.text)) FailText("Prepare text glyphs");
+
+        if (!TTF_UpdateText(label.text)) 
+        {
+            FailText("Prepare text glyphs");
+        }
+
         int width = 0, height = 0;
-        if (!TTF_GetTextSize(label.text, &width, &height)) FailText("Measure text");
+
+        if (!TTF_GetTextSize(label.text, &width, &height)) 
+        {
+            FailText("Measure text");
+        }
+
         label.measured = {width / pixelsPerUnit, height / pixelsPerUnit};
-        if (label.bounds.w <= 0 || label.bounds.h <= 0) continue;
-        float x = label.bounds.x, y = label.bounds.y;
+        if (label.bounds.w <= 0 || label.bounds.h <= 0) 
+        {
+            continue;
+        }
+
+        float x = label.bounds.x + label.horizontalOffset, y = label.bounds.y;
         const float extraX = label.bounds.w - label.measured.x;
         const float extraY = std::max(0.0f, label.bounds.h - label.measured.y);
-        if (label.style.align == TextAlign::Center) x += extraX * 0.5f;
-        if (label.style.align == TextAlign::Right) x += extraX;
-        if (label.style.verticalAlign == TextVerticalAlign::Center) y += extraY * 0.5f;
-        if (label.style.verticalAlign == TextVerticalAlign::Bottom) y += extraY;
+
+        if (label.style.align == TextAlign::Center) 
+        {
+            x += extraX * 0.5f;
+        }
+
+        if (label.style.align == TextAlign::Right) 
+        {
+            x += extraX;
+        }
+
+        if (label.style.verticalAlign == TextVerticalAlign::Center) 
+        {
+            y += extraY * 0.5f;
+        }
+    
+        if (label.style.verticalAlign == TextVerticalAlign::Bottom) 
+        {
+            y += extraY;
+        }
+
         // Align origins to physical pixels for crisp small UI lettering.
         x = std::round(x * pixelsPerUnit) / pixelsPerUnit;
         y = std::round(y * pixelsPerUnit) / pixelsPerUnit;
+
         for (auto* seq = TTF_GetGPUTextDrawData(label.text); seq; seq = seq->next)
         {
             // Plain grayscale and bitmap-color fonts use the same shader.
             // SDF and underline/strike-through fill geometry need other shaders.
             if (!seq->atlas_texture || (seq->image_type != TTF_IMAGE_ALPHA && seq->image_type != TTF_IMAGE_COLOR))
+            {
                 throw std::runtime_error("This text renderer supports normal glyph images, not SDF or solid text decorations");
+            }
+
             const auto first = static_cast<Uint32>(mesh.size());
+
             for (int i = 0; i < seq->num_indices; ++i)
             {
                 const int index = seq->indices[i];
+    
                 // SDL_ttf's GPU positions are Y-up; our UI coordinates are Y-down.
-                mesh.push_back({x + seq->xy[index].x / pixelsPerUnit,
-                                y - seq->xy[index].y / pixelsPerUnit,
-                                seq->uv[index].x, seq->uv[index].y, label.style.color});
+                mesh.push_back({x + seq->xy[index].x / pixelsPerUnit, y - seq->xy[index].y / pixelsPerUnit, seq->uv[index].x, seq->uv[index].y, label.style.color});
             }
-            nextBatches.push_back({seq->atlas_texture, first, static_cast<Uint32>(seq->num_indices), label.bounds});
+
+            UiRect clip = label.bounds;
+
+            if (label.clip)
+            {
+                const float right = std::min(clip.x + clip.w, label.clip->x + label.clip->w);
+                const float bottom = std::min(clip.y + clip.h, label.clip->y + label.clip->h);
+                clip.x = std::max(clip.x, label.clip->x);
+                clip.y = std::max(clip.y, label.clip->y);
+                clip.w = std::max(0.0f, right - clip.x);
+                clip.h = std::max(0.0f, bottom - clip.y);
+            }
+
+            nextBatches.push_back({seq->atlas_texture, first, static_cast<Uint32>(seq->num_indices), clip, label.group});
         }
     }
     SDL_GPUBuffer* replacement = UploadVertices(device, mesh);
-    if (vertices) SDL_ReleaseGPUBuffer(device, vertices);
+
+    if (vertices) 
+    {
+        SDL_ReleaseGPUBuffer(device, vertices);
+    }
+
     vertices = replacement;
     batches = std::move(nextBatches);
     rasterScale = pixelsPerUnit;
     dirty = false;
 }
 
-void TextRenderer::Draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, float logicalWidth, float logicalHeight, Uint32 pixelWidth, Uint32 pixelHeight) const
+SDL_FPoint TextRenderer::MeasureText(std::string_view utf8, const TextStyle& style, float scale)
+{
+    if (utf8.empty()) 
+    {
+        return {};
+    }
+
+    int width = 0, height = 0;
+
+    if (!TTF_GetStringSize(GetFont(style, scale), utf8.data(), utf8.size(), &width, &height))
+    {
+        FailText("Measure input text");
+    }
+
+    return {width / scale, height / scale};
+}
+
+void TextRenderer::Draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, float logicalWidth, float logicalHeight, Uint32 pixelWidth, Uint32 pixelHeight, std::uint32_t group) const
 {
     if (!vertices || batches.empty() || dirty) 
     {
@@ -297,6 +521,11 @@ void TextRenderer::Draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
 
     for (const auto& batch : batches)
     {
+        if (batch.group != group) 
+        {
+            continue;
+        }
+
         const int left = static_cast<int>(std::clamp(std::ceil(batch.clip.x * sx), 0.0f, static_cast<float>(pixelWidth)));
         const int top = static_cast<int>(std::clamp(std::ceil(batch.clip.y * sy), 0.0f, static_cast<float>(pixelHeight)));
         const int right = static_cast<int>(std::clamp(std::floor((batch.clip.x + batch.clip.w) * sx), 0.0f, static_cast<float>(pixelWidth)));

@@ -40,6 +40,7 @@ void UiManager::RefreshLayout()
     layout = next;
     LayoutUiButtons(buttons, minimap, layout);
     bottomBarText.SetLayout(layout);
+    for (auto& panel : windows) panel->SetScreenSize(layout.width, layout.height);
     layoutDirty = false;
     geometryDirty = outlineDirty = true;
 }
@@ -58,7 +59,7 @@ const UiLayout& UiManager::GetLayout()
 
 bool UiManager::IsWorldPoint(float x, float y)
 {
-    return GetLayout().IsWorldPoint(x, y) && !buttons.BlocksPointer(x, y);
+    return GetLayout().IsWorldPoint(x, y) && !buttons.BlocksPointer(x, y) && !WindowAt(x, y);
 }
 
 SDL_Rect UiManager::GetWorldViewport(Uint32 pixelWidth, Uint32 pixelHeight)
@@ -71,6 +72,7 @@ SDL_Rect UiManager::GetWorldViewport(Uint32 pixelWidth, Uint32 pixelHeight)
 void UiManager::CancelInteraction()
 {
     CancelUiButtonInteraction(buttons);
+    CancelWindowInteraction();
 }
 
 void UiManager::SetMinimized(bool minimized)
@@ -86,6 +88,7 @@ void UiManager::SetMinimized(bool minimized)
     }
 
     SetUiMinimized(settings, buttons, minimized);
+    CancelWindowInteraction();
     layoutDirty = true;
     RefreshLayout();
 }
@@ -108,6 +111,7 @@ void UiManager::SetSettings(const UiSettings& next)
     }
 
     settings = next;
+    CancelWindowInteraction();
     SetUiMinimized(settings, buttons, next.minimized);
     layoutDirty = true;
     RefreshLayout();
@@ -257,7 +261,10 @@ bool UiManager::HandleEvent(const SDL_Event& event)
 
     RefreshLayout();
 
-    // Existing controls get first refusal, including Escape for open flyouts.
+    // Floating windows are drawn above the docks and get first refusal.
+    if (HandleWindowEvent(event)) return true;
+
+    // Dock controls handle their own flyouts and capture.
     const auto result = HandleUiButtonEvent(window, event, settings, buttons, minimap);
 
     if (result.consumed && event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT)
