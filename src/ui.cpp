@@ -31,7 +31,7 @@ namespace
 
     constexpr float ToolbarButtonWidth = 84.0f;
     constexpr float ToolbarButtonHeight = 50.0f;
-    constexpr float ToolbarButtonGap = 8.0f;
+    constexpr float ToolbarButtonGap = 16.0f;
 
     struct ToolbarButtonDefinition
     {
