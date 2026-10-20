@@ -29,48 +29,53 @@ namespace
 
     // Nearest the toolbar first, extending left, like the existing zoning menu.
     constexpr std::array<TransportButtonDefinition, 6> Categories{{
-        {UiButtonIds::RoadsMenuButton, "Roads"},
-        {UiButtonIds::HighwaysMenuButton, "Highways"},
-        {UiButtonIds::RailroadsMenuButton, "Railroads"},
-        {UiButtonIds::CommuterRailMenuButton, "Commuter Rail"},
-        {UiButtonIds::SeaMenuButton, "Sea"},
-        {UiButtonIds::AirportMenuButton, "Airport"}
+        {UiButtonIds::RoadsMenuButton, "Roads", "ui/toolbar/btn_road"},
+        {UiButtonIds::HighwaysMenuButton, "Highways", "ui/toolbar/btn_hwy"},
+        {UiButtonIds::RailroadsMenuButton, "Railroads", "ui/toolbar/btn_rail"},
+        {UiButtonIds::CommuterRailMenuButton, "Commuter Rail", "ui/toolbar/btn_commuter_rail"},
+        {UiButtonIds::SeaMenuButton, "Sea", "ui/toolbar/btn_sea"},
+        {UiButtonIds::AirportMenuButton, "Air", "ui/toolbar/btn_air"}
     }};
 
     // Submenu order is top to bottom, directly below the category button.
     constexpr std::array<TransportButtonDefinition, 6> Roads{{
-        {UiButtonIds::DirtRoadButton, "Dirt Road"},
-        {UiButtonIds::RoadButton, "Road"},
-        {UiButtonIds::AvenueButton, "Avenue"},
-        {UiButtonIds::OneWayRoadButton, "One-way"},
-        {UiButtonIds::TramButton, "Tram"},
-        {UiButtonIds::TramStationButton, "Tram Station"}
+        {UiButtonIds::DirtRoadButton, "Dirt Road", "ui/toolbar/btn_dirt_road"},
+        {UiButtonIds::RoadButton, "Road", "ui/toolbar/btn_road"},
+        {UiButtonIds::AvenueButton, "Avenue", "ui/toolbar/btn_avenue"},
+        {UiButtonIds::OneWayRoadButton, "One-way", "ui/toolbar/btn_oneway"},
+        {UiButtonIds::TramButton, "Tram", "ui/toolbar/btn_tram"},
+        {UiButtonIds::TramStationButton, "Tram Stop", "ui/toolbar/btn_tram_stop"}
     }};
+
     constexpr std::array<TransportButtonDefinition, 0> Highways{}; // Add tools here later.
+
     constexpr std::array<TransportButtonDefinition, 4> Railroads{{
-        {UiButtonIds::RailroadButton, "Railroad"},
-        {UiButtonIds::RailroadPassengerStationButton, "Passenger Station"},
-        {UiButtonIds::RailroadFreightStationButton, "Freight Station"},
-        {UiButtonIds::GrandStationButton, "Grand Station"}
+        {UiButtonIds::RailroadButton, "Railroad", "ui/toolbar/btn_railroad"},
+        {UiButtonIds::RailroadPassengerStationButton, "Passenger Station", "ui/toolbar/btn_passenger_station"},
+        {UiButtonIds::RailroadFreightStationButton, "Freight Station", "ui/toolbar/btn_freight_station"},
+        {UiButtonIds::GrandStationButton, "Grand Station", "ui/toolbar/btn_grand_station"}
     }};
+
     constexpr std::array<TransportButtonDefinition, 7> CommuterRail{{
-        {UiButtonIds::SubwayButton, "Subway"},
-        {UiButtonIds::SubwayStationButton, "Subway Station"},
-        {UiButtonIds::ElevatedRailButton, "Elevated Rail"},
-        {UiButtonIds::ElevatedRailStationButton, "Elevated Rail Station"},
-        {UiButtonIds::SubwayElevatedConnectorButton, "Subway to Elevated Rail Connector"},
-        {UiButtonIds::MonorailButton, "Monorail"},
-        {UiButtonIds::MonorailStationButton, "Monorail Station"}
+        {UiButtonIds::SubwayButton, "Subway", "ui/toolbar/btn_subway"},
+        {UiButtonIds::SubwayStationButton, "Subway Station", "ui/toolbar/btn_subway_station"},
+        {UiButtonIds::ElevatedRailButton, "Elevated Rail", "ui/toolbar/btn_elevated_rail"},
+        {UiButtonIds::ElevatedRailStationButton, "Elevated Rail Station", "ui/toolbar/btn_elevated_rail_station"},
+        {UiButtonIds::SubwayElevatedConnectorButton, "Subway to Elevated Rail Connector", "ui/toolbar/btn_s_to_e"},
+        {UiButtonIds::MonorailButton, "Monorail", "ui/toolbar/btn_monorail"},
+        {UiButtonIds::MonorailStationButton, "Monorail Station", "ui/toolbar/btn_monorail_station"}
     }};
+
     constexpr std::array<TransportButtonDefinition, 2> Sea{{
-        {UiButtonIds::FerryButton, "Ferry"},
-        {UiButtonIds::SeaportButton, "Seaport"}
+        {UiButtonIds::FerryButton, "Ferry", "ui/toolbar/btn_ferry"},
+        {UiButtonIds::SeaportButton, "Seaport", "ui/toolbar/btn_seaport"}
     }};
+
     constexpr std::array<TransportButtonDefinition, 4> Airport{{
-        {UiButtonIds::AirportButton, "Airport"},
-        {UiButtonIds::RunwayButton, "Runway"},
-        {UiButtonIds::TarmacButton, "Tarmac"},
-        {UiButtonIds::TerminalButton, "Terminal"}
+        {UiButtonIds::AirportButton, "Airport", "ui/toolbar/btn_airport"},
+        {UiButtonIds::RunwayButton, "Runway", "ui/toolbar/btn_runway"},
+        {UiButtonIds::TarmacButton, "Tarmac", "ui/toolbar/btn_tarmac"},
+        {UiButtonIds::TerminalButton, "Terminal", "ui/toolbar/btn_terminal"}
     }};
 
     struct TransportMenuDefinition
