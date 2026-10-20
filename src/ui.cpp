@@ -30,12 +30,13 @@ namespace
     }};
 
     // Display order, top to bottom. These buttons have no game actions yet.
-    constexpr std::array<ButtonDefinition, 6> ToolbarButtons{{
+    constexpr std::array<ButtonDefinition, 7> ToolbarButtons{{
         {UiButtonIds::TerrainButton, "ui/toolbar/btn_terrain"},
         {UiButtonIds::ZonesButton, "ui/toolbar/btn_zones"},
         {UiButtonIds::InfrastructureButton, "ui/toolbar/btn_infra"},
         {UiButtonIds::UtilitiesButton, "ui/toolbar/btn_util"},
         {UiButtonIds::GovernmentButton, "ui/toolbar/btn_gov"},
+        {UiButtonIds::GovernmentButton, "ui/toolbar/btn_bulldozer"},
         {UiButtonIds::DisastersButton, "ui/toolbar/btn_disaster"}
     }};
 
