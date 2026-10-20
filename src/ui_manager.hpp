@@ -6,6 +6,7 @@
 #include "ui_minimap.hpp"
 #include "ui_text.hpp"
 #include "ui_window.hpp"
+#include "ui_tooltip.hpp"
 
 #include <functional>
 #include <memory>
@@ -78,6 +79,7 @@ private:
     void OnUiButtonClicked(UiButtonId id);
     void UpdateTicker(int simulationSpeed);
     void UpdateTickerHover();
+    void PrepareTooltip(bool mousePanning, Uint32 pixelWidth, Uint32 pixelHeight);
     bool HandleMinimapEvent(const SDL_Event& event);
     SDL_GPUGraphicsPipeline* MakePipeline();
     void EnsureGeometry();
@@ -102,6 +104,7 @@ private:
     UiButtons buttons;
     UiMinimap minimap;
     TextRenderer textRenderer;
+    UiTooltip tooltip;
     BottomBarText bottomBarText;
     UiImageRenderer imageRenderer;
     PanOverlay panOverlay;

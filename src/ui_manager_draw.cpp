@@ -46,6 +46,7 @@ void UiManager::Initialize(SDL_GPUDevice* gpu, SDL_Window* targetWindow, Texture
         textVertexShader = CompileShader(device, TextVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
         textFragmentShader = CompileShader(device, TextFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
         textRenderer.Initialize(device, textVertexShader, textFragmentShader, format);
+        tooltip.Initialize(device, textRenderer);
         bottomBarText.Initialize(textRenderer);
         imageVertexShader = CompileShader(device, UiImageVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
         imageFragmentShader = CompileShader(device, UiImageFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
@@ -76,6 +77,7 @@ void UiManager::Release()
     initialized = false;
     buttons.Clear();
     windows.clear(); // Destroy their labels before the shared text renderer.
+    tooltip.Release();
     windowRanges.clear();
     windowMesh.clear();
     panOverlay.Release();
@@ -199,12 +201,41 @@ void UiManager::PrepareFrame(bool mousePanning)
         const float scale = std::max(static_cast<float>(pixelWidth) / layout.width, static_cast<float>(pixelHeight) / layout.height);
 
         PrepareWindows(mousePanning, scale);
+        PrepareTooltip(mousePanning, static_cast<Uint32>(pixelWidth), static_cast<Uint32>(pixelHeight));
 
-        if (!layout.minimized) 
+        if (!layout.minimized || tooltip.IsVisible())
         {
             textRenderer.Prepare(scale);
         }
     }
+    else
+    {
+        tooltip.Hide();
+    }
+}
+
+void UiManager::PrepareTooltip(bool mousePanning, Uint32 pixelWidth, Uint32 pixelHeight)
+{
+    float x = 0, y = 0;
+    const auto mouse = SDL_GetMouseState(&x, &y);
+    const auto flags = SDL_GetWindowFlags(window);
+    const UiButton* target = nullptr;
+    if (!mousePanning && !mouse && !buttons.HasCapture() && !capturedWindow &&
+        (flags & SDL_WINDOW_INPUT_FOCUS) && (flags & SDL_WINDOW_MOUSE_FOCUS))
+    {
+        if (!layout.minimized)
+        {
+            if (auto* panel = WindowAt(x, y)) target = panel->HoveredButton();
+            else if (!cityCreationPending) target = buttons.ButtonAt(x, y);
+        }
+        else if (!cityCreationPending)
+        {
+            // The restore button is still available while the docks are hidden.
+            target = buttons.ButtonAt(x, y);
+        }
+    }
+    tooltip.Update(target, SDL_GetTicks());
+    tooltip.Prepare(layout.width, layout.height, pixelWidth, pixelHeight);
 }
 
 void UiManager::UploadFrame(SDL_GPUCommandBuffer* commands, const Camera& camera, float mapExtent, Uint32 pixelWidth, Uint32 pixelHeight)
@@ -397,6 +428,7 @@ void UiManager::Draw(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target, Uin
 
     if (!cityCreationPending)
         panOverlay.Draw(imageRenderer, commands, pass, layout.width, layout.height, camera.GetMousePan(), camera.GetPanSettings());
+    tooltip.Draw(commands, pass, pipeline, layout.width, layout.height, width, height);
     SDL_EndGPURenderPass(pass);
 
 }

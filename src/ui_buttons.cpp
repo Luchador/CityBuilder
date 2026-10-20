@@ -214,6 +214,12 @@ bool UiButtons::BlocksPointer(float x, float y) const
     return TopButton(x, y) != nullptr || (menu && menu->bounds.Contains(x, y));
 }
 
+const UiButton* UiButtons::ButtonAt(float x, float y) const
+{
+    const auto* entry = TopButton(x, y);
+    return entry ? entry->button.get() : nullptr;
+}
+
 void UiButtons::PointerMove(float x, float y)
 {
     if (openFlyout && !ActiveFlyout())

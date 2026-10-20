@@ -25,6 +25,7 @@ public:
     UiButton& Add(UiButtonId id, UiButtonTextures textures);
     UiButton* Find(UiButtonId id);
     const UiButton* Find(UiButtonId id) const;
+    const UiButton* ButtonAt(float x, float y) const;
     bool Remove(UiButtonId id);
     void Clear();
 

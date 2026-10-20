@@ -59,6 +59,8 @@ public:
                         std::string_view text, bool checked = false);
     const std::string& GetText(UiControlId id) const;
     void SetText(UiControlId id, std::string_view text);
+    void SetTooltip(UiControlId id, std::string_view text);
+    void SetCloseTooltip(std::string_view text) { closeButton.SetTooltip(text); }
     bool IsChecked(UiControlId id) const;
     void SetChecked(UiControlId id);
 
@@ -71,6 +73,7 @@ public:
     UiRect GetTextInputBounds() const;
     int GetTextInputCursorOffset() const;
     bool HitTest(float x, float y) const;
+    const UiButton* HoveredButton() const;
     bool HasCapture() const { return capturing; }
     void PointerDown(float x, float y);
     void PointerMove(float x, float y);

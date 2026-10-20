@@ -61,6 +61,7 @@ UiWindow::UiWindow(UiWindowId identifier, std::string_view caption, UiRect recta
     style.size = 18;
     title = &renderer.CreateLabel(caption, style);
     title->SetGroup(id);
+    closeButton.SetTooltip("Close");
 
     LayoutControls();
 }
@@ -417,6 +418,22 @@ int UiWindow::GetTextInputCursorOffset() const
 }
 
 bool UiWindow::HitTest(float x, float y) const { return open && bounds.Contains(x, y); }
+
+void UiWindow::SetTooltip(UiControlId id, std::string_view text)
+{
+    auto& control = Find(id);
+    if (!control.button) throw std::invalid_argument("Tooltips require a button control");
+    control.button->SetTooltip(text);
+}
+
+const UiButton* UiWindow::HoveredButton() const
+{
+    if (!open || !shown || capturing) return nullptr;
+    if (closable && closeButton.IsHovered()) return &closeButton;
+    for (auto it = controls.rbegin(); it != controls.rend(); ++it)
+        if ((*it)->button && (*it)->button->IsHovered()) return (*it)->button.get();
+    return nullptr;
+}
 
 UiWindow::Control* UiWindow::ControlAt(float x, float y)
 {

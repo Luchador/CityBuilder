@@ -15,7 +15,7 @@ UiWindow& UiManager::AddWindow(std::string_view title, UiRect bounds)
         throw std::logic_error("Initialize UI before creating a window");
     }
 
-    if (nextWindowId == 0) 
+    if (nextWindowId == 0 || nextWindowId == UiTooltip::TextGroup)
     {
         throw std::overflow_error("Window IDs exhausted");
     }
@@ -44,6 +44,7 @@ UiWindow* UiManager::FindWindow(UiWindowId id)
 
 void UiManager::OpenWindow(UiWindowId id)
 {
+    tooltip.Hide();
     auto* panel = FindWindow(id);
 
     if (!panel) 

@@ -81,6 +81,9 @@ public:
     void DestroyLabel(TextLabel& label);
     void Prepare(float pixelsPerUnit = 1.0f);
     SDL_FPoint MeasureText(std::string_view utf8, const TextStyle& style, float scale = 1.0f);
+    // Width zero honors explicit line breaks only; positive widths also wrap words.
+    SDL_FPoint MeasureWrappedText(std::string_view utf8, const TextStyle& style,
+                                 float maxWidth, float scale = 1.0f);
     void Draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass,
               float logicalWidth, float logicalHeight, Uint32 pixelWidth, Uint32 pixelHeight,
               std::uint32_t group = 0) const;

@@ -145,14 +145,16 @@ bool UiButton::PointerDown(float x, float y)
         return false;
     }
 
-    pressed = hovered = true;
+    pressed = true;
+    SetHovered(true);
+    ++hoverRevision;
 
     return true;
 }
 
 void UiButton::PointerMove(float x, float y)
 {
-    hovered = enabled && HitTest(x, y);
+    SetHovered(enabled && HitTest(x, y));
 }
 
 bool UiButton::PointerUp(float x, float y)
@@ -161,14 +163,16 @@ bool UiButton::PointerUp(float x, float y)
     const bool clicked = pressed && inside;
 
     pressed = false;
-    hovered = inside;
+    SetHovered(inside);
+    ++hoverRevision;
 
     return clicked;
 }
 
 void UiButton::CancelPress()
 {
-    pressed = hovered = false;
+    pressed = false;
+    SetHovered(false);
     highlighted = false;
 }
 

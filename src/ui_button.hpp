@@ -2,6 +2,8 @@
 
 #include "ui.hpp"
 #include <functional>
+#include <string>
+#include <string_view>
 
 class Texture;
 
@@ -35,6 +37,10 @@ public:
     void SetHitInsets(UiButtonInsets insets);
     UiRect GetHitBounds() const;
     void SetTextures(UiButtonTextures images);
+    // Empty text disables the tooltip. Text is owned; temporary strings are safe.
+    void SetTooltip(std::string_view text) { tooltip = text; }
+    const std::string& GetTooltip() const { return tooltip; }
+    std::uint64_t GetHoverRevision() const { return hoverRevision; }
     void SetShape(UiButtonShape value);
     // Receives normalized coordinates in the inset hit rectangle, from 0 to 1.
     // Installing a function also selects Custom. An empty function never hits.
@@ -59,7 +65,7 @@ public:
     bool HitTest(float x, float y) const;
     bool PointerDown(float x, float y); // True if this button accepted the press.
     void PointerMove(float x, float y);
-    void PointerLeave() { hovered = false; }
+    void PointerLeave() { SetHovered(false); }
     bool PointerUp(float x, float y);   // True once for a completed click.
     void CancelPress();
 
@@ -67,6 +73,12 @@ public:
     const Texture* GetTexture() const;
 
 private:
+    void SetHovered(bool value)
+    {
+        if (hovered != value) { hovered = value; ++hoverRevision; }
+    }
+    std::string tooltip;
+    std::uint64_t hoverRevision = 0;
     UiRect bounds{};
     UiButtonInsets hitInsets{};
     UiButtonTextures textures{};

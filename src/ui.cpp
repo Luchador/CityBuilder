@@ -17,16 +17,17 @@ namespace
     {
         UiButtonId id;
         const char* imageStem; // Relative to assets/, without state suffix or .png.
+        const char* tooltip = ""; // Optional; use \n for an explicit line break.
         UiButtonShape shape = UiButtonShape::Rectangle;
         const char* hoverSuffix = "_hov.png";
     };
 
     constexpr std::array<ButtonDefinition, 5> MinimapButtons{{
-        {UiButtonIds::ZoomInButton, "ui/btn_zoom_in", UiButtonShape::Circle},
-        {UiButtonIds::ZoomOutButton, "ui/btn_zoom_out", UiButtonShape::Circle},
-        {UiButtonIds::RotateClockwiseButton, "ui/btn_rotate_cw"},
-        {UiButtonIds::RotateCounterClockwiseButton, "ui/btn_rotate_ccw"},
-        {UiButtonIds::MinimizeUIButton, "ui/btn_minimize"}
+        {UiButtonIds::ZoomInButton, "ui/btn_zoom_in", "Zoom in", UiButtonShape::Circle},
+        {UiButtonIds::ZoomOutButton, "ui/btn_zoom_out", "Zoom out", UiButtonShape::Circle},
+        {UiButtonIds::RotateClockwiseButton, "ui/btn_rotate_cw", "Rotate clockwise\nShortcut: ,"},
+        {UiButtonIds::RotateCounterClockwiseButton, "ui/btn_rotate_ccw", "Rotate counterclockwise\nShortcut: ."},
+        {UiButtonIds::MinimizeUIButton, "ui/btn_minimize", "Hide / show the UI\nShortcut: Tab"}
     }};
 
     constexpr float ToolbarButtonWidth = 84.0f;
@@ -43,41 +44,41 @@ namespace
 
     // Display order, top to bottom. Sizes are before the common UI scale.
     constexpr std::array<ToolbarButtonDefinition, 7> ToolbarButtons{{
-        {{UiButtonIds::TerrainButton, "ui/toolbar/btn_terrain"}},
-        {{UiButtonIds::ZonesButton, "ui/toolbar/btn_zones"}},
-        {{UiButtonIds::TransportationButton, "ui/toolbar/btn_transp"}},
-        {{UiButtonIds::UtilitiesButton, "ui/toolbar/btn_util"}},
-        {{UiButtonIds::GovernmentButton, "ui/toolbar/btn_gov"}},
-        {{UiButtonIds::BulldozerButton, "ui/toolbar/btn_bulldozer"}, 48.0f, 24.0f},
-        {{UiButtonIds::DisastersButton, "ui/toolbar/btn_disaster"}, 48.0f, 24.0f}
+        {{UiButtonIds::TerrainButton, "ui/toolbar/btn_terrain", "Terrain"}},
+        {{UiButtonIds::ZonesButton, "ui/toolbar/btn_zones", "Zones"}},
+        {{UiButtonIds::TransportationButton, "ui/toolbar/btn_transp", "Transportation"}},
+        {{UiButtonIds::UtilitiesButton, "ui/toolbar/btn_util", "Utilities"}},
+        {{UiButtonIds::GovernmentButton, "ui/toolbar/btn_gov", "Government"}},
+        {{UiButtonIds::BulldozerButton, "ui/toolbar/btn_bulldozer", "Bulldozer"}, 48.0f, 24.0f},
+        {{UiButtonIds::DisastersButton, "ui/toolbar/btn_disaster", "Disasters"}, 48.0f, 24.0f}
     }};
 
     // Bottom to top, anchored above the minimap rather than below the top group.
     constexpr std::array<ToolbarButtonDefinition, 4> BottomToolbarButtons{{
-        {{UiButtonIds::OptionsButton, "ui/toolbar/btn_options"}},
-        {{UiButtonIds::DataButton, "ui/toolbar/btn_data"}},
-        {{UiButtonIds::MeetButton, "ui/toolbar/btn_meet"}},
-        {{UiButtonIds::DayButton, "ui/toolbar/btn_day"}}
+        {{UiButtonIds::OptionsButton, "ui/toolbar/btn_options", "Options"}},
+        {{UiButtonIds::DataButton, "ui/toolbar/btn_data", "Data"}},
+        {{UiButtonIds::MeetButton, "ui/toolbar/btn_meet", "Meet with Advisors"}},
+        {{UiButtonIds::DayButton, "ui/toolbar/btn_day", "Day / night"}}
     }};
 
     // Nearest the toolbar first, extending to the left. These are placeholders;
     // IDs are returned on release, ready for tool actions or more menus later.
     constexpr std::array<ButtonDefinition, 4> ZoningButtons{{
-        {UiButtonIds::ResidentialButton, "ui/toolbar/btn_res", UiButtonShape::Circle},
-        {UiButtonIds::CommercialButton, "ui/toolbar/btn_com", UiButtonShape::Circle},
-        {UiButtonIds::IndustrialButton, "ui/toolbar/btn_ind", UiButtonShape::Circle},
-        {UiButtonIds::DezoneButton, "ui/toolbar/btn_dezone", UiButtonShape::Circle}
+        {UiButtonIds::ResidentialButton, "ui/toolbar/btn_res", "Residential zoning", UiButtonShape::Circle},
+        {UiButtonIds::CommercialButton, "ui/toolbar/btn_com", "Commercial zoning", UiButtonShape::Circle},
+        {UiButtonIds::IndustrialButton, "ui/toolbar/btn_ind", "Industrial zoning", UiButtonShape::Circle},
+        {UiButtonIds::DezoneButton, "ui/toolbar/btn_dezone", "Dezone", UiButtonShape::Circle}
     }};
     constexpr float ZoningButtonSize = 48.0f;
     constexpr float ZoningButtonGap = 8.0f;
 
     constexpr std::array<ButtonDefinition, 6> TickerButtons{{
-        {UiButtonIds::TickerPauseButton, "ui/ticker/btn_pause"},
-        {UiButtonIds::TickerSpeedButton1, "ui/ticker/btn_tickersquare"},
-        {UiButtonIds::TickerSpeedButton2, "ui/ticker/btn_tickersquare"},
-        {UiButtonIds::TickerSpeedButton3, "ui/ticker/btn_tickersquare"},
-        {UiButtonIds::TickerSpeedButton4, "ui/ticker/btn_tickersquare"},
-        {UiButtonIds::TickerPlayButton, "ui/ticker/btn_play"}
+        {UiButtonIds::TickerPauseButton, "ui/ticker/btn_pause", "Pause simulation"},
+        {UiButtonIds::TickerSpeedButton1, "ui/ticker/btn_tickersquare", "Simulation speed: 1"},
+        {UiButtonIds::TickerSpeedButton2, "ui/ticker/btn_tickersquare", "Simulation speed: 2"},
+        {UiButtonIds::TickerSpeedButton3, "ui/ticker/btn_tickersquare", "Simulation speed: 3"},
+        {UiButtonIds::TickerSpeedButton4, "ui/ticker/btn_tickersquare", "Simulation speed: 4"},
+        {UiButtonIds::TickerPlayButton, "ui/ticker/btn_play", "Resume simulation"}
     }};
 
     void AddButton(UiButtons& buttons, TextureManager& textures, const ButtonDefinition& definition)
@@ -91,6 +92,7 @@ namespace
         });
     
         button.SetShape(definition.shape);
+        button.SetTooltip(definition.tooltip);
     }
 
     void LayoutTickerButtons(UiButtons& buttons, const UiLayout& layout)

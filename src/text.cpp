@@ -504,6 +504,19 @@ SDL_FPoint TextRenderer::MeasureText(std::string_view utf8, const TextStyle& sty
     return {width / scale, height / scale};
 }
 
+SDL_FPoint TextRenderer::MeasureWrappedText(std::string_view utf8, const TextStyle& style, float maxWidth, float scale)
+{
+    if (!std::isfinite(scale) || scale <= 0 || !std::isfinite(maxWidth) || maxWidth < 0 ||
+        static_cast<double>(maxWidth) * scale > std::numeric_limits<int>::max())
+        throw std::invalid_argument("Invalid wrapped text measurement size");
+    if (utf8.empty()) return {};
+    const int wrap = maxWidth > 0 ? std::max(1, static_cast<int>(maxWidth * scale)) : 0;
+    int width = 0, height = 0;
+    if (!TTF_GetStringSizeWrapped(GetFont(style, scale), utf8.data(), utf8.size(), wrap, &width, &height))
+        FailText("Measure wrapped text");
+    return {width / scale, height / scale};
+}
+
 void TextRenderer::Draw(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, float logicalWidth, float logicalHeight, Uint32 pixelWidth, Uint32 pixelHeight, std::uint32_t group) const
 {
     if (!vertices || batches.empty() || dirty) 

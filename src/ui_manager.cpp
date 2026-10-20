@@ -37,6 +37,7 @@ void UiManager::RefreshLayout()
         return;
     }
 
+    tooltip.Hide();
     layout = next;
     LayoutUiButtons(buttons, minimap, layout);
     bottomBarText.SetLayout(layout);
@@ -71,6 +72,7 @@ SDL_Rect UiManager::GetWorldViewport(Uint32 pixelWidth, Uint32 pixelHeight)
 
 void UiManager::CancelInteraction()
 {
+    tooltip.Hide();
     CancelUiButtonInteraction(buttons);
     CancelWindowInteraction();
 }
@@ -89,6 +91,7 @@ void UiManager::SetMinimized(bool minimized)
     }
 
     SetUiMinimized(settings, buttons, minimized);
+    tooltip.Hide();
     CancelWindowInteraction();
     layoutDirty = true;
     RefreshLayout();
@@ -273,6 +276,13 @@ bool UiManager::HandleEvent(const SDL_Event& event)
     }
 
     RefreshLayout();
+
+    if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN || event.type == SDL_EVENT_MOUSE_WHEEL ||
+        event.type == SDL_EVENT_KEY_DOWN || event.type == SDL_EVENT_WINDOW_FOCUS_LOST ||
+        event.type == SDL_EVENT_WINDOW_MOUSE_LEAVE)
+    {
+        tooltip.Hide();
+    }
 
     // Floating windows are drawn above the docks and get first refusal.
     if (HandleWindowEvent(event)) 
