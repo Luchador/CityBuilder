@@ -70,6 +70,11 @@ std::filesystem::path ExportViews(const Scene& scene,const RenderSettings& setti
                 <<",\n  \"lighting_divisor\": "<<LightingDivisor
                 <<",\n  \"shadows\": "<<(settings.lighting.shadows?"true":"false")
                 <<",\n  \"lighting_layers\": "<<(lightingLayers?"true":"false")
+                <<",\n  \"ambient_occlusion\": {\"enabled\": "<<(settings.ambientOcclusion.enabled?"true":"false")
+                <<", \"intensity\": "<<settings.ambientOcclusion.intensity
+                <<", \"radius_model_units\": "<<settings.ambientOcclusion.radius
+                <<", \"samples\": "<<settings.ambientOcclusion.samples
+                <<", \"bake_target\": \"linear albedo before sRGB encoding\"}"
                 <<",\n  \"lighting_formula\": \"displayRGB = albedo_sRGB * (ambient_color * ambient_intensity + directional_color * directional_intensity * sun_mask_linear) / lighting_divisor\",\n"
                 <<"  \"views\": [\n";
         for(unsigned view=0;view<4;++view)

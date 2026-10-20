@@ -108,7 +108,16 @@ namespace
         const auto& light=root.at("lighting");auto& lighting=settings.lighting;
         lighting.ambientColor=ReadColor(light.at("ambient_color"));lighting.directionalColor=ReadColor(light.at("directional_color"));
         lighting.ambientIntensity=Number(light.at("ambient_intensity"));lighting.directionalIntensity=Number(light.at("directional_intensity"));
-        lighting.shadows=light.at("shadows").get<bool>();settings.Validate();
+        lighting.shadows=light.at("shadows").get<bool>();
+        // Optional in version 1: scenes saved before AO was added keep it disabled.
+        settings.ambientOcclusion=AmbientOcclusion{};
+        if(root.contains("ambient_occlusion"))
+        {
+            const auto& encoded=root.at("ambient_occlusion");auto& ao=settings.ambientOcclusion;
+            ao.enabled=encoded.at("enabled").get<bool>();ao.intensity=Number(encoded.at("intensity"));
+            ao.radius=Number(encoded.at("radius"));ao.samples=Integer(encoded.at("samples"),16,256);
+        }
+        settings.Validate();
         const auto& output=root.at("output");document.outputDirectory=Resolve(output.at("directory"),folder);
         document.outputPrefix=String(output.at("prefix"));CheckPrefix(document.outputPrefix);
         document.exportLayers=output.at("lighting_layers").get<bool>();
@@ -159,11 +168,13 @@ void SaveSceneFile(const std::filesystem::path& path,const SceneDocument& docume
             throw std::runtime_error("Import a model before saving a scene");
         const auto destination=Absolute(path),folder=destination.parent_path();
         const auto& settings=document.settings;const auto& light=settings.lighting;
+        const auto& ao=settings.ambientOcclusion;
         Json root={
             {"format","CitiesUnlimited.RenderKit"},{"version",1},{"model",Reference(NativePath(document.scene.source),folder)},
             {"render",{{"width",settings.width},{"height",settings.height},{"padding",settings.padding},{"auto_fit",settings.autoFit},{"pixels_per_unit",settings.pixelsPerUnit}}},
             {"lighting",{{"ambient_color",Vector(light.ambientColor)},{"directional_color",Vector(light.directionalColor)},
                          {"ambient_intensity",light.ambientIntensity},{"directional_intensity",light.directionalIntensity},{"shadows",light.shadows}}},
+            {"ambient_occlusion",{{"enabled",ao.enabled},{"intensity",ao.intensity},{"radius",ao.radius},{"samples",ao.samples}}},
             {"output",{{"directory",Reference(document.outputDirectory,folder)},{"prefix",document.outputPrefix},{"lighting_layers",document.exportLayers}}},
             {"preview",{{"view",document.view},{"channel",document.previewChannel},{"material",document.selectedMaterial}}},
             {"materials",Json::array()}};

@@ -46,6 +46,8 @@ configure the root with `-DCITY_BUILD_RENDER_KIT=ON` and build target `RenderKit
    0 to 1. **Double-sided** is useful for foliage cards and other thin surfaces.
 4. Adjust ambient and directional light colors/strengths on the right. The
    light's world-space direction stays fixed while switching camera views.
+   Enable **Bake AO into albedo** for ambient occlusion; adjust its intensity,
+   radius and samples as described below.
 5. Set output width/height (16..4096), an export folder, and a file prefix.
    **Fit all four views** chooses one scale that fits every rotation, with the
    requested padding. Turn it off to specify **Pixels / unit** explicitly.
@@ -55,7 +57,7 @@ configure the root with `-DCITY_BUILD_RENDER_KIT=ON` and build target `RenderKit
 
 Panels scroll on smaller windows. The preview is capped in resolution for
 responsiveness; exports always use the requested full size. The preview's
-**Display** selector shows the lit sprite, alpha, unlit color, or sun mask.
+**Display** selector shows the lit sprite, alpha, albedo (including baked AO), or sun mask.
 Texture filtering is bilinear; preview display uses nearest-neighbor scaling
 so alpha edges can be inspected. Use **Save Scene...** in the top bar to keep
 those edits between sessions. Source models and textures are not modified.
@@ -77,6 +79,7 @@ A scene stores:
 - Tint, factor alpha, opaque/cut-out mode, cutoff, double-sided rendering,
   opacity channel/inversion/strength, base-alpha toggle, UV settings and wrapping.
 - Ambient/directional colors and intensities, plus self-shadow settings.
+- Ambient occlusion enabled state, intensity, radius and sample count.
 - Output dimensions, auto-fit/padding/manual scale, export folder, filename
   prefix and whether to export day/night layers.
 - The selected preview view, display channel and material.
@@ -99,6 +102,8 @@ Saves write a complete temporary file before replacing the chosen `.rks`. Load
 Scene replaces the current setup; save changes you want to keep first. Scene
 files use UTF-8 JSON with a format tag and version, allowing future migrations.
 They do not save preview images, generated sprites, undo history or UI layout.
+Older `.rks` files without AO settings still load with AO disabled. Save them
+again after enabling AO to retain the new settings.
 
 ## Camera and alignment
 
@@ -153,7 +158,7 @@ white-opaque grayscale; an existing FBX opacity UV mapping is retained.
 
 A sample below the cutoff is discarded. The ray continues to other triangles
 behind it, so windows, leaves, fences and stacked cut-out surfaces work. Cut-out
-also affects shadow rays. Surviving samples have alpha **255** (white); rays
+also affects shadow and ambient-occlusion rays. Surviving samples have alpha **255** (white); rays
 that miss have alpha **0** (black), including misses through cut-out holes.
 Dark or unlit model surfaces remain opaque. There are no fractional-alpha
 antialiased edge pixels. RGB is straight/unassociated, with transparent-black
@@ -174,12 +179,13 @@ Defaults match the current game's `WorldBrightness` convention:
 
 The vector retains the game's magnitude for diffuse intensity. Only its
 normalized direction is used for shadow rays. Direct light supports hard
-self-shadows. Ambient is uniform; there is no ambient occlusion, environment
-lighting, specular reflection, emission or bounce lighting.
+self-shadows. Ambient light has a uniform color; optional ambient occlusion is
+baked into surface color. There is no environment lighting, specular reflection,
+emission or bounce lighting.
 
 **Export day/night layers** additionally writes, for every view:
 
-- `*_albedo.png`: unlit surface color (sRGB).
+- `*_albedo.png`: surface color with any enabled AO baked in (sRGB).
 - `*_sun.png`: grayscale directional response, including cut-out/self-shadow
   occlusion. This is linear data, not an sRGB color texture.
 
@@ -197,6 +203,40 @@ cannot independently change those two light contributions. This patch supplies
 the layers and metadata; it does not yet add building sprite rendering to the
 game. If the game's lighting formula changes later, keep `render.hpp` and this
 formula synchronized. Camera rotation/pitch are already shared source.
+
+## Ambient occlusion
+
+Under **Lighting**, enable **Bake AO into albedo**. AO traces a hemisphere of
+rays around each visible surface point and darkens places blocked by nearby
+parts of the model. It works with both GLB and FBX and respects material cutoffs,
+base-color alpha, separate opacity maps and inverted masks. Occluders are tested
+on both sides, so thin foliage cards can block nearby light.
+
+- **AO intensity**: 0 bypasses AO; 1 applies its full strength. Start around
+  0.5–0.75 for subtle creases and foliage overlap.
+- **AO radius**: maximum distance to an occluder, in imported model units
+  (meters for FBX). Small values emphasize tight contacts; larger values darken
+  broader cavities and foliage clusters. It is independent of image resolution
+  and auto-fit. Ctrl+click the slider to type an exact value.
+- **AO samples**: 16–256 rays per visible point; default 64. Higher values reduce
+  sampling steps but increase CPU rendering time, especially with dense foliage.
+  Preview and export use the same deterministic sampling pattern and count.
+
+AO defaults to off, preserving existing scenes. It multiplies **linear base
+color before sRGB encoding**, then the normal light calculation uses that color.
+The **Albedo (baked AO)** preview isolates the result from directional lighting.
+Both the lit PNG and `*_albedo.png` contain AO; no separate AO sprite is produced.
+Alpha and the sun mask are unchanged, and the day/night formula above still
+works. Since AO is baked into albedo, its darkening affects both ambient and
+directional contributions and stays fixed as their colors/intensities change.
+It cannot be independently adjusted in the game without rerendering the sprites.
+
+AO only sees geometry in the imported model. There is no implicit ground plane
+or ground-contact shadow. Radius is a hard distance limit, and finite sampling
+can produce visible steps; increase samples when necessary. This is local
+occlusion, not global illumination or color bounce. Scene files and export
+metadata record the AO settings. **Reset lighting** resets the lights only;
+the AO controls remain as set.
 
 ## Exports
 
@@ -299,6 +339,9 @@ Existing checks cover cutoff changes, stacked cut-out layers, camera fitting,
 lighting-layer reconstruction and cancellation/overwrite protection. Scene-file
 checks cover GLB/FBX save/load, all settings, embedded/assigned/cleared textures,
 relative-path relocation, missing assets, invalid data and safe replacement.
+AO checks cover unobstructed surfaces, overhangs, radius/intensity changes,
+linear-color baking, cutouts, stable repeated renders, preserved alpha/sun masks,
+four-view exports, and compatibility with scenes saved before AO was added.
 
 The standalone project also supports an installed SDL3 via
 `-DRENDER_KIT_USE_INSTALLED_SDL=ON`. A window smoke test for development is

@@ -41,6 +41,7 @@ void SceneFileTests(const std::filesystem::path& folder)
     document.settings.lighting.ambientColor={.5f,.7f,.9f};document.settings.lighting.ambientIntensity=.35f;
     document.settings.lighting.directionalColor={1,.8f,.6f};document.settings.lighting.directionalIntensity=1.7f;
     document.settings.lighting.shadows=false;document.view=3;document.previewChannel=2;
+    document.settings.ambientOcclusion={true,.65f,2.5f,48};
     auto& material=document.scene.materials[0];
     material.baseFactor={.7f,.8f,.4f,.9f};material.cutoff=.25f;material.doubleSided=false;
     material.uvScale={.8f,1.2f};material.uvOffset={.2f,-.3f};material.uvRotation=.33f;
@@ -59,6 +60,12 @@ void SceneFileTests(const std::filesystem::path& folder)
     Check(loaded.view==3 && loaded.previewChannel==2 && loaded.outputPrefix=="test_scene" && !loaded.exportLayers,"Editor/output settings were not restored");
     rk::SaveSceneFile(secondPath,loaded);
     Check(Read(secondPath)==saved,"Scene roundtrip lost a setting");
+    Check(loaded.settings.ambientOcclusion.enabled && loaded.settings.ambientOcclusion.intensity==.65f &&
+          loaded.settings.ambientOcclusion.radius==2.5f && loaded.settings.ambientOcclusion.samples==48,"AO settings were not restored");
+    auto legacy=saved;legacy.erase("ambient_occlusion");Write(secondPath,legacy);
+    const auto oldScene=rk::LoadSceneFile(secondPath);
+    Check(!oldScene.settings.ambientOcclusion.enabled,"Pre-AO .rks files must retain their appearance");
+    auto original=document;original.settings.ambientOcclusion.enabled=false;CompareRender(original,oldScene);
 
     // A user-cleared texture must not be restored from the original model.
     material.baseColor.reset();material.opacity.reset();material.alphaMode=rk::AlphaMode::Opaque;
@@ -86,6 +93,13 @@ void SceneFileTests(const std::filesystem::path& folder)
 
     const auto valid=Read(scenePath);
     const auto invalidPath=folder/"invalid.rks";
+    for(const auto& field:{"intensity","radius","samples"})
+    {
+        auto badAo=valid;badAo["ambient_occlusion"][field]=-1;Write(invalidPath,badAo);
+        Reject([&]{rk::LoadSceneFile(invalidPath);},field==std::string("samples")?"range":"ambient occlusion");
+    }
+    auto badAo=valid;badAo["ambient_occlusion"]["radius"]=nullptr;Write(invalidPath,badAo);
+    Reject([&]{rk::LoadSceneFile(invalidPath);},"number");
     auto invalid=valid;invalid["version"]=99;Write(invalidPath,invalid);
     Reject([&]{rk::LoadSceneFile(invalidPath);},"version");
     invalid=valid;invalid["render"]["width"]=1.5;Write(invalidPath,invalid);
@@ -112,6 +126,9 @@ void SceneFileTests(const std::filesystem::path& folder)
     bad=document;bad.scene.materials[0].cutoff=std::numeric_limits<float>::quiet_NaN();
     Reject([&]{rk::SaveSceneFile(scenePath,bad);},"number");
     Check(Read(scenePath)==valid,"Nonfinite save overwrote existing scene");
+    bad=document;bad.settings.ambientOcclusion.radius=std::numeric_limits<float>::quiet_NaN();
+    Reject([&]{rk::SaveSceneFile(scenePath,bad);},"number");
+    Check(Read(scenePath)==valid,"Nonfinite AO save overwrote existing scene");
     const auto blocked=folder/"blocked.rks";std::filesystem::create_directory(blocked);
     Reject([&]{rk::SaveSceneFile(blocked,document);},"replace scene");
     for(const auto& entry:std::filesystem::directory_iterator(folder))

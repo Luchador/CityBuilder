@@ -481,6 +481,18 @@ namespace
             if(ImGui::SliderFloat("Sun strength",&light.directionalIntensity,0,3,"%.2f"))Changed();
             if(ImGui::Checkbox("Self shadows",&light.shadows))Changed();
             if(ImGui::Button("Reset lighting")){light=rk::Lighting{};Changed();}
+            ImGui::SeparatorText("Ambient occlusion");
+            auto& ao=settings.ambientOcclusion;
+            if(ImGui::Checkbox("Bake AO into albedo",&ao.enabled))Changed();
+            ImGui::BeginDisabled(!ao.enabled);
+            if(ImGui::SliderFloat("AO intensity",&ao.intensity,0,1,"%.2f",ImGuiSliderFlags_AlwaysClamp))Changed();
+            if(ImGui::SliderFloat("AO radius",&ao.radius,.001f,10000,"%.3f units",
+                ImGuiSliderFlags_Logarithmic|ImGuiSliderFlags_AlwaysClamp))Changed();
+            ImGui::SetItemTooltip("Maximum distance to nearby occluders, in model units (meters for FBX). Ctrl+click to enter a value.");
+            if(ImGui::SliderInt("AO samples",&ao.samples,16,256,"%d",ImGuiSliderFlags_AlwaysClamp))Changed();
+            ImGui::SetItemTooltip("More rays per surface point smooth the result but take longer. Preview and export use the same sample count.");
+            ImGui::EndDisabled();
+            ImGui::TextWrapped("AO darkens nearby creases and overlaps in the albedo and lit sprite. Alpha and the sun mask stay unchanged.");
             ImGui::Separator();ImGui::TextColored({.39f,.86f,.76f,1},"OUTPUT");
             int resolution[]={settings.width,settings.height};
             if(ImGui::InputInt2("Size (px)",resolution))
@@ -499,7 +511,7 @@ namespace
             {if(ImGui::DragFloat("Pixels / unit",&settings.pixelsPerUnit,1,1,4096,"%.1f",ImGuiSliderFlags_AlwaysClamp))Changed();}
             ImGui::TextWrapped("One common scale and center for all views. 1 model unit = 1 game tile.");
             ImGui::Checkbox("Export day/night layers",&exportLayers);
-            if(exportLayers)ImGui::TextWrapped("Adds unlit color and a directional-light mask for each view.");
+            if(exportLayers)ImGui::TextWrapped("Adds albedo (including baked AO) and a directional-light mask for each view.");
             ImGui::InputText("Prefix",prefix,sizeof(prefix));
             ImGui::SetNextItemWidth(-1);ImGui::InputTextWithHint("##outputDirectory","Export folder",outputDirectory,sizeof(outputDirectory));
             ImGui::BeginDisabled(job || inbox->pending);
@@ -528,7 +540,7 @@ namespace
             }
             ImGui::Text("Pitch 33 deg | Yaw %d deg | clockwise quarter-turn %d",45+view*90,view);
             ImGui::SetNextItemWidth(200);
-            if(ImGui::Combo("Display",&previewChannel,"Lit sprite\0Alpha mask\0Unlit color\0Sun mask\0"))UploadPreview();
+            if(ImGui::Combo("Display",&previewChannel,"Lit sprite\0Alpha mask\0Albedo (baked AO)\0Sun mask\0"))UploadPreview();
             const ImVec2 available=ImGui::GetContentRegionAvail();
             const ImVec2 top=ImGui::GetCursorScreenPos();
             const float width=std::max(1.0f,available.x),height=std::max(1.0f,available.y);

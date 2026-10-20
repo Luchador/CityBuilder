@@ -15,6 +15,14 @@ namespace renderkit
         float ambientIntensity = .55f, directionalIntensity = 1.0f;
         bool shadows = true;
     };
+    struct AmbientOcclusion
+    {
+        // Baked into linear base color before sRGB encoding, never into alpha/sun.
+        bool enabled = false;
+        float intensity = .75f; // 0 = unchanged, 1 = full occlusion strength.
+        float radius = 1.0f; // Maximum ray distance in imported model units.
+        int samples = 64;
+    };
     struct RenderSettings
     {
         int width = 512, height = 512;
@@ -22,6 +30,7 @@ namespace renderkit
         bool autoFit = true;
         float pixelsPerUnit = 32.0f;
         Lighting lighting;
+        AmbientOcclusion ambientOcclusion;
         void Validate() const;
     };
     struct Basis { Vec3 right, up, towardCamera; };
@@ -41,7 +50,8 @@ namespace renderkit
         float u = 0, v = 0;
     };
     Hit Trace(const Scene& scene, Vec3 origin, Vec3 direction, float maxDistance,
-              bool shadowRay = false);
+              bool shadowRay = false,
+              std::uint32_t ignoredTriangle = std::numeric_limits<std::uint32_t>::max());
     struct RenderImage
     {
         int width = 0, height = 0;

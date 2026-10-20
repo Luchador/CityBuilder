@@ -1,5 +1,6 @@
 #include "render.hpp"
 #include "camera.hpp"
+#include <numbers>
 #include <thread>
 #include <stdexcept>
 
@@ -64,13 +65,58 @@ namespace
     {
         return static_cast<std::uint8_t>(std::lround(std::clamp(value,0.0f,1.0f)*255));
     }
-    Vec3 AlbedoAt(const Triangle& triangle,const Material& material,float u,float v)
+    Vec3 AlbedoAt(const Triangle& triangle,const Material& material,float u,float v,float visibility)
     {
         const Vec4 texture=material.baseColor?material.baseColor->Sample(UvAt(triangle,material,u,v),material.wrapU,material.wrapV,true):Vec4{};
         const Vec4 color=ColorAt(triangle,u,v);
-        return {LinearToSrgb(texture.r*material.baseFactor.r*color.r),
-                LinearToSrgb(texture.g*material.baseFactor.g*color.g),
-                LinearToSrgb(texture.b*material.baseFactor.b*color.b)};
+        return {LinearToSrgb(texture.r*material.baseFactor.r*color.r*visibility),
+                LinearToSrgb(texture.g*material.baseFactor.g*color.g*visibility),
+                LinearToSrgb(texture.b*material.baseFactor.b*color.b*visibility)};
+    }
+    std::vector<Vec3> OcclusionSamples(const AmbientOcclusion& ao)
+    {
+        if(!ao.enabled || ao.intensity==0)return {};
+        std::vector<Vec3> samples;samples.reserve(ao.samples);
+        // Deterministic Hammersley points mapped onto a cosine-weighted hemisphere.
+        // No pixel/frame random seed: the same surface sees the same rays in all views.
+        for(int i=0;i<ao.samples;++i)
+        {
+            float inverse=0,weight=.5f;
+            for(auto bits=static_cast<unsigned>(i);bits;bits>>=1,weight*=.5f)
+                if(bits&1u)inverse+=weight;
+            const float u=(i+.5f)/ao.samples;
+            const float radius=std::sqrt(u),angle=2*std::numbers::pi_v<float>*inverse;
+            samples.push_back({radius*std::cos(angle),radius*std::sin(angle),std::sqrt(1-u)});
+        }
+        return samples;
+    }
+    float OcclusionVisibility(const Scene& scene,const Hit& hit,Vec3 normal,Vec3 cameraRay,
+                              const AmbientOcclusion& ao,const std::vector<Vec3>& samples,
+                              float bias,std::stop_token stop)
+    {
+        if(samples.empty())return 1;
+        const auto& v=scene.geometry->triangles[hit.triangle].vertices;
+        Vec3 geometric=Normalize(Cross(v[1].position-v[0].position,v[2].position-v[0].position));
+        // The visible side of a two-sided leaf must sample its outward hemisphere.
+        if(Dot(geometric,cameraRay)>0)geometric=geometric*-1.0f;
+        if(Dot(normal,geometric)<=0)normal=geometric;
+        const Vec3 tangent=Normalize(Cross(std::abs(normal.y)<.99f?Vec3{0,1,0}:Vec3{1,0,0},normal));
+        const Vec3 bitangent=Cross(normal,tangent);
+        const Vec3 point=v[0].position*(1-hit.u-hit.v)+v[1].position*hit.u+v[2].position*hit.v;
+        const Vec3 origin=point+geometric*std::min(bias,ao.radius*.001f);
+        int blocked=0;
+        for(const auto sample:samples)
+        {
+            if(stop.stop_requested())return 1;
+            const Vec3 ray=tangent*sample.x+bitangent*sample.y+normal*sample.z;
+            // Smooth shading normals can aim rays inside their own polygon. Do not
+            // let those rays create dark seams on otherwise exposed convex surfaces.
+            if(Dot(ray,geometric)<=0)continue;
+            // Any accepted hit within the radius blocks this sample. This uses the
+            // same PNG/cutoff test as camera rays, with two-sided shadow traversal.
+            if(Trace(scene,origin,ray,ao.radius,true,hit.triangle).found)++blocked;
+        }
+        return 1-ao.intensity*static_cast<float>(blocked)/static_cast<float>(samples.size());
     }
 }
 void RenderSettings::Validate() const
@@ -84,6 +130,10 @@ void RenderSettings::Validate() const
        !std::isfinite(lighting.ambientIntensity) || lighting.ambientIntensity<0 || lighting.ambientIntensity>10 ||
        !std::isfinite(lighting.directionalIntensity) || lighting.directionalIntensity<0 || lighting.directionalIntensity>10)
         throw std::invalid_argument("Invalid lighting settings");
+    const auto& ao=ambientOcclusion;
+    if(!std::isfinite(ao.intensity) || ao.intensity<0 || ao.intensity>1 ||
+       !std::isfinite(ao.radius) || ao.radius<.001f || ao.radius>10000 || ao.samples<16 || ao.samples>256)
+        throw std::invalid_argument("Invalid ambient occlusion settings: intensity 0..1, radius 0.001..10000, samples 16..256");
 }
 Basis ViewBasis(unsigned quarterTurns)
 {
@@ -127,7 +177,7 @@ Frame FitFrame(const Geometry& geometry,const RenderSettings& settings)
     }
     return frame;
 }
-Hit Trace(const Scene& scene,Vec3 origin,Vec3 direction,float maxDistance,bool shadowRay)
+Hit Trace(const Scene& scene,Vec3 origin,Vec3 direction,float maxDistance,bool shadowRay,std::uint32_t ignoredTriangle)
 {
     Hit closest;closest.distance=maxDistance;
     const auto& geometry=*scene.geometry;
@@ -142,6 +192,7 @@ Hit Trace(const Scene& scene,Vec3 origin,Vec3 direction,float maxDistance,bool s
         for(std::uint32_t i=node.first;i<node.first+node.count;++i)
         {
             const auto index=geometry.order[i];const auto& triangle=geometry.triangles[index];
+            if(index==ignoredTriangle)continue;
             const auto& material=scene.materials[triangle.material];
             const auto& p=triangle.vertices;
             const Vec3 e1=p[1].position-p[0].position,e2=p[2].position-p[0].position;
@@ -174,6 +225,7 @@ RenderImage Render(const Scene& scene,const RenderSettings& settings,const Frame
     const float worldPerPixel=2*frame.halfHeight/settings.height;
     const float shadowBias=std::max(1e-6f,Length(scene.geometry->bounds.max-scene.geometry->bounds.min)*1e-5f);
     const auto& light=settings.lighting;
+    const auto samples=OcclusionSamples(settings.ambientOcclusion);
     std::atomic<int> nextRow{0};
     const auto work=[&]
     {
@@ -181,6 +233,7 @@ RenderImage Render(const Scene& scene,const RenderSettings& settings,const Frame
         {
             for(int x=0;x<settings.width;++x)
             {
+                if(stop.stop_requested())return;
                 const Vec3 origin=frame.center+basis.towardCamera*frame.distance+
                     basis.right*((x+.5f-settings.width*.5f)*worldPerPixel)+
                     basis.up*((settings.height*.5f-y-.5f)*worldPerPixel);
@@ -196,7 +249,9 @@ RenderImage Render(const Scene& scene,const RenderSettings& settings,const Frame
                     const Vec3 point=origin+direction*hit.distance;
                     if(Trace(scene,point+normal*shadowBias+lightRay*shadowBias,lightRay,frame.distance*3,true).found)sun=0;
                 }
-                const Vec3 albedo=AlbedoAt(triangle,material,hit.u,hit.v);
+                const float visibility=OcclusionVisibility(scene,hit,normal,direction,
+                    settings.ambientOcclusion,samples,shadowBias,stop);
+                const Vec3 albedo=AlbedoAt(triangle,material,hit.u,hit.v,visibility);
                 const Vec3 illumination=(light.ambientColor*light.ambientIntensity+light.directionalColor*(light.directionalIntensity*sun))/LightingDivisor;
                 const auto index=(static_cast<std::size_t>(y)*settings.width+x)*4;
                 result.rgba[index]=Byte(albedo.x*illumination.x);result.rgba[index+1]=Byte(albedo.y*illumination.y);result.rgba[index+2]=Byte(albedo.z*illumination.z);
