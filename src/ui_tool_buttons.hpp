@@ -1,9 +1,10 @@
 #pragma once
 
 #include "ui_button.hpp"
+#include <cstddef>
 #include <span>
 
-// Shared by zoning, transportation and utilities. All sizes are before UI scaling.
+// Shared by all tool flyouts. All sizes are before UI scaling.
 inline constexpr float UiToolButtonSize = 64.0f;
 inline constexpr float UiToolButtonGap = 8.0f;
 
@@ -18,6 +19,7 @@ struct UiToolMenuDefinition
 {
     UiButtonId trigger;
     std::span<const UiToolButtonDefinition> buttons;
+    std::size_t columns = 1; // Left to right, then top to bottom. Defaults to a vertical list.
 };
 
 void AddToolFlyout(UiButtons& buttons, TextureManager& textures, UiButtonId trigger,

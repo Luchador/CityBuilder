@@ -200,6 +200,7 @@ void CreateUiButtons(UiButtons& buttons, TextureManager& textures)
     CreateZoningButtons(buttons, textures);
     CreateTransportationButtons(buttons, textures);
     CreateUtilityButtons(buttons, textures);
+    CreateGovernmentButtons(buttons, textures);
 }
 
 void LayoutUiButtons(UiButtons& buttons, UiMinimap& minimap, const UiLayout& layout)
@@ -208,6 +209,7 @@ void LayoutUiButtons(UiButtons& buttons, UiMinimap& minimap, const UiLayout& lay
     LayoutZoningButtons(buttons, layout);
     LayoutTransportationButtons(buttons, layout);
     LayoutUtilityButtons(buttons, layout);
+    LayoutGovernmentButtons(buttons, layout);
     LayoutTickerButtons(buttons, layout);
 
     // Refresh the diamond's bounds before positioning its buttons.

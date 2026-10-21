@@ -118,6 +118,103 @@ namespace UiButtonIds
     inline constexpr UiButtonId IncineratorButton = 531;
     inline constexpr UiButtonId RecyclingCenterButton = 532;
     inline constexpr UiButtonId WasteToEnergyPlantButton = 533;
+
+    inline constexpr UiButtonId PoliceMenuButton = 600;
+    inline constexpr UiButtonId FireMenuButton = 601;
+    inline constexpr UiButtonId HealthMenuButton = 602;
+    inline constexpr UiButtonId EducationMenuButton = 603;
+    inline constexpr UiButtonId ParksAndRecreationMenuButton = 604;
+    inline constexpr UiButtonId RewardsMenuButton = 605;
+    inline constexpr UiButtonId LandmarksMenuButton = 606;
+
+    inline constexpr UiButtonId SmallPoliceStationButton = 610;
+    inline constexpr UiButtonId LargePoliceStationButton = 611;
+    inline constexpr UiButtonId JailButton = 612;
+
+    inline constexpr UiButtonId SmallFireStationButton = 620;
+    inline constexpr UiButtonId LargeFireStationButton = 621;
+
+    inline constexpr UiButtonId ClinicButton = 630;
+    inline constexpr UiButtonId HospitalButton = 631;
+
+    inline constexpr UiButtonId SmallSchoolButton = 640;
+    inline constexpr UiButtonId LargeSchoolButton = 641;
+    inline constexpr UiButtonId CollegeButton = 642;
+    inline constexpr UiButtonId LibraryButton = 643;
+    inline constexpr UiButtonId CentralLibraryButton = 644;
+    inline constexpr UiButtonId MuseumButton = 645;
+
+    inline constexpr UiButtonId LawnButton = 660;
+    inline constexpr UiButtonId PavedAreaButton = 661;
+    inline constexpr UiButtonId CommunityGardenButton = 662;
+    inline constexpr UiButtonId ButterflyGardenButton = 663;
+    inline constexpr UiButtonId FlowerBedButton = 664;
+    inline constexpr UiButtonId SmallParkButton = 665;
+    inline constexpr UiButtonId GazeboButton = 666;
+    inline constexpr UiButtonId SmallFountainButton = 667;
+    inline constexpr UiButtonId SculptureButton = 668;
+    inline constexpr UiButtonId EternalFlameButton = 669;
+    inline constexpr UiButtonId ClockTowerButton = 670;
+    inline constexpr UiButtonId BeachButton = 671;
+    inline constexpr UiButtonId PierButton = 672;
+    inline constexpr UiButtonId TennisCourtButton = 673;
+    inline constexpr UiButtonId BasketballCourtButton = 674;
+    inline constexpr UiButtonId PlaygroundButton = 675;
+    inline constexpr UiButtonId PoolButton = 676;
+    inline constexpr UiButtonId SkateboardParkButton = 677;
+    inline constexpr UiButtonId MediumParkButton = 678;
+    inline constexpr UiButtonId MediumPlazaButton = 679;
+    inline constexpr UiButtonId PondButton = 680;
+    inline constexpr UiButtonId LargeFountainButton = 681;
+    inline constexpr UiButtonId SoccerFieldButton = 682;
+    inline constexpr UiButtonId SoftballFieldButton = 683;
+    inline constexpr UiButtonId MarinaButton = 684;
+    inline constexpr UiButtonId ZooButton = 685;
+    inline constexpr UiButtonId AmphitheaterButton = 686;
+    inline constexpr UiButtonId GiantParkButton = 687;
+    inline constexpr UiButtonId MiniGolfButton = 688;
+
+    inline constexpr UiButtonId RewardButton1 = 700;
+    inline constexpr UiButtonId RewardButton2 = 701;
+    inline constexpr UiButtonId RewardButton3 = 702;
+    inline constexpr UiButtonId RewardButton4 = 703;
+    inline constexpr UiButtonId RewardButton5 = 704;
+    inline constexpr UiButtonId RewardButton6 = 705;
+    inline constexpr UiButtonId RewardButton7 = 706;
+    inline constexpr UiButtonId RewardButton8 = 707;
+    inline constexpr UiButtonId RewardButton9 = 708;
+    inline constexpr UiButtonId RewardButton10 = 709;
+    inline constexpr UiButtonId RewardButton11 = 710;
+    inline constexpr UiButtonId RewardButton12 = 711;
+    inline constexpr UiButtonId RewardButton13 = 712;
+    inline constexpr UiButtonId RewardButton14 = 713;
+    inline constexpr UiButtonId RewardButton15 = 714;
+    inline constexpr UiButtonId RewardButton16 = 715;
+    inline constexpr UiButtonId RewardButton17 = 716;
+    inline constexpr UiButtonId RewardButton18 = 717;
+    inline constexpr UiButtonId RewardButton19 = 718;
+    inline constexpr UiButtonId RewardButton20 = 719;
+
+    inline constexpr UiButtonId LandmarkButton1 = 720;
+    inline constexpr UiButtonId LandmarkButton2 = 721;
+    inline constexpr UiButtonId LandmarkButton3 = 722;
+    inline constexpr UiButtonId LandmarkButton4 = 723;
+    inline constexpr UiButtonId LandmarkButton5 = 724;
+    inline constexpr UiButtonId LandmarkButton6 = 725;
+    inline constexpr UiButtonId LandmarkButton7 = 726;
+    inline constexpr UiButtonId LandmarkButton8 = 727;
+    inline constexpr UiButtonId LandmarkButton9 = 728;
+    inline constexpr UiButtonId LandmarkButton10 = 729;
+    inline constexpr UiButtonId LandmarkButton11 = 730;
+    inline constexpr UiButtonId LandmarkButton12 = 731;
+    inline constexpr UiButtonId LandmarkButton13 = 732;
+    inline constexpr UiButtonId LandmarkButton14 = 733;
+    inline constexpr UiButtonId LandmarkButton15 = 734;
+    inline constexpr UiButtonId LandmarkButton16 = 735;
+    inline constexpr UiButtonId LandmarkButton17 = 736;
+    inline constexpr UiButtonId LandmarkButton18 = 737;
+    inline constexpr UiButtonId LandmarkButton19 = 738;
+    inline constexpr UiButtonId LandmarkButton20 = 739;
 }
 
 struct UiRect
@@ -175,6 +272,8 @@ void CreateTransportationButtons(UiButtons& buttons, TextureManager& textures);
 void LayoutTransportationButtons(UiButtons& buttons, const UiLayout& layout);
 void CreateUtilityButtons(UiButtons& buttons, TextureManager& textures);
 void LayoutUtilityButtons(UiButtons& buttons, const UiLayout& layout);
+void CreateGovernmentButtons(UiButtons& buttons, TextureManager& textures);
+void LayoutGovernmentButtons(UiButtons& buttons, const UiLayout& layout);
 void SetUiMinimized(UiSettings& settings, UiButtons& buttons, bool minimized);
 void CancelUiButtonInteraction(UiButtons& buttons);
 
