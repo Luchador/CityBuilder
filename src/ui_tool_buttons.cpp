@@ -81,9 +81,10 @@ void LayoutToolFlyouts(UiButtons& buttons, const UiLayout& layout, UiButtonId tr
         const auto columns = std::clamp(menu.columns, std::size_t{1}, menu.buttons.size());
         const auto rows = 1 + (menu.buttons.size() - 1) / columns;
         const float gridWidth = static_cast<float>(columns) * size + static_cast<float>(columns - 1) * gap;
-        // Normally align the grid's left edge with its category. Shift wide
-        // grids left when needed to keep them out of the toolbar and on screen.
-        const float x = std::max(margin, std::min(parent.x, attachmentX - gap - gridWidth));
+        // Center the grid beneath its category, then keep it within the screen
+        // margin and outside the toolbar. Single-column menus stay aligned.
+        const float centeredX = parent.x + (parent.w - gridWidth) * 0.5f;
+        const float x = std::max(margin, std::min(centeredX, attachmentX - gap - gridWidth));
         const float top = parent.y + parent.h + gap;
         for (std::size_t i = 0; i < menu.buttons.size(); ++i)
         {
