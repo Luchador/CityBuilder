@@ -1,10 +1,12 @@
 #pragma once
 
+#include <memory>
+
 #include "tool.hpp"
 
 class ToolController
 {
     public:
-        Tool currentTool;
+        std::unique_ptr<Tool> currentTool;
 
 };
