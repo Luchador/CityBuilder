@@ -74,6 +74,17 @@ if(CITY_BUILD_TOOL_TESTS)
     add_test(NAME CityToolTests COMMAND CityToolTests)
 endif()
 
+option(CITY_BUILD_PICKING_TESTS "Build terrain cursor picking checks" OFF)
+if(CITY_BUILD_PICKING_TESTS)
+    enable_testing()
+    add_executable(CityPickingTests tests/terrain_picking_tests.cpp
+        src/terrain_picking.cpp src/camera.cpp src/terrain.cpp src/world.cpp
+        src/water.cpp src/terrain_skirt.cpp)
+    target_compile_features(CityPickingTests PRIVATE cxx_std_20)
+    target_include_directories(CityPickingTests PRIVATE src)
+    add_test(NAME CityPickingTests COMMAND CityPickingTests)
+endif()
+
 option(CITY_BUILD_MAP_SIZE_TESTS "Build selectable map-size regression checks" OFF)
 if(CITY_BUILD_MAP_SIZE_TESTS)
     enable_testing()

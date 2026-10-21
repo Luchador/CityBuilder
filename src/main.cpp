@@ -17,6 +17,7 @@
 #include "sound.hpp"
 #include "terrain.hpp"
 #include "terrain_material.hpp"
+#include "terrain_picking.hpp"
 #include "terrain_shaders.hpp"
 #include "terrain_skirt.hpp"
 #include "terrain_skirt_shaders.hpp"
@@ -320,6 +321,7 @@ private:
     std::optional<City> city;
     std::optional<World> world;
     std::optional<ToolController> toolController;
+    ToolPointer toolPointer; // Current cursor hit, refreshed with the rendered camera/view.
     Simulation simulation;
 
     SoundEffect zoomInSound;
@@ -725,8 +727,28 @@ private:
         camera.UpdatePan(right, down, dt, layout.world.h);
     }
 
+    ToolPointer GetToolPointer(float screenX, float screenY, Uint32 pixelWidth, Uint32 pixelHeight)
+    {
+        ToolPointer pointer{screenX, screenY, std::nullopt};
+        const auto flags = SDL_GetWindowFlags(window);
+        if (!world || !(flags & SDL_WINDOW_INPUT_FOCUS) || !(flags & SDL_WINDOW_MOUSE_FOCUS) ||
+            (flags & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN)) || camera.IsMousePanning() ||
+            !ui.IsWorldPoint(screenX, screenY)) return pointer;
+
+        const auto& layout = ui.GetLayout();
+        if (layout.width <= 0 || layout.height <= 0 || pixelWidth == 0 || pixelHeight == 0) return pointer;
+        const auto rect = ui.GetWorldViewport(pixelWidth, pixelHeight);
+        const PickingViewport viewport{rect.x, rect.y, rect.w, rect.h,
+            static_cast<float>(pixelWidth) / layout.width,
+            static_cast<float>(pixelHeight) / layout.height};
+        pointer.hit = PickMapTile(world->GetTerrain(), camera, viewport, screenX, screenY,
+                                  {true, skirtSettings.bottomY});
+        return pointer;
+    }
+
     void Render()
     {
+        toolPointer = {}; // No stale hit if startup/minimization skips the world pass.
         // UI atlas and static geometry uploads precede the presentation commands.
         ui.PrepareFrame(camera.IsMousePanning());
 
@@ -821,6 +843,12 @@ private:
         const SDL_Rect worldRect = ui.GetWorldViewport(width, height);
         const int worldWidth = worldRect.w;
         const int worldHeight = worldRect.h;
+
+        // Camera panning/zoom/rotation and UI layout have settled for this frame.
+        // Use actual swapchain dimensions, including fractional display scaling.
+        float mouseX = 0, mouseY = 0;
+        SDL_GetMouseState(&mouseX, &mouseY);
+        toolPointer = GetToolPointer(mouseX, mouseY, width, height);
 
         Uniforms view{camera.GetCenterX(), camera.GetCenterZ(), camera.GetHalfHeight(), static_cast<float>(worldWidth) / static_cast<float>(worldHeight), 1.0f, 1.0f, 1.0f, 0.0f, camera.GetOrientation(), camera.GetMapExtent()};
 

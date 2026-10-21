@@ -29,12 +29,15 @@ struct ToolTileRect
 
 // Supplied by terrain picking. World positions are in map units; screen
 // positions below are in window coordinates. No picking happens in Tool.
+enum class ToolHitSurface { Terrain, Water };
+
 struct ToolHit
 {
     ToolTile tile;
     float worldX = 0.0f;
     float worldY = 0.0f;
     float worldZ = 0.0f;
+    ToolHitSurface surface = ToolHitSurface::Terrain;
 };
 
 struct ToolPointer
