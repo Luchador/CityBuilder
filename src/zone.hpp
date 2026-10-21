@@ -29,14 +29,16 @@ enum class ZoneType : std::uint8_t
 
     Landfill,
 
-    Seaport
+    Seaport,
+
+    Count // Table size only; not a zone that can be assigned to a tile.
 };
 
 enum class ZoneCategory : std::uint8_t
 {
     None,
     Residential,
-    Commericial,
+    Commercial,
     Industrial,
     Other
 };
@@ -52,5 +54,7 @@ struct ZoneDefinition
 class Zone
 {
 public:
-    const ZoneDefinition& GetZoneDefinition(ZoneType type);
+    // Shared immutable data; no Zone object needs to be constructed.
+    // Throws std::out_of_range for Count or an invalid enum value.
+    static const ZoneDefinition& GetZoneDefinition(ZoneType type);
 };
