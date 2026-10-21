@@ -48,9 +48,13 @@ public:
     void SetTextures(UiButtonTextures images);
     void SetSkin(UiButtonSkin value);
     const UiButtonSkin& GetSkin() const { return skin; }
-    // Empty text disables the tooltip. Text is owned; temporary strings are safe.
+    // Empty text disables the tooltip. Use **bold** and \n for line breaks.
+    // Text is owned; temporary strings are safe.
     void SetTooltip(std::string_view text) { tooltip = text; }
     const std::string& GetTooltip() const { return tooltip; }
+    static constexpr std::uint64_t DefaultTooltipDelayMs = 500;
+    void SetTooltipDelayMs(std::uint64_t milliseconds) { tooltipDelayMs = milliseconds; }
+    std::uint64_t GetTooltipDelayMs() const { return tooltipDelayMs; }
     std::uint64_t GetHoverRevision() const { return hoverRevision; }
     void SetShape(UiButtonShape value);
     // Receives normalized coordinates in the inset hit rectangle, from 0 to 1.
@@ -89,6 +93,7 @@ private:
         if (hovered != value) { hovered = value; ++hoverRevision; }
     }
     std::string tooltip;
+    std::uint64_t tooltipDelayMs = DefaultTooltipDelayMs;
     std::uint64_t hoverRevision = 0;
     UiRect bounds{};
     UiButtonInsets hitInsets{};

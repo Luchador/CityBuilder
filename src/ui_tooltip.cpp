@@ -28,11 +28,8 @@ void UiTooltip::Initialize(SDL_GPUDevice* gpu, TextRenderer& text)
     style.size = 16;
     style.color = {0.10f,0.09f,0.04f,1};
     style.verticalAlign = TextVerticalAlign::Top;
-    style.wrap = true;
-
-    label = &renderer->CreateLabel("", style);
-    label->SetGroup(TextGroup);
-    label->SetVisible(false);
+    // Each formatted run is already positioned and wrapped by LayoutTooltipText.
+    style.wrap = false;
 }
 
 void UiTooltip::Hide()
@@ -42,22 +39,16 @@ void UiTooltip::Hide()
     sourceRevision = hoverStart = 0;
     content.clear();
 
-    if (label) 
-    {
-        label->SetVisible(false);
-    }
+    for (auto* label : labels) label->SetVisible(false);
 }
 
 void UiTooltip::Release()
 {
     Hide();
 
-    if (label) 
-    {
-        renderer->DestroyLabel(*label);
-    }
-
-    label = nullptr;
+    for (auto* label : labels) renderer->DestroyLabel(*label);
+    labels.clear();
+    textLayout = {};
     renderer = nullptr;
     if (vertices) 
     {
@@ -90,11 +81,8 @@ void UiTooltip::Update(const UiButton* button, Uint64 now)
     }
 
     anchor = button->GetBounds();
-    visible = now >= hoverStart && now - hoverStart >= DelayMs;
-    if (label) 
-    {
-        label->SetVisible(visible);
-    }
+    visible = now >= hoverStart && now - hoverStart >= button->GetTooltipDelayMs();
+    for (auto* label : labels) label->SetVisible(visible);
 }
 
 void UiTooltip::Prepare(float width, float height, Uint32 pixelWidth, Uint32 pixelHeight)
@@ -122,12 +110,38 @@ void UiTooltip::Prepare(float width, float height, Uint32 pixelWidth, Uint32 pix
 
     if (content != measuredContent || width != measuredWidth || height != measuredHeight || pixelWidth != measuredPixelWidth || pixelHeight != measuredPixelHeight)
     {
-        const auto natural = renderer->MeasureWrappedText(content, style, 0, rasterScale);
-        const float textWidth = std::max(1.0f, std::min({std::ceil(natural.x * rasterScale) / rasterScale, maxTextWidth, width - 2 * (margin + padding + borderX)}));
-        const auto size = renderer->MeasureWrappedText(content, style, textWidth, rasterScale);
+        TextStyle boldStyle = style;
+        boldStyle.bold = true;
+        const float lineHeight = std::max(renderer->MeasureLineHeight(style, rasterScale),
+                                          renderer->MeasureLineHeight(boldStyle, rasterScale));
+        const auto measure = [&](std::string_view text, bool bold)
+        {
+            return renderer->MeasureText(text, bold ? boldStyle : style, rasterScale).x;
+        };
+        const auto natural = LayoutTooltipText(content, 0, lineHeight, measure);
+        const float textWidth = std::max(1.0f, std::min({std::ceil(natural.width * rasterScale) / rasterScale, maxTextWidth, width - 2 * (margin + padding + borderX)}));
+        textLayout = LayoutTooltipText(content, textWidth, lineHeight, measure);
         bounds.w = std::min(std::ceil((textWidth + 2 * (padding + borderX)) * sx) / sx, std::floor((width - 2 * margin) * sx) / sx);
-        bounds.h = std::min(std::ceil((size.y + 2 * (padding + borderY)) * sy) / sy, std::floor((height - 2 * margin) * sy) / sy);
-        label->SetText(content);
+        bounds.h = std::min(std::ceil((textLayout.height + 2 * (padding + borderY)) * sy) / sy, std::floor((height - 2 * margin) * sy) / sy);
+        // Reuse labels across tooltips instead of allocating every frame.
+        labels.reserve(textLayout.runs.size());
+        while (labels.size() > textLayout.runs.size())
+        {
+            renderer->DestroyLabel(*labels.back());
+            labels.pop_back();
+        }
+        while (labels.size() < textLayout.runs.size())
+        {
+            auto& label = renderer->CreateLabel("", style);
+            label.SetGroup(TextGroup);
+            labels.push_back(&label);
+        }
+        for (std::size_t i = 0; i < labels.size(); ++i)
+        {
+            labels[i]->SetText(textLayout.runs[i].text);
+            labels[i]->SetStyle(textLayout.runs[i].bold ? boldStyle : style);
+            labels[i]->SetVisible(true);
+        }
         measuredContent = content;
         measuredWidth = width; measuredHeight = height;
         measuredPixelWidth = pixelWidth; measuredPixelHeight = pixelHeight;
@@ -157,7 +171,14 @@ void UiTooltip::Prepare(float width, float height, Uint32 pixelWidth, Uint32 pix
     bounds.x = std::floor(std::clamp(bounds.x, margin, width - margin - bounds.w) * sx) / sx;
     bounds.y = std::floor(std::clamp(bounds.y, margin, height - margin - bounds.h) * sy) / sy;
 
-    label->SetBounds({bounds.x + borderX + padding, bounds.y + borderY + padding, std::max(0.0f, bounds.w - 2 * (padding + borderX)), std::max(0.0f, bounds.h - 2 * (padding + borderY))});
+    const UiRect textArea{bounds.x + borderX + padding, bounds.y + borderY + padding,
+        std::max(0.0f, bounds.w - 2 * (padding + borderX)), std::max(0.0f, bounds.h - 2 * (padding + borderY))};
+    for (std::size_t i = 0; i < labels.size(); ++i)
+    {
+        const auto& run = textLayout.runs[i];
+        labels[i]->SetBounds({textArea.x + run.bounds.x, textArea.y + run.bounds.y, run.bounds.w, run.bounds.h});
+        labels[i]->SetClip(textArea);
+    }
 
     std::vector<UiVertex> next;
     next.reserve(12);

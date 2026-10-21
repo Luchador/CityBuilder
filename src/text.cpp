@@ -101,7 +101,7 @@ void TextLabel::SetStyle(const TextStyle& next)
         throw std::invalid_argument("Text needs a font asset and a positive finite size");
     }
 
-    if (style.fontAsset == next.fontAsset && style.size == next.size && SameColor(style.color, next.color) && style.align == next.align && style.verticalAlign == next.verticalAlign && style.wrap == next.wrap) 
+    if (style.fontAsset == next.fontAsset && style.size == next.size && SameColor(style.color, next.color) && style.align == next.align && style.verticalAlign == next.verticalAlign && style.wrap == next.wrap && style.bold == next.bold)
     {
         return;
     }
@@ -280,13 +280,15 @@ void TextRenderer::DestroyLabel(TextLabel& label)
 
 TTF_Font* TextRenderer::GetFont(const TextStyle& style, float scale)
 {
+    if (!std::isfinite(scale) || scale <= 0)
+        throw std::invalid_argument("Text pixel scale must be positive and finite");
     const float pixels = std::round(style.size * scale);
-    if (pixels < 1 || pixels > 256)
+    if (!std::isfinite(pixels) || pixels < 1 || pixels > 256)
     {
         throw std::invalid_argument("Font raster size must be between 1 and 256 pixels");
     }
 
-    const auto key = std::make_pair(style.fontAsset, static_cast<int>(pixels));
+    const auto key = std::make_tuple(style.fontAsset, static_cast<int>(pixels), style.bold);
 
     if (const auto found = fonts.find(key); found != fonts.end()) 
     {
@@ -299,6 +301,7 @@ TTF_Font* TextRenderer::GetFont(const TextStyle& style, float scale)
     {
         FailText("Open font " + path);
     }
+    if (style.bold) TTF_SetFontStyle(font, TTF_STYLE_BOLD);
 
     try 
     { 
@@ -502,6 +505,12 @@ SDL_FPoint TextRenderer::MeasureText(std::string_view utf8, const TextStyle& sty
     }
 
     return {width / scale, height / scale};
+}
+
+float TextRenderer::MeasureLineHeight(const TextStyle& style, float scale)
+{
+    const auto* font = GetFont(style, scale);
+    return std::max(TTF_GetFontHeight(font), TTF_GetFontLineSkip(font)) / scale;
 }
 
 SDL_FPoint TextRenderer::MeasureWrappedText(std::string_view utf8, const TextStyle& style, float maxWidth, float scale)

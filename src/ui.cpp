@@ -183,11 +183,13 @@ void CreateUiButtons(UiButtons& buttons, TextureManager& textures)
     for (const auto& definition : ToolbarButtons) 
     {
         AddButton(buttons, textures, definition.button);
+        buttons.Find(definition.button.id)->SetTooltipDelayMs(0);
     }
 
     for (const auto& definition : BottomToolbarButtons)
     {
         AddButton(buttons, textures, definition.button);
+        buttons.Find(definition.button.id)->SetTooltipDelayMs(0);
     }
 
     for (const auto& definition : TickerButtons)

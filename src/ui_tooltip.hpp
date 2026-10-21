@@ -2,6 +2,7 @@
 
 #include "text.hpp"
 #include "ui_button.hpp"
+#include "ui_tooltip_text.hpp"
 #include <limits>
 
 // One reusable, non-interactive overlay. Buttons own their optional text;
@@ -9,7 +10,7 @@
 class UiTooltip
 {
 public:
-    static constexpr Uint64 DelayMs = 500;
+    static constexpr Uint64 DelayMs = UiButton::DefaultTooltipDelayMs;
     static constexpr std::uint32_t TextGroup = std::numeric_limits<std::uint32_t>::max();
     UiTooltip() = default;
     ~UiTooltip() { Release(); }
@@ -31,7 +32,8 @@ public:
 private:
     SDL_GPUDevice* device = nullptr;
     TextRenderer* renderer = nullptr;
-    TextLabel* label = nullptr;
+    std::vector<TextLabel*> labels;
+    TooltipTextLayout textLayout;
     TextStyle style;
     SDL_GPUBuffer* vertices = nullptr;
     std::vector<UiVertex> mesh;

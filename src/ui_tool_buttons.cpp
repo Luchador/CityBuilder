@@ -27,6 +27,7 @@ void AddToolFlyout(UiButtons& buttons, TextureManager& textures, UiButtonId trig
         button.SetSkin(skin);
         button.SetShape(shape); // Rectangular hit testing is sufficient for rounded squares.
         button.SetTooltip(definition.tooltip);
+        button.SetTooltipDelayMs(0);
         children.push_back(definition.id);
     }
     buttons.AddFlyout(trigger, children);

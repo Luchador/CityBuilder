@@ -8,6 +8,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <tuple>
 #include <vector>
 
 #include "ui.hpp"
@@ -24,6 +25,7 @@ struct TextStyle
     TextAlign align = TextAlign::Left;
     TextVerticalAlign verticalAlign = TextVerticalAlign::Center;
     bool wrap = false;
+    bool bold = false;
 };
 
 class TextRenderer;
@@ -81,6 +83,8 @@ public:
     void DestroyLabel(TextLabel& label);
     void Prepare(float pixelsPerUnit = 1.0f);
     SDL_FPoint MeasureText(std::string_view utf8, const TextStyle& style, float scale = 1.0f);
+    // A line box that includes the font's recommended spacing.
+    float MeasureLineHeight(const TextStyle& style, float scale = 1.0f);
     // Width zero honors explicit line breaks only; positive widths also wrap words.
     SDL_FPoint MeasureWrappedText(std::string_view utf8, const TextStyle& style,
                                  float maxWidth, float scale = 1.0f);
@@ -106,7 +110,8 @@ private:
     SDL_GPUSampler* sampler = nullptr;
     SDL_GPUBuffer* vertices = nullptr;
     std::string assetRoot;
-    std::map<std::pair<std::string, int>, TTF_Font*> fonts;
+    // Separate font instances prevent bold labels from restyling regular text.
+    std::map<std::tuple<std::string, int, bool>, TTF_Font*> fonts;
     std::vector<std::unique_ptr<TextLabel>> labels;
     std::vector<Batch> batches;
     float rasterScale = 0;
