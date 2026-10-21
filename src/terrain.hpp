@@ -71,8 +71,7 @@ TerrainColor SampleTerrainColor(float height, const TerrainPalette& palette = {}
 // queries/editing; render geometry is built from this data, not the other way round.
 struct TerrainHeightmap
 {
-    explicit TerrainHeightmap(MapDimensions mapDimensions = MapDimensions{})
-        : dimensions(mapDimensions), heights(dimensions.CornerCount(), 0.0f) {}
+    explicit TerrainHeightmap(MapDimensions mapDimensions = MapDimensions{}) : dimensions(mapDimensions), heights(dimensions.CornerCount(), 0.0f) {}
 
     MapDimensions dimensions;
     std::vector<float> heights;
