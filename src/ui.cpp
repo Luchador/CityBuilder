@@ -197,6 +197,7 @@ void CreateUiButtons(UiButtons& buttons, TextureManager& textures)
         buttons.Find(definition.id)->SetInteractionFeedbackEnabled(false);
     }
 
+    CreateTerrainButtons(buttons, textures);
     CreateZoningButtons(buttons, textures);
     CreateTransportationButtons(buttons, textures);
     CreateUtilityButtons(buttons, textures);
@@ -206,6 +207,7 @@ void CreateUiButtons(UiButtons& buttons, TextureManager& textures)
 void LayoutUiButtons(UiButtons& buttons, UiMinimap& minimap, const UiLayout& layout)
 {
     LayoutToolbarButtons(buttons, layout);
+    LayoutTerrainButtons(buttons, layout);
     LayoutZoningButtons(buttons, layout);
     LayoutTransportationButtons(buttons, layout);
     LayoutUtilityButtons(buttons, layout);

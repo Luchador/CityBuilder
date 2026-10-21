@@ -70,7 +70,7 @@ option(CITY_BUILD_UI_MANAGER_TESTS "Build UI manager input/render lifetime check
 if(CITY_BUILD_UI_MANAGER_TESTS)
     enable_testing()
     add_executable(CityUiManagerTests tests/ui_manager_tests.cpp
-        src/ui_manager.cpp src/ui_manager_draw.cpp src/ui.cpp src/ui_transport.cpp src/ui_zoning.cpp src/ui_utilities.cpp src/ui_government.cpp src/ui_tool_buttons.cpp src/ui_layout.cpp
+        src/ui_manager.cpp src/ui_manager_draw.cpp src/ui.cpp src/ui_terrain.cpp src/ui_transport.cpp src/ui_zoning.cpp src/ui_utilities.cpp src/ui_government.cpp src/ui_tool_buttons.cpp src/ui_layout.cpp
         src/ui_manager_windows.cpp src/ui_window.cpp src/ui_window_draw.cpp src/ui_text_input.cpp
         src/ui_button.cpp src/ui_buttons.cpp src/ui_buttons_draw.cpp
         src/ui_minimap.cpp src/ui_minimap_draw.cpp src/ui_text.cpp
@@ -86,7 +86,7 @@ endif()
 option(CITY_BUILD_UI_TESTS "Build UI visibility and input tests" OFF)
 if(CITY_BUILD_UI_TESTS)
     enable_testing()
-    add_executable(CityUiVisibilityTests tests/ui_visibility_tests.cpp src/ui.cpp src/ui_transport.cpp src/ui_zoning.cpp src/ui_utilities.cpp src/ui_government.cpp src/ui_tool_buttons.cpp src/ui_layout.cpp
+    add_executable(CityUiVisibilityTests tests/ui_visibility_tests.cpp src/ui.cpp src/ui_terrain.cpp src/ui_transport.cpp src/ui_zoning.cpp src/ui_utilities.cpp src/ui_government.cpp src/ui_tool_buttons.cpp src/ui_layout.cpp
         src/ui_button.cpp src/ui_buttons.cpp src/ui_buttons_draw.cpp src/ui_minimap.cpp src/camera.cpp)
     target_compile_features(CityUiVisibilityTests PRIVATE cxx_std_20)
     target_include_directories(CityUiVisibilityTests PRIVATE src)

@@ -218,6 +218,40 @@ namespace UiButtonIds
     inline constexpr UiButtonId LandmarkButton18 = 737;
     inline constexpr UiButtonId LandmarkButton19 = 738;
     inline constexpr UiButtonId LandmarkButton20 = 739;
+
+    inline constexpr UiButtonId RaiseTerrainButton = 800;
+    inline constexpr UiButtonId LowerTerrainButton = 801;
+    inline constexpr UiButtonId FlattenTerrainButton = 802;
+    inline constexpr UiButtonId CreateWaterButton = 803;
+    inline constexpr UiButtonId PlantFoliageMenuButton = 804;
+    inline constexpr UiButtonId CreateAnimalMenuButton = 805;
+
+    inline constexpr UiButtonId DeciduousButton = 810;
+    inline constexpr UiButtonId EvergreenButton = 811;
+    inline constexpr UiButtonId RedwoodButton = 812;
+    inline constexpr UiButtonId PrairieButton = 813;
+    inline constexpr UiButtonId ChaparralButton = 814;
+    inline constexpr UiButtonId XerophytesButton = 815;
+    inline constexpr UiButtonId SubtropicalButton = 816;
+
+    inline constexpr UiButtonId BisonButton = 830;
+    inline constexpr UiButtonId MooseButton = 831;
+    inline constexpr UiButtonId DeerButton = 832;
+    inline constexpr UiButtonId BearButton = 833;
+    inline constexpr UiButtonId WolfButton = 834;
+    inline constexpr UiButtonId JavelinaButton = 835;
+    inline constexpr UiButtonId BighornSheepButton = 836;
+    inline constexpr UiButtonId FoxButton = 837;
+    inline constexpr UiButtonId CougarButton = 838;
+    inline constexpr UiButtonId BobcatButton = 839;
+    inline constexpr UiButtonId BeaverButton = 840;
+    inline constexpr UiButtonId DolphinButton = 841;
+    inline constexpr UiButtonId SharkButton = 842;
+    inline constexpr UiButtonId AlligatorButton = 843;
+    inline constexpr UiButtonId RoadrunnerButton = 844;
+    inline constexpr UiButtonId RavenButton = 845;
+    inline constexpr UiButtonId CaliforniaCondorButton = 846;
+    inline constexpr UiButtonId BaldEagleButton = 847;
 }
 
 struct UiRect
@@ -269,6 +303,8 @@ std::vector<UiVertex> BuildUiBackground(const UiLayout& layout);
 void CreateUiButtons(UiButtons& buttons, TextureManager& textures);
 void LayoutUiButtons(UiButtons& buttons, UiMinimap& minimap, const UiLayout& layout);
 // Flyout definitions and single-icon assignments live in these modules.
+void CreateTerrainButtons(UiButtons& buttons, TextureManager& textures);
+void LayoutTerrainButtons(UiButtons& buttons, const UiLayout& layout);
 void CreateZoningButtons(UiButtons& buttons, TextureManager& textures);
 void LayoutZoningButtons(UiButtons& buttons, const UiLayout& layout);
 void CreateTransportationButtons(UiButtons& buttons, TextureManager& textures);
