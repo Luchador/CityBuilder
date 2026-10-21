@@ -20,7 +20,9 @@ enum class ZoneType : std::uint8_t
     IndustrialMedium,
     IndustrialDense,
 
-    Landfill
+    Landfill,
+
+    Seaport
 };
 
 enum class ZoneCategory : std::uint8_t

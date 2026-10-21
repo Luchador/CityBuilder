@@ -20,9 +20,11 @@
 #include "terrain_shaders.hpp"
 #include "terrain_skirt.hpp"
 #include "terrain_skirt_shaders.hpp"
+#include "toolcontroller.hpp"
 #include "shaders.hpp"
 #include "water.hpp"
 #include "water_shaders.hpp"
+#include "world.hpp"
 #include "texture.hpp"
 
 [[noreturn]] static void Fail(const char* operation)
@@ -312,6 +314,8 @@ public:
 private:
     Camera camera{0.0f}; // No world bounds until Accept creates a map.
     std::optional<City> city;
+    std::optional<World> world;
+    std::optional<ToolController> toolController;
     Simulation simulation;
 
     SoundEffect zoomInSound;
@@ -322,7 +326,7 @@ private:
     SoundEffect buttonClick;
 
     // Invoked only by the creation form's Accept action. The optional City and
-    // heightmap stay empty until all world resources have been prepared.
+    // World stay empty until all world resources have been prepared.
     void CreateCity(const CityCreationOptions& options)
     {
         if (city) 
@@ -336,10 +340,12 @@ private:
         {
             terrainMaterial.Initialize(device, textures, "materials/ground/grass01_basecolor.png", "materials/ground/grass01_normal.png");
             // Terrain
+            TerrainSettings terrainSettings;
             terrainSettings.dimensions = MapDimensions(GetMapTileCount(options.mapSize));
             terrainSettings.seed = SDL_rand_bits(); // Use a fixed number here to replay a landscape.
-            auto generated = GenerateTerrain(terrainSettings);
-            const TerrainMesh mesh = BuildTerrain(generated);
+            World createdWorld(terrainSettings);
+            const auto& heightmap = createdWorld.GetTerrain();
+            const TerrainMesh mesh = BuildTerrain(heightmap);
 
             vertices = UploadBuffer(device, mesh.vertices.data(), static_cast<Uint32>(mesh.vertices.size() * sizeof(Vertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
             indices = UploadBuffer(device, mesh.indices.data(), static_cast<Uint32>(mesh.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
@@ -348,14 +354,14 @@ private:
             lineIndexCount = static_cast<Uint32>(mesh.lineIndices.size());
 
             // Terrain Skirt
-            const TerrainSkirtMesh skirt = BuildTerrainSkirt(generated, skirtSettings);
-            skirtUniforms = MakeTerrainSkirtUniforms(skirtSettings, terrainSettings.seed);
+            const TerrainSkirtMesh skirt = BuildTerrainSkirt(heightmap, skirtSettings);
+            skirtUniforms = MakeTerrainSkirtUniforms(skirtSettings, createdWorld.GetTerrainSettings().seed);
             skirtVertices = UploadBuffer(device, skirt.vertices.data(), static_cast<Uint32>(skirt.vertices.size() * sizeof(TerrainSkirtVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
             skirtIndices = UploadBuffer(device, skirt.indices.data(), static_cast<Uint32>(skirt.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
             skirtIndexCount = static_cast<Uint32>(skirt.indices.size());
 
             // Water
-            const WaterMesh water = BuildWater(generated);
+            const WaterMesh water = BuildWater(heightmap);
             waterIndexCount = static_cast<Uint32>(water.indices.size());
 
             if (waterIndexCount > 0)
@@ -367,16 +373,16 @@ private:
             // Prepare dependent UI before publishing the live game state.
             ui.Update(created, 0);
             ui.RebuildMinimap(mesh);
-            terrain.emplace(std::move(generated));
+            world.emplace(std::move(createdWorld));
             city.emplace(std::move(created));
             simulation = Simulation{}; // New cities begin paused, with no accumulated time.
-            camera = Camera(terrain->dimensions.Extent());
+            camera = Camera(world->GetDimensions().Extent());
         }
         catch (...)
         {
             ReleaseTerrainBuffers();
             terrainMaterial.Release();
-            terrain.reset();
+            world.reset();
             city.reset();
             throw; // UiManager displays the error and keeps Accept available.
         }
@@ -931,8 +937,6 @@ private:
     SDL_GPUBuffer* indices = nullptr;
     SDL_GPUBuffer* gridIndices = nullptr;
     SDL_GPUTexture* depth = nullptr;
-    TerrainSettings terrainSettings;
-    std::optional<TerrainHeightmap> terrain;
     TextureManager textures;
     TerrainMaterial terrainMaterial;
     TerrainMaterialSettings terrainMaterialSettings;

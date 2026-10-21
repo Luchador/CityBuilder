@@ -3,12 +3,14 @@
 #include "minimap_map.hpp"
 #include "terrain_skirt.hpp"
 #include "water.hpp"
+#include "world.hpp"
 
 #include <algorithm>
 #include <cmath>
 #include <iostream>
 #include <limits>
 #include <stdexcept>
+#include <utility>
 
 namespace
 {
@@ -36,7 +38,21 @@ namespace
         settings.dimensions = MapDimensions(GetMapTileCount(city.mapSize));
         const auto n = expected;
         const auto stride = n + 1;
-        auto heights = GenerateTerrain(settings);
+        World world(settings);
+        const auto& heights = world.GetTerrain();
+        Check(world.GetDimensions().TileCount() == n, "World lost its map size");
+        Check(world.GetTiles().size() == static_cast<std::size_t>(n) * n, "Wrong world tile count");
+        Check(std::all_of(world.GetTiles().begin(), world.GetTiles().end(),
+                         [](const Tile& tile) { return tile.zoneType == ZoneType::None; }),
+              "New world tiles must be unzoned");
+        Check(world.ContainsTile(0, 0) && world.ContainsTile(n - 1, n - 1), "Missing world edge tiles");
+        Check(!world.ContainsTile(-1, 0) && !world.ContainsTile(0, -1) &&
+              !world.ContainsTile(n, 0) && !world.ContainsTile(0, n), "World accepts off-map tiles");
+        world.GetTile(n - 1, n - 1).zoneType = ZoneType::ResidentialLight;
+        const World& readOnlyWorld = world;
+        Check(readOnlyWorld.GetTile(n - 1, n - 1).zoneType == ZoneType::ResidentialLight &&
+              world.GetTiles().back().zoneType == ZoneType::ResidentialLight &&
+              world.GetTile(0, n - 1).zoneType == ZoneType::None, "Wrong tile row stride");
         heights.Validate();
         Check(heights.heights.size() == stride * stride, "Wrong heightmap size");
         Check(std::any_of(heights.heights.begin(), heights.heights.end(), IsWaterElevation), "Seed must produce lakes");
@@ -171,6 +187,40 @@ namespace
         Reject([] { MapDimensions invalid(std::numeric_limits<std::uint32_t>::max()); });
         Reject([] { GetMapTileCount(static_cast<CityMapSize>(99)); });
     }
+
+    void CheckWorldOwnership()
+    {
+        TerrainSettings settings;
+        settings.dimensions = MapDimensions{8};
+        settings.seed = 12345;
+        settings.hillHeight = 2.0f;
+        settings.lakes.count = 0;
+        const auto expected = GenerateTerrain(settings);
+        World first(settings);
+        Check(first.GetTerrain().heights == expected.heights, "World changed terrain generation");
+        settings.dimensions = MapDimensions{2};
+        settings.seed = 98765;
+        World second(settings);
+        Check(first.GetDimensions().TileCount() == 8 && first.GetTerrainSettings().seed == 12345 &&
+              first.GetTerrainSettings().hillHeight == 2.0f && second.GetDimensions().TileCount() == 2,
+              "World settings are not independently owned");
+        first.GetTile(1, 1).zoneType = ZoneType::CommercialLight;
+        Check(second.GetTile(1, 1).zoneType == ZoneType::None, "Worlds share tile storage");
+        for (const auto& coordinates : {std::pair{-1, 0}, std::pair{0, -1}, std::pair{8, 0}, std::pair{0, 8}})
+        {
+            bool rejected = false;
+            try { first.GetTile(coordinates.first, coordinates.second); }
+            catch (const std::out_of_range&) { rejected = true; }
+            Check(rejected, "Mutable tile lookup must reject invalid coordinates");
+            rejected = false;
+            const World& readOnly = first;
+            try { readOnly.GetTile(coordinates.first, coordinates.second); }
+            catch (const std::out_of_range&) { rejected = true; }
+            Check(rejected, "Const tile lookup must reject invalid coordinates");
+        }
+        settings.hillSize = 0;
+        Reject([&] { World invalid(settings); });
+    }
 }
 
 int main()
@@ -182,7 +232,8 @@ int main()
         CheckSize(CityMapSize::Large, 512);
         CheckSize(CityMapSize::Giant, 1024);
         CheckFarCornerAndValidation();
-        std::cout << "PASS: far-corner water/overlays, independent maps, invalid dimensions\n";
+        CheckWorldOwnership();
+        std::cout << "PASS: far-corner water/overlays, world ownership, tile bounds, invalid dimensions\n";
     }
     catch (const std::exception& error)
     {

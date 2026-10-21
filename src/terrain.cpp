@@ -331,12 +331,6 @@ TerrainHeightmap GenerateTerrain(const TerrainSettings& settings)
     return terrain;
 }
 
-void TerrainHeightmap::Validate() const
-{
-    if (heights.size() != dimensions.CornerCount() || !std::all_of(heights.begin(), heights.end(), [](float h) { return std::isfinite(h) && h <= TerrainMaxElevation; }))
-        throw std::invalid_argument("Terrain heightmap must contain (tileCount + 1) squared finite heights at or below 256");
-}
-
 TerrainMesh BuildTerrain(const TerrainHeightmap& terrain, const TerrainPalette& palette)
 {
     terrain.Validate();
