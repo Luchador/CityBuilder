@@ -147,16 +147,17 @@ void UiTooltip::Prepare(float width, float height, Uint32 pixelWidth, Uint32 pix
         measuredPixelWidth = pixelWidth; measuredPixelHeight = pixelHeight;
     }
 
-    // Prefer a side of the button, then below/above. Keep the position stable
-    // while moving within the button, and never give the tooltip a mouse hit area.
-    bounds.x = anchor.x + anchor.w + separation;
-    bounds.y = anchor.y;
+    // Prefer the left side, slightly raised, then right or below/above.
+    // Stay stable while moving within the button; the tooltip has no hit area.
+    constexpr float verticalOffset = 4.0f;
+    bounds.x = anchor.x - separation - bounds.w;
+    bounds.y = anchor.y - verticalOffset;
 
-    if (bounds.x + bounds.w > width - margin)
+    if (bounds.x < margin)
     {
-        bounds.x = anchor.x - separation - bounds.w;
+        bounds.x = anchor.x + anchor.w + separation;
     
-        if (bounds.x < margin)
+        if (bounds.x + bounds.w > width - margin)
         {
             bounds.x = anchor.x;
             bounds.y = anchor.y + anchor.h + separation;
