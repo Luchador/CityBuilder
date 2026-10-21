@@ -92,6 +92,32 @@ namespace UiButtonIds
     inline constexpr UiButtonId RunwayButton = 461;
     inline constexpr UiButtonId TarmacButton = 462;
     inline constexpr UiButtonId TerminalButton = 463;
+
+    inline constexpr UiButtonId WaterMenuButton = 500;
+    inline constexpr UiButtonId PowerMenuButton = 501;
+    inline constexpr UiButtonId GarbageMenuButton = 502;
+
+    inline constexpr UiButtonId WaterPipeButton = 510;
+    inline constexpr UiButtonId WaterTowerButton = 511;
+    inline constexpr UiButtonId WaterPumpButton = 512;
+    inline constexpr UiButtonId DesalinationPlantButton = 513;
+    inline constexpr UiButtonId WaterTreatmentPlantButton = 514;
+
+    inline constexpr UiButtonId PowerLineButton = 520;
+    inline constexpr UiButtonId UndergroundLineButton = 521;
+    inline constexpr UiButtonId CoalPowerPlantButton = 522;
+    inline constexpr UiButtonId OilPowerPlantButton = 523;
+    inline constexpr UiButtonId GasPowerPlantButton = 524;
+    inline constexpr UiButtonId WindTurbineButton = 525;
+    inline constexpr UiButtonId SolarPowerPlantButton = 526;
+    inline constexpr UiButtonId NuclearPowerPlantButton = 527;
+    inline constexpr UiButtonId MicrowavePowerPlantButton = 528;
+    inline constexpr UiButtonId FusionPowerPlantButton = 529;
+
+    inline constexpr UiButtonId LandfillButton = 530;
+    inline constexpr UiButtonId IncineratorButton = 531;
+    inline constexpr UiButtonId RecyclingCenterButton = 532;
+    inline constexpr UiButtonId WasteToEnergyPlantButton = 533;
 }
 
 struct UiRect
@@ -147,6 +173,8 @@ void CreateZoningButtons(UiButtons& buttons, TextureManager& textures);
 void LayoutZoningButtons(UiButtons& buttons, const UiLayout& layout);
 void CreateTransportationButtons(UiButtons& buttons, TextureManager& textures);
 void LayoutTransportationButtons(UiButtons& buttons, const UiLayout& layout);
+void CreateUtilityButtons(UiButtons& buttons, TextureManager& textures);
+void LayoutUtilityButtons(UiButtons& buttons, const UiLayout& layout);
 void SetUiMinimized(UiSettings& settings, UiButtons& buttons, bool minimized);
 void CancelUiButtonInteraction(UiButtons& buttons);
 

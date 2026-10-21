@@ -3,7 +3,7 @@
 #include "ui_button.hpp"
 #include <span>
 
-// Shared by zoning and transportation. All sizes are before UI scaling.
+// Shared by zoning, transportation and utilities. All sizes are before UI scaling.
 inline constexpr float UiToolButtonSize = 64.0f;
 inline constexpr float UiToolButtonGap = 8.0f;
 
