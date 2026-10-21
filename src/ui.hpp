@@ -62,6 +62,7 @@ namespace UiButtonIds
     inline constexpr UiButtonId PedestrianButton = 404;
     inline constexpr UiButtonId SeaMenuButton = 405;
     inline constexpr UiButtonId AirportMenuButton = 406;
+    inline constexpr UiButtonId LightsMenuButton = 407;
 
     inline constexpr UiButtonId DirtRoadButton = 410;
     inline constexpr UiButtonId RoadButton = 411;
@@ -96,6 +97,11 @@ namespace UiButtonIds
     inline constexpr UiButtonId RunwayButton = 461;
     inline constexpr UiButtonId TarmacButton = 462;
     inline constexpr UiButtonId TerminalButton = 463;
+
+    inline constexpr UiButtonId WoodPoleButton = 470;
+    inline constexpr UiButtonId MetalPoleButton = 471;
+    inline constexpr UiButtonId StringLightsButton = 472;
+    inline constexpr UiButtonId SpotlightButton = 473;
 
     inline constexpr UiButtonId WaterMenuButton = 500;
     inline constexpr UiButtonId PowerMenuButton = 501;
