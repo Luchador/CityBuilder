@@ -40,12 +40,13 @@ namespace
     }};
 
     // Read left to right, then down: four columns, with a partially filled eighth row.
-    constexpr std::array<UiToolButtonDefinition, 29> ParksAndRecreation{{
+    constexpr std::array<UiToolButtonDefinition, 32> ParksAndRecreation{{
         {UiButtonIds::LawnButton, "Lawn", "ui/toolbar/btn_lawn"},
         {UiButtonIds::PavedAreaButton, "Paved Area", "ui/toolbar/btn_paved_area"},
         {UiButtonIds::CommunityGardenButton, "Community Garden", "ui/toolbar/btn_community_garden"},
         {UiButtonIds::ButterflyGardenButton, "Butterfly Garden", "ui/toolbar/btn_butterfly_garden"},
         {UiButtonIds::FlowerBedButton, "Flower Bed", "ui/toolbar/btn_flower_bed"},
+        {UiButtonIds::SplashParkButton, "Splash Park", "ui/toolbar/btn_splash_park"},
         {UiButtonIds::SmallParkButton, "Small Park", "ui/toolbar/btn_small_park"},
         {UiButtonIds::GazeboButton, "Gazebo", "ui/toolbar/btn_gazebo"},
         {UiButtonIds::SmallFountainButton, "Small Fountain", "ui/toolbar/btn_small_fountain"},
@@ -63,6 +64,8 @@ namespace
         {UiButtonIds::MediumPlazaButton, "Medium Plaza", "ui/toolbar/btn_med_plaza"},
         {UiButtonIds::PondButton, "Pond", "ui/toolbar/btn_pond"},
         {UiButtonIds::LargeFountainButton, "Large Fountain", "ui/toolbar/btn_large_fountain"},
+        {UiButtonIds::LargePlazaButton, "Large Plaza", "ui/toolbar/btn_large_plaza"},
+        {UiButtonIds::LargeParkButton, "Large Park", "ui/toolbar/btn_large_park"},
         {UiButtonIds::SoccerFieldButton, "Soccer Field", "ui/toolbar/btn_soccer_field"},
         {UiButtonIds::SoftballFieldButton, "Softball Field", "ui/toolbar/btn_softball_field"},
         {UiButtonIds::MarinaButton, "Marina", "ui/toolbar/btn_marina"},
