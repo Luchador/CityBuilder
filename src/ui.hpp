@@ -59,8 +59,9 @@ namespace UiButtonIds
     inline constexpr UiButtonId HighwaysMenuButton = 401;
     inline constexpr UiButtonId RailroadsMenuButton = 402;
     inline constexpr UiButtonId CommuterRailMenuButton = 403;
-    inline constexpr UiButtonId SeaMenuButton = 404;
-    inline constexpr UiButtonId AirportMenuButton = 405;
+    inline constexpr UiButtonId PedestrianButton = 404;
+    inline constexpr UiButtonId SeaMenuButton = 405;
+    inline constexpr UiButtonId AirportMenuButton = 406;
 
     inline constexpr UiButtonId DirtRoadButton = 410;
     inline constexpr UiButtonId RoadButton = 411;
@@ -85,6 +86,9 @@ namespace UiButtonIds
     inline constexpr UiButtonId SubwayElevatedConnectorButton = 444;
     inline constexpr UiButtonId MonorailButton = 445;
     inline constexpr UiButtonId MonorailStationButton = 446;
+
+    inline constexpr UiButtonId SidewalkButton = 447;
+    inline constexpr UiButtonId MultiUsePath = 448;
 
     inline constexpr UiButtonId FerryButton = 450;
     inline constexpr UiButtonId SeaportButton = 451;
