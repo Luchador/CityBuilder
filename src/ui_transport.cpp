@@ -4,10 +4,9 @@
 namespace
 {
     // Nearest the toolbar first, extending left, like the existing zoning menu.
-    constexpr std::array<UiToolButtonDefinition, 8> Categories{{
+    constexpr std::array<UiToolButtonDefinition, 7> Categories{{
         {UiButtonIds::RoadsMenuButton, "Streets", "ui/toolbar/btn_streets"},
         {UiButtonIds::HighwaysMenuButton, "Highways", "ui/toolbar/btn_hwy"},
-        {UiButtonIds::LightsMenuButton, "Lights", "ui/toolbar/btn_lights"},
         {UiButtonIds::RailroadsMenuButton, "Railroads", "ui/toolbar/btn_rail"},
         {UiButtonIds::CommuterRailMenuButton, "Commuter Rail", "ui/toolbar/btn_commuter_rail"},
         {UiButtonIds::PedestrianButton, "Pedestrian", "ui/toolbar/btn_ped"},
@@ -31,13 +30,6 @@ namespace
         {UiButtonIds::CloverLeafInterchangeButton, "Clover Leaf Interchange", "ui/toolbar/btn_clover"},
         {UiButtonIds::OverpassButton, "Overpass", "ui/toolbar/btn_overpass"},
         {UiButtonIds::OnRampButton, "On-ramp", "ui/toolbar/btn_onramp"}
-    }};
-
-    constexpr std::array<UiToolButtonDefinition, 4> Lights{{
-        {UiButtonIds::WoodPoleButton, "Wood Pole", "ui/toolbar/btn_wood_pole"},
-        {UiButtonIds::MetalPoleButton, "Metal Pole", "ui/toolbar/btn_metal_pole"},
-        {UiButtonIds::StringLightsButton, "String Lights", "ui/toolbar/btn_string_lights"},
-        {UiButtonIds::SpotlightButton, "Spotlight", "ui/toolbar/btn_spotlight"}
     }};
 
     constexpr std::array<UiToolButtonDefinition, 4> Railroads{{
@@ -74,10 +66,9 @@ namespace
         {UiButtonIds::TerminalButton, "Terminal", "ui/toolbar/btn_terminal"}
     }};
 
-    constexpr std::array<UiToolMenuDefinition, 8> Menus{{
+    constexpr std::array<UiToolMenuDefinition, 7> Menus{{
         {UiButtonIds::RoadsMenuButton, Roads},
         {UiButtonIds::HighwaysMenuButton, Highways},
-        {UiButtonIds::LightsMenuButton, Lights},
         {UiButtonIds::RailroadsMenuButton, Railroads},
         {UiButtonIds::CommuterRailMenuButton, CommuterRail},
         {UiButtonIds::PedestrianButton, Ped},

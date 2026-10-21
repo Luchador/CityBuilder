@@ -4,9 +4,10 @@
 namespace
 {
     // Nearest the toolbar first, extending left. Subtools descend below each category.
-    constexpr std::array<UiToolButtonDefinition, 3> Categories{{
+    constexpr std::array<UiToolButtonDefinition, 4> Categories{{
         {UiButtonIds::WaterMenuButton, "Water", "ui/toolbar/btn_water"},
         {UiButtonIds::PowerMenuButton, "Power", "ui/toolbar/btn_power"},
+        {UiButtonIds::LightsMenuButton, "Lights", "ui/toolbar/btn_lights"},
         {UiButtonIds::GarbageMenuButton, "Garbage", "ui/toolbar/btn_garbage"}
     }};
 
@@ -31,6 +32,13 @@ namespace
         {UiButtonIds::FusionPowerPlantButton, "Fusion Power Plant", "ui/toolbar/btn_fusion"}
     }};
 
+    constexpr std::array<UiToolButtonDefinition, 4> Lights{{
+        {UiButtonIds::WoodPoleButton, "Wood Pole", "ui/toolbar/btn_wood_pole"},
+        {UiButtonIds::MetalPoleButton, "Metal Pole", "ui/toolbar/btn_metal_pole"},
+        {UiButtonIds::StringLightsButton, "String Lights", "ui/toolbar/btn_string_lights"},
+        {UiButtonIds::SpotlightButton, "Spotlight", "ui/toolbar/btn_spotlight"}
+    }};
+
     constexpr std::array<UiToolButtonDefinition, 4> Garbage{{
         {UiButtonIds::LandfillButton, "Landfill", "ui/toolbar/btn_landfill"},
         {UiButtonIds::IncineratorButton, "Incinerator", "ui/toolbar/btn_incinerator"},
@@ -38,9 +46,10 @@ namespace
         {UiButtonIds::WasteToEnergyPlantButton, "Waste to Energy Plant", "ui/toolbar/btn_waste_to_energy"}
     }};
 
-    constexpr std::array<UiToolMenuDefinition, 3> Menus{{
+    constexpr std::array<UiToolMenuDefinition, 4> Menus{{
         {UiButtonIds::WaterMenuButton, Water},
         {UiButtonIds::PowerMenuButton, Power},
+        {UiButtonIds::LightsMenuButton, Lights},
         {UiButtonIds::GarbageMenuButton, Garbage}
     }};
 }
