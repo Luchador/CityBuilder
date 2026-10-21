@@ -3,6 +3,13 @@
 #include <cstdint>
 #include <string_view>
 
+struct ZoneColor
+{
+    float r;
+    float g;
+    float b;
+};
+
 enum class ZoneType : std::uint8_t
 {
     None,
@@ -38,4 +45,12 @@ struct ZoneDefinition
 {
     std::string_view name;
     ZoneCategory category;
+    ZoneColor color;
+    std::int64_t costPerTile;
+};
+
+class Zone
+{
+public:
+    const ZoneDefinition& GetZoneDefinition(ZoneType type);
 };
