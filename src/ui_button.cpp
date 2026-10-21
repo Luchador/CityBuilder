@@ -62,6 +62,14 @@ void UiButton::SetTextures(UiButtonTextures images)
     textures = images;
 }
 
+void UiButton::SetSkin(UiButtonSkin value)
+{
+    const bool any = value.opacity || value.highlighted || value.pressed;
+    if (any && (!value.opacity || !value.highlighted || !value.pressed))
+        throw std::invalid_argument("A button skin requires an opacity mask and both overlays.");
+    skin = value; // An empty skin restores the ordinary three-texture renderer.
+}
+
 void UiButton::SetShape(UiButtonShape value)
 {
     if (shape == value) 

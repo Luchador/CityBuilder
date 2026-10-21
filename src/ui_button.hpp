@@ -23,6 +23,15 @@ struct UiButtonInsets
     float left = 0, top = 0, right = 0, bottom = 0;
 };
 
+// Optional shared artwork, composited over the normal icon by the tool shader.
+// The opacity image stores coverage in its red channel (white = visible).
+struct UiButtonSkin
+{
+    const Texture* opacity = nullptr;
+    const Texture* highlighted = nullptr;
+    const Texture* pressed = nullptr;
+};
+
 class UiButton
 {
 public:
@@ -37,6 +46,8 @@ public:
     void SetHitInsets(UiButtonInsets insets);
     UiRect GetHitBounds() const;
     void SetTextures(UiButtonTextures images);
+    void SetSkin(UiButtonSkin value);
+    const UiButtonSkin& GetSkin() const { return skin; }
     // Empty text disables the tooltip. Text is owned; temporary strings are safe.
     void SetTooltip(std::string_view text) { tooltip = text; }
     const std::string& GetTooltip() const { return tooltip; }
@@ -82,6 +93,7 @@ private:
     UiRect bounds{};
     UiButtonInsets hitInsets{};
     UiButtonTextures textures{};
+    UiButtonSkin skin{};
     UiButtonShape shape = UiButtonShape::Rectangle;
     HitTestFunction customHitTest;
     bool enabled = true, visible = true, selected = false;

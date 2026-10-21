@@ -50,7 +50,9 @@ void UiManager::Initialize(SDL_GPUDevice* gpu, SDL_Window* targetWindow, Texture
         bottomBarText.Initialize(textRenderer);
         imageVertexShader = CompileShader(device, UiImageVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
         imageFragmentShader = CompileShader(device, UiImageFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1);
-        imageRenderer.Initialize(device, imageVertexShader, imageFragmentShader, format);
+        toolButtonFragmentShader = CompileShader(device, UiToolButtonFragmentShaderSource,
+            SDL_GPU_SHADERSTAGE_FRAGMENT, 3, "", 1);
+        imageRenderer.Initialize(device, imageVertexShader, imageFragmentShader, format, toolButtonFragmentShader);
         panOverlay.Initialize(sharedTextures);
         CreateUiButtons(buttons, sharedTextures);
         windowSkin.Load(sharedTextures);
@@ -93,7 +95,7 @@ void UiManager::Release()
             SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
         }
     
-        for (auto* shader : {vertexShader, fragmentShader, textVertexShader, textFragmentShader, imageVertexShader, imageFragmentShader})
+        for (auto* shader : {vertexShader, fragmentShader, textVertexShader, textFragmentShader, imageVertexShader, imageFragmentShader, toolButtonFragmentShader})
         {
             if (shader) 
             {
@@ -108,7 +110,7 @@ void UiManager::Release()
     }
 
     vertexShader = fragmentShader = textVertexShader = textFragmentShader = nullptr;
-    imageVertexShader = imageFragmentShader = nullptr;
+    imageVertexShader = imageFragmentShader = toolButtonFragmentShader = nullptr;
     pipeline = nullptr;
     vertices = outlineVertices = nullptr;
     windowVertices = nullptr;

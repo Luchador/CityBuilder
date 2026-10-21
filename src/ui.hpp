@@ -38,6 +38,16 @@ namespace UiButtonIds
     inline constexpr UiButtonId IndustrialButton = 202;
     inline constexpr UiButtonId DezoneButton = 203;
 
+    inline constexpr UiButtonId LightResidentialButton = 210;
+    inline constexpr UiButtonId MediumResidentialButton = 211;
+    inline constexpr UiButtonId DenseResidentialButton = 212;
+    inline constexpr UiButtonId LightCommercialButton = 220;
+    inline constexpr UiButtonId MediumCommercialButton = 221;
+    inline constexpr UiButtonId DenseCommercialButton = 222;
+    inline constexpr UiButtonId FarmButton = 230;
+    inline constexpr UiButtonId MediumIndustrialButton = 231;
+    inline constexpr UiButtonId HeavyIndustrialButton = 232;
+
     inline constexpr UiButtonId TickerPauseButton = 300;
     inline constexpr UiButtonId TickerSpeedButton1 = 301;
     inline constexpr UiButtonId TickerSpeedButton2 = 302;
@@ -58,7 +68,11 @@ namespace UiButtonIds
     inline constexpr UiButtonId OneWayRoadButton = 413;
     inline constexpr UiButtonId TramButton = 414;
     inline constexpr UiButtonId TramStationButton = 415;
-    // 420-429 reserved for future highway tools.
+    inline constexpr UiButtonId HighwayButton = 420;
+    inline constexpr UiButtonId ThreeWayInterchangeButton = 421;
+    inline constexpr UiButtonId CloverLeafInterchangeButton = 422;
+    inline constexpr UiButtonId OverpassButton = 423;
+    inline constexpr UiButtonId OnRampButton = 424;
     inline constexpr UiButtonId RailroadButton = 430;
     inline constexpr UiButtonId RailroadPassengerStationButton = 431;
     inline constexpr UiButtonId RailroadFreightStationButton = 432;
@@ -128,7 +142,9 @@ std::vector<UiVertex> BuildUiBackground(const UiLayout& layout);
 // Application-level UI composition. TextureManager must outlive the buttons.
 void CreateUiButtons(UiButtons& buttons, TextureManager& textures);
 void LayoutUiButtons(UiButtons& buttons, UiMinimap& minimap, const UiLayout& layout);
-// Transportation definitions and texture assignments live in ui_transport.cpp.
+// Flyout definitions and single-icon assignments live in these modules.
+void CreateZoningButtons(UiButtons& buttons, TextureManager& textures);
+void LayoutZoningButtons(UiButtons& buttons, const UiLayout& layout);
 void CreateTransportationButtons(UiButtons& buttons, TextureManager& textures);
 void LayoutTransportationButtons(UiButtons& buttons, const UiLayout& layout);
 void SetUiMinimized(UiSettings& settings, UiButtons& buttons, bool minimized);

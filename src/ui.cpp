@@ -61,17 +61,6 @@ namespace
         {{UiButtonIds::DayButton, "ui/toolbar/btn_day", "Day / Night"}}
     }};
 
-    // Nearest the toolbar first, extending to the left. These are placeholders;
-    // IDs are returned on release, ready for tool actions or more menus later.
-    constexpr std::array<ButtonDefinition, 4> ZoningButtons{{
-        {UiButtonIds::ResidentialButton, "ui/toolbar/btn_res", "Residential Zoning", UiButtonShape::Circle},
-        {UiButtonIds::CommercialButton, "ui/toolbar/btn_com", "Commercial Zoning", UiButtonShape::Circle},
-        {UiButtonIds::IndustrialButton, "ui/toolbar/btn_ind", "Industrial Zoning", UiButtonShape::Circle},
-        {UiButtonIds::DezoneButton, "ui/toolbar/btn_dezone", "Dezone", UiButtonShape::Circle}
-    }};
-    constexpr float ZoningButtonSize = 48.0f;
-    constexpr float ZoningButtonGap = 8.0f;
-
     constexpr std::array<ButtonDefinition, 6> TickerButtons{{
         {UiButtonIds::TickerPauseButton, "ui/ticker/btn_pause", "Pause Simulation"},
         {UiButtonIds::TickerSpeedButton1, "ui/ticker/btn_tickersquare", "Shuffle"},
@@ -182,44 +171,6 @@ namespace
             y -= gap;
         }
     }
-
-    void LayoutZoningButtons(UiButtons& buttons, const UiLayout& layout)
-    {
-        const auto* trigger = buttons.Find(UiButtonIds::ZonesButton);
-
-        if (!trigger) 
-        {
-            return;
-        }
-
-        const UiRect& anchor = trigger->GetBounds();
-        constexpr float count = static_cast<float>(ZoningButtons.size());
-        constexpr float rowWidth = count * (ZoningButtonSize + ZoningButtonGap);
-        const float margin = 4.0f * layout.scale;
-        // Short windows shrink the toolbar buttons horizontally as well. Keep
-        // every submenu icon outside the toolbar, not in that extra side margin.
-        const float attachmentX = std::min(anchor.x, layout.toolbar.x);
-        const float scale = std::max(0.0f, std::min(anchor.h / ToolbarButtonHeight, (attachmentX - margin) / rowWidth));
-        const float size = ZoningButtonSize * scale;
-        const float gap = ZoningButtonGap * scale;
-        const float y = anchor.y + (anchor.h - size) * 0.5f;
-        float x = attachmentX - gap - size;
-        float left = anchor.x;
-
-        for (const auto& definition : ZoningButtons)
-        {
-            if (auto* button = buttons.Find(definition.id)) 
-            {
-                button->SetBounds({x, y, size, size});
-            }
-
-            left = x;
-            x -= size + gap;
-        }
-
-        // A continuous hit area includes the spaces between circular buttons.
-        buttons.SetFlyoutBounds(UiButtonIds::ZonesButton, {left, anchor.y, anchor.x + anchor.w - left, anchor.h});
-    }
 }
 
 void CreateUiButtons(UiButtons& buttons, TextureManager& textures)
@@ -246,15 +197,7 @@ void CreateUiButtons(UiButtons& buttons, TextureManager& textures)
         buttons.Find(definition.id)->SetInteractionFeedbackEnabled(false);
     }
 
-    std::array<UiButtonId, ZoningButtons.size()> children{};
-
-    for (std::size_t i = 0; i < ZoningButtons.size(); ++i)
-    {
-        AddButton(buttons, textures, ZoningButtons[i]);
-        children[i] = ZoningButtons[i].id;
-    }
-
-    buttons.AddFlyout(UiButtonIds::ZonesButton, children);
+    CreateZoningButtons(buttons, textures);
     CreateTransportationButtons(buttons, textures);
 }
 

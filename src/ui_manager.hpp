@@ -140,6 +140,7 @@ private:
     SDL_GPUShader* textFragmentShader = nullptr;
     SDL_GPUShader* imageVertexShader = nullptr;
     SDL_GPUShader* imageFragmentShader = nullptr;
+    SDL_GPUShader* toolButtonFragmentShader = nullptr;
     SDL_GPUGraphicsPipeline* pipeline = nullptr;
     SDL_GPUBuffer* vertices = nullptr;
     Uint32 vertexCount = 0;
