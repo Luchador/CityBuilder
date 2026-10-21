@@ -64,6 +64,16 @@ if(CITY_BUILD_TOOLTIP_TESTS)
     add_test(NAME CityTooltipTextTests COMMAND CityTooltipTextTests)
 endif()
 
+option(CITY_BUILD_TOOL_TESTS "Build tool lifecycle and zone selection checks" OFF)
+if(CITY_BUILD_TOOL_TESTS)
+    enable_testing()
+    add_executable(CityToolTests tests/tool_tests.cpp
+        src/tool.cpp src/toolcontroller.cpp src/zone_tool.cpp src/world.cpp src/terrain.cpp)
+    target_compile_features(CityToolTests PRIVATE cxx_std_20)
+    target_include_directories(CityToolTests PRIVATE src)
+    add_test(NAME CityToolTests COMMAND CityToolTests)
+endif()
+
 option(CITY_BUILD_MAP_SIZE_TESTS "Build selectable map-size regression checks" OFF)
 if(CITY_BUILD_MAP_SIZE_TESTS)
     enable_testing()

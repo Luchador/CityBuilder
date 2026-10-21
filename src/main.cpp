@@ -164,7 +164,11 @@ public:
             playSound.Play();
         };
 
-        uiActions.cancelWorldInteraction = [this] { StopMousePan(); };
+        uiActions.cancelWorldInteraction = [this]
+        {
+            StopMousePan();
+            if (toolController) toolController->Cancel();
+        };
         uiActions.createCity = [this](const CityCreationOptions& options) { CreateCity(options); };
         ui.Initialize(device, window, textures, std::move(uiActions));
 
@@ -375,6 +379,9 @@ private:
             ui.RebuildMinimap(mesh);
             world.emplace(std::move(createdWorld));
             city.emplace(std::move(created));
+            // Construct only after World has reached its persistent address.
+            // Input/picking and tool selection will be connected separately.
+            toolController.emplace(*world);
             simulation = Simulation{}; // New cities begin paused, with no accumulated time.
             camera = Camera(world->GetDimensions().Extent());
         }
@@ -382,6 +389,7 @@ private:
         {
             ReleaseTerrainBuffers();
             terrainMaterial.Release();
+            toolController.reset(); // The controller must release World first.
             world.reset();
             city.reset();
             throw; // UiManager displays the error and keeps Accept available.
