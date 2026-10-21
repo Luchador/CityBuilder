@@ -21,7 +21,7 @@ Output main(float3 position : TEXCOORD0, float3 normal : TEXCOORD1, float3 verte
 }
 )hlsl";
 
-// Compile with WorldLightingShaderSource. SDL fragment texture/sampler slots
+// Compile with WorldLightingShaderSource and ZoneOverlayShaderSource. SDL fragment texture/sampler slots
 // use space2; fragment uniform buffers use space3.
 inline constexpr char TerrainFragmentShaderSource[] = R"hlsl(
 Texture2D<float4> baseColorTexture : register(t0, space2);
@@ -74,6 +74,7 @@ float4 main(Input input) : SV_Target0
 
     // Keep the existing display-space lighting response and light intensities.
     // Base-color blending above is linear; terrain alpha is always opaque.
-    return float4(LinearToSrgb(surfaceColor) * WorldBrightness(worldNormal), 1.0);
+    float3 color = LinearToSrgb(surfaceColor) * WorldBrightness(worldNormal);
+    return float4(ApplyZoneOverlay(color, input.worldXZ, true), 1.0);
 }
 )hlsl";

@@ -1,4 +1,6 @@
 #include "ui_manager.hpp"
+#include "zone_render_data.hpp"
+#include "world.hpp"
 
 #include "gpu_utils.hpp"
 #include "text_shaders.hpp"
@@ -87,6 +89,8 @@ void UiManager::Release()
     textRenderer.Release();
     imageRenderer.Release();
     minimapTexture.reset();
+    minimapBase = {};
+    selectedToolButton.reset();
 
     if (device)
     {
@@ -164,8 +168,16 @@ void UiManager::RebuildMinimap(const TerrainMesh& terrain, std::span<const Minim
     }
 
     // Camera movement and panel resizing do not rebuild the terrain image.
-    const auto image = BuildMinimapImage(terrain, overlays);
-    minimapTexture = textures->CreateRgba(image.width, image.height, image.rgba);
+    minimapBase = BuildMinimapImage(terrain, overlays);
+    minimapTexture = textures->CreateRgba(minimapBase.width, minimapBase.height, minimapBase.rgba);
+}
+
+void UiManager::UpdateMinimapZones(const World& world, ToolTileRect bounds)
+{
+    const auto patch = BuildZoneMinimapPatch(minimapBase, world, bounds);
+    const auto scale = minimapBase.width / world.GetDimensions().TileCount();
+    textures->UpdateRgba(*minimapTexture, bounds.minX * scale, bounds.minZ * scale,
+                         patch.width, patch.height, patch.rgba);
 }
 
 void UiManager::PrepareFrame(bool mousePanning)

@@ -20,7 +20,7 @@ void BottomBarText::Initialize(TextRenderer& renderer)
 
 void BottomBarText::UpdateText(const City& city)
 {
-    news->SetText("Temp");
+    news->SetText(toolStatus);
 
     values[0]->SetText(city.name);
     values[1]->SetText(std::format("{}", city.population));

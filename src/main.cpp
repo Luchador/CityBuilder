@@ -27,6 +27,10 @@
 #include "water_shaders.hpp"
 #include "world.hpp"
 #include "texture.hpp"
+#include "zone_tool.hpp"
+#include "zone_overlay.hpp"
+#include "zone_overlay_shaders.hpp"
+#include "world_zoning.hpp"
 
 [[noreturn]] static void Fail(const char* operation)
 {
@@ -52,6 +56,7 @@ public:
     ~Application()
     {
         ui.CancelInteraction();
+        CancelWorldTool();
         StopMousePan();
 
         if (device) 
@@ -60,6 +65,7 @@ public:
             ui.Release();
             ReleaseTerrainBuffers();
             terrainMaterial.Release();
+            zoneOverlay.Release();
             textures.Release();
             if (terrainPipeline) SDL_ReleaseGPUGraphicsPipeline(device, terrainPipeline);
             if (terrainVertexShader) SDL_ReleaseGPUShader(device, terrainVertexShader);
@@ -114,20 +120,23 @@ public:
         vertexShader = CompileShader(device, VertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, worldPreamble.c_str());
         fragmentShader = CompileShader(device, FragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT);
         terrainVertexShader = CompileShader(device, TerrainVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
-        terrainFragmentShader = CompileShader(device, TerrainFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 2, WorldLightingShaderSource, 1);
+        const std::string terrainFragmentPreamble = std::string(WorldLightingShaderSource) + ZoneOverlayShaderSource;
+        terrainFragmentShader = CompileShader(device, TerrainFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 3, terrainFragmentPreamble.c_str(), 2);
         terrainPipeline = MakePipeline(false);
         gridPipeline = MakePipeline(true);
         skirtVertexShader = CompileShader(device, TerrainSkirtVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, worldPreamble.c_str());
         skirtFragmentShader = CompileShader(device, TerrainSkirtFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 0, "", 1);
         skirtPipeline = MakeSkirtPipeline();
         waterVertexShader = CompileShader(device, WaterVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
-        waterFragmentShader = CompileShader(device, WaterFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT);
+        const std::string waterFragmentPreamble = std::string("#define ZONE_TEXTURE t0\n#define ZONE_SAMPLER s0\n#define ZONE_UNIFORMS b0\n") + ZoneOverlayShaderSource;
+        waterFragmentShader = CompileShader(device, WaterFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1, waterFragmentPreamble.c_str(), 1);
         waterPipeline = MakeWaterPipeline();
 
         UiActions uiActions;
 
         uiActions.zoomCamera = [this](float steps)
         {
+            CancelWorldTool();
             camera.Zoom(steps);
             if (steps > 0.0f) 
             {
@@ -142,6 +151,7 @@ public:
         uiActions.rotateCamera = [this](bool clockwise) { RotateCamera(clockwise); };
         uiActions.moveCameraToMapPoint = [this](float x, float z)
         {
+            CancelWorldTool();
             camera.SetPosition(x * camera.GetMapExtent(), z * camera.GetMapExtent());
         };
 
@@ -168,8 +178,19 @@ public:
         uiActions.cancelWorldInteraction = [this]
         {
             StopMousePan();
-            if (toolController) toolController->Cancel();
+            CancelWorldTool();
         };
+        uiActions.selectZoneTool = [this](ZoneType type)
+        {
+            if (!toolController) return;
+            CancelWorldTool();
+            StopMousePan();
+            toolController->SetTool(std::make_unique<ZoneTool>(type));
+            activeZoneType = type;
+            buttonClick.Play();
+        };
+        // Until other tools are implemented, selecting one leaves zoning mode.
+        uiActions.buttonClicked = [this](UiButtonId) { ClearWorldTool(); };
         uiActions.createCity = [this](const CityCreationOptions& options) { CreateCity(options); };
         ui.Initialize(device, window, textures, std::move(uiActions));
 
@@ -203,7 +224,22 @@ public:
 
             while (SDL_PollEvent(&event)) 
             {
-                if (ui.HandleEvent(event))
+                // Termination must not depend on the UI declining this event.
+                if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_WINDOW_MINIMIZED ||
+                    event.type == SDL_EVENT_WINDOW_HIDDEN || event.type == SDL_EVENT_WINDOW_RESIZED ||
+                    event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED ||
+                    (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_RIGHT) ||
+                    (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_TAB)) CancelWorldTool();
+
+                const bool wasDragging = toolController && toolController->IsInteracting();
+                const bool consumed = ui.HandleEvent(event);
+                if (wasDragging && event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT)
+                {
+                    if (consumed) CancelWorldTool();
+                    else EndWorldTool(event.button.x, event.button.y);
+                    continue;
+                }
+                if (consumed)
                 {
                     continue;
                 }
@@ -225,11 +261,27 @@ public:
                     continue;
                 }
                 HandlePanEvent(event);
+
+                if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT && toolController)
+                {
+                    if (toolController->Begin(CurrentToolPointer(event.button.x, event.button.y)))
+                    {
+                        toolMouseCaptured = SDL_CaptureMouse(true);
+                        previewDirty = true;
+                        continue;
+                    }
+                }
     
                 if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) 
                 {
                     if (event.key.key == SDLK_ESCAPE) 
                     {
+                        if (toolController && toolController->HasTool())
+                        {
+                            if (toolController->IsInteracting()) CancelWorldTool();
+                            else ClearWorldTool();
+                            continue;
+                        }
                         running = false;
                     }
         
@@ -250,6 +302,7 @@ public:
     
                     if (event.key.key == SDLK_HOME) 
                     {
+                        CancelWorldTool();
                         StopMousePan();
                         camera.SetPosition(camera.GetMapExtent() * 0.5f, camera.GetMapExtent() * 0.5f);
                         camera.ResetZoom();
@@ -258,6 +311,7 @@ public:
 
                 if (event.type == SDL_EVENT_MOUSE_WHEEL) 
                 {
+                    CancelWorldTool();
                     float amount = event.wheel.y;
     
                     if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) 
@@ -285,8 +339,6 @@ public:
                 {
                     simulation.Update(*city, elapsedMilliseconds);
                 }
-    
-                ui.Update(*city, simulation.GetSimulationSpeed());
             }
 
             if (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS) 
@@ -312,7 +364,7 @@ public:
                 StopMousePan();
             }
 
-            Render();
+            Render(dt);
         }
     }
 
@@ -322,6 +374,13 @@ private:
     std::optional<World> world;
     std::optional<ToolController> toolController;
     ToolPointer toolPointer; // Current cursor hit, refreshed with the rendered camera/view.
+    std::optional<ZoneType> activeZoneType;
+    ToolPreview zonePreview;
+    ZoneEvaluation zoneEvaluation;
+    ToolPreview evaluatedPreview;
+    std::int64_t evaluatedFunds = 0;
+    bool previewDirty = true;
+    bool toolMouseCaptured = false;
     Simulation simulation;
 
     SoundEffect zoomInSound;
@@ -350,6 +409,7 @@ private:
             terrainSettings.dimensions = MapDimensions(GetMapTileCount(options.mapSize));
             terrainSettings.seed = SDL_rand_bits(); // Use a fixed number here to replay a landscape.
             World createdWorld(terrainSettings);
+            zoneOverlay.Initialize(device, textures, createdWorld);
             const auto& heightmap = createdWorld.GetTerrain();
             const TerrainMesh mesh = BuildTerrain(heightmap);
 
@@ -382,7 +442,6 @@ private:
             world.emplace(std::move(createdWorld));
             city.emplace(std::move(created));
             // Construct only after World has reached its persistent address.
-            // Input/picking and tool selection will be connected separately.
             toolController.emplace(*world);
             simulation = Simulation{}; // New cities begin paused, with no accumulated time.
             camera = Camera(world->GetDimensions().Extent());
@@ -391,6 +450,7 @@ private:
         {
             ReleaseTerrainBuffers();
             terrainMaterial.Release();
+            zoneOverlay.Release();
             toolController.reset(); // The controller must release World first.
             world.reset();
             city.reset();
@@ -415,6 +475,7 @@ private:
 
     void ToggleFullscreen()
     {
+        CancelWorldTool();
         // Cancel interactions whose screen coordinates may change.
         StopMousePan();
         ui.CancelInteraction();
@@ -429,6 +490,7 @@ private:
 
     void RotateCamera(bool clockwise)
     {
+        CancelWorldTool();
         // Release capture and restore the cursor before changing direction.
         StopMousePan();
 
@@ -746,9 +808,99 @@ private:
         return pointer;
     }
 
-    void Render()
+    ToolPointer CurrentToolPointer(float x, float y)
     {
-        toolPointer = {}; // No stale hit if startup/minimization skips the world pass.
+        int width = 0, height = 0;
+        if (!SDL_GetWindowSizeInPixels(window, &width, &height) || width <= 0 || height <= 0)
+            return {x, y, std::nullopt};
+        return GetToolPointer(x, y, static_cast<Uint32>(width), static_cast<Uint32>(height));
+    }
+
+    void ReleaseToolCapture()
+    {
+        if (toolMouseCaptured) SDL_CaptureMouse(false);
+        toolMouseCaptured = false;
+    }
+
+    void CancelWorldTool()
+    {
+        if (toolController) toolController->Cancel();
+        ReleaseToolCapture();
+        zonePreview = {};
+        zoneEvaluation = {};
+        previewDirty = true;
+    }
+
+    void ClearWorldTool()
+    {
+        CancelWorldTool();
+        if (toolController) toolController->ClearTool();
+        activeZoneType.reset();
+        ui.SetSelectedToolButton(std::nullopt);
+        ui.SetToolStatus("");
+    }
+
+    void ApplyToolResult(const ToolResult& result)
+    {
+        if (const auto* request = std::get_if<ZoneRequest>(&result); request && world && city)
+        {
+            const auto placement = ApplyZoning(*world, *city, *request);
+            if (placement.changed)
+            {
+                // Upload only the edited region, before the next frame is acquired.
+                zoneOverlay.Update(*world, request->tiles);
+                ui.UpdateMinimapZones(*world, request->tiles);
+            }
+            previewDirty = true;
+        }
+    }
+
+    void EndWorldTool(float x, float y)
+    {
+        const auto result = toolController->End(CurrentToolPointer(x, y));
+        ReleaseToolCapture();
+        ApplyToolResult(result);
+    }
+
+    void PrepareWorldTool(float elapsedSeconds)
+    {
+        toolPointer = {};
+        if (!world || !city || !toolController) return;
+        float x = 0, y = 0;
+        const auto held = SDL_GetMouseState(&x, &y);
+        if (toolController->IsInteracting() && !(held & SDL_BUTTON_LMASK)) CancelWorldTool();
+        toolPointer = CurrentToolPointer(x, y);
+        ApplyToolResult(toolController->Update(toolPointer, elapsedSeconds));
+        zonePreview = toolController->BuildPreview();
+        if (previewDirty || zonePreview.tiles != evaluatedPreview.tiles || zonePreview.zoneType != evaluatedPreview.zoneType ||
+            evaluatedFunds != city->funds)
+        {
+            zoneEvaluation = {};
+            if (zonePreview.tiles && zonePreview.zoneType)
+                zoneEvaluation = EvaluateZoning(*world, {*zonePreview.tiles, *zonePreview.zoneType}, city->funds);
+            evaluatedPreview = zonePreview;
+            evaluatedFunds = city->funds;
+            previewDirty = false;
+        }
+        if (activeZoneType)
+        {
+            const std::string name = *activeZoneType == ZoneType::None ? "Dezone" :
+                std::string(Zone::GetZoneDefinition(*activeZoneType).name);
+            std::string status = name + " - click or drag; Esc to cancel";
+            if (zonePreview.tiles && zoneEvaluation.valid)
+            {
+                status = name + ": " + std::to_string(zoneEvaluation.changes) + " tiles, $" +
+                    std::to_string(zoneEvaluation.cost) + "; " + std::to_string(zoneEvaluation.blocked) + " blocked";
+                if (!zoneEvaluation.affordable) status += " - insufficient funds";
+            }
+            ui.SetToolStatus(status);
+        }
+        ui.Update(*city, simulation.GetSimulationSpeed());
+    }
+
+    void Render(float elapsedSeconds)
+    {
+        PrepareWorldTool(elapsedSeconds);
         // UI atlas and static geometry uploads precede the presentation commands.
         ui.PrepareFrame(camera.IsMousePanning());
 
@@ -771,6 +923,7 @@ private:
 
         if (!swapchain) 
         {
+            toolPointer = {};
             if (!SDL_SubmitGPUCommandBuffer(commands)) 
             {
                 Fail("Submit minimized frame");
@@ -846,9 +999,8 @@ private:
 
         // Camera panning/zoom/rotation and UI layout have settled for this frame.
         // Use actual swapchain dimensions, including fractional display scaling.
-        float mouseX = 0, mouseY = 0;
-        SDL_GetMouseState(&mouseX, &mouseY);
-        toolPointer = GetToolPointer(mouseX, mouseY, width, height);
+        // CurrentToolPointer used the current drawable size before acquiring
+        // this frame, so preview text and texture uploads are ready to draw.
 
         Uniforms view{camera.GetCenterX(), camera.GetCenterZ(), camera.GetHalfHeight(), static_cast<float>(worldWidth) / static_cast<float>(worldHeight), 1.0f, 1.0f, 1.0f, 0.0f, camera.GetOrientation(), camera.GetMapExtent()};
 
@@ -889,6 +1041,7 @@ private:
         SDL_BindGPUIndexBuffer(pass, &indexBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
         SDL_PushGPUVertexUniformData(commands, 0, &view, sizeof(view));
         terrainMaterial.Bind(commands, pass, terrainMaterialSettings);
+        zoneOverlay.Bind(commands, pass, zonePreview, zoneEvaluation);
         SDL_DrawGPUIndexedPrimitives(pass, indexCount, 1, 0, 0, 0);
 
         // Render the terrain line grid.
@@ -925,6 +1078,7 @@ private:
             view.blue = WaterColor.b;
             view.depthOffset = 0.0f;
             SDL_PushGPUVertexUniformData(commands, 0, &view, sizeof(view));
+            zoneOverlay.Bind(commands, pass, zonePreview, zoneEvaluation, 0, 0);
             SDL_DrawGPUIndexedPrimitives(pass, waterIndexCount, 1, 0, 0, 0);
         }
 
@@ -975,6 +1129,7 @@ private:
     SDL_GPUTexture* depth = nullptr;
     TextureManager textures;
     TerrainMaterial terrainMaterial;
+    ZoneOverlay zoneOverlay;
     TerrainMaterialSettings terrainMaterialSettings;
     UiManager ui;
     bool restoreCursor = false;

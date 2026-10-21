@@ -145,7 +145,8 @@ std::unique_ptr<Texture> TextureManager::LoadTexture(const std::string& path, Te
                          static_cast<const Uint8*>(rgba->pixels), static_cast<std::size_t>(rgba->pitch), path, options);
 }
 
-std::unique_ptr<Texture> TextureManager::CreateRgba(Uint32 width, Uint32 height, std::span<const Uint8> pixels)
+std::unique_ptr<Texture> TextureManager::CreateRgba(Uint32 width, Uint32 height, std::span<const Uint8> pixels,
+                                                   TextureOptions options)
 {
     if (!device)
     {
@@ -156,7 +157,67 @@ std::unique_ptr<Texture> TextureManager::CreateRgba(Uint32 width, Uint32 height,
     {
         throw std::invalid_argument("RGBA image requires dimensions in 1..4096 and exactly width * height * 4 bytes");
     }
-    return UploadTexture(width, height, pixels.data(), static_cast<std::size_t>(width) * 4, "generated RGBA image");
+    return UploadTexture(width, height, pixels.data(), static_cast<std::size_t>(width) * 4, "generated RGBA image", options);
+}
+
+void TextureManager::UpdateRgba(Texture& texture, Uint32 x, Uint32 y, Uint32 width, Uint32 height,
+                                std::span<const Uint8> pixels)
+{
+    if (!device || texture.device != device || !width || !height || x >= texture.width || y >= texture.height ||
+        width > texture.width - x || height > texture.height - y ||
+        pixels.size() != static_cast<std::size_t>(width) * height * 4)
+        throw std::invalid_argument("Invalid RGBA texture update");
+    const Uint32 pitch = (width * 4 + 255u) & ~255u;
+    SDL_GPUTransferBuffer* transfer = nullptr;
+    SDL_GPUCommandBuffer* commands = nullptr;
+    try
+    {
+        SDL_GPUTransferBufferCreateInfo info{};
+        info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_UPLOAD;
+        info.size = pitch * height;
+        transfer = SDL_CreateGPUTransferBuffer(device, &info);
+        if (!transfer) FailTexture("Create texture update buffer", "generated RGBA image");
+        auto* mapped = static_cast<Uint8*>(SDL_MapGPUTransferBuffer(device, transfer, false));
+        if (!mapped) FailTexture("Map texture update", "generated RGBA image");
+        std::memset(mapped, 0, info.size);
+        for (Uint32 row = 0; row < height; ++row)
+            for (Uint32 col = 0; col < width; ++col)
+            {
+                const auto source = (static_cast<std::size_t>(row) * width + col) * 4;
+                const auto destination = static_cast<std::size_t>(row) * pitch + col * 4;
+                const Uint32 alpha = pixels[source + 3];
+                for (int channel = 0; channel < 3; ++channel)
+                    mapped[destination + channel] = texture.content == TextureContent::Ui ?
+                        static_cast<Uint8>((pixels[source + channel] * alpha + 127) / 255) : pixels[source + channel];
+                mapped[destination + 3] = static_cast<Uint8>(alpha);
+            }
+        SDL_UnmapGPUTransferBuffer(device, transfer);
+        commands = SDL_AcquireGPUCommandBuffer(device);
+        if (!commands) FailTexture("Acquire texture update", "generated RGBA image");
+        auto* pass = SDL_BeginGPUCopyPass(commands);
+        if (!pass) FailTexture("Begin texture update", "generated RGBA image");
+        SDL_GPUTextureTransferInfo source{};
+        source.transfer_buffer = transfer;
+        source.pixels_per_row = pitch / 4;
+        source.rows_per_layer = height;
+        SDL_GPUTextureRegion region{};
+        region.texture = texture.handle;
+        region.x = x; region.y = y; region.w = width; region.h = height; region.d = 1;
+        // Do not cycle a partial update: untouched pixels must be preserved.
+        SDL_UploadToGPUTexture(pass, &source, &region, false);
+        SDL_EndGPUCopyPass(pass);
+        if (texture.mipLevels > 1) SDL_GenerateMipmapsForGPUTexture(commands, texture.handle);
+        const bool submitted = SDL_SubmitGPUCommandBuffer(commands);
+        commands = nullptr;
+        if (!submitted) FailTexture("Submit texture update", "generated RGBA image");
+        SDL_ReleaseGPUTransferBuffer(device, transfer);
+    }
+    catch (...)
+    {
+        if (commands) SDL_CancelGPUCommandBuffer(commands);
+        if (transfer) SDL_ReleaseGPUTransferBuffer(device, transfer);
+        throw;
+    }
 }
 
 std::unique_ptr<Texture> TextureManager::UploadTexture(Uint32 width, Uint32 height, const Uint8* pixels,
@@ -167,6 +228,7 @@ std::unique_ptr<Texture> TextureManager::UploadTexture(Uint32 width, Uint32 heig
 
     texture->width = width;
     texture->height = height;
+    texture->content = options.content;
     if (options.mipmaps)
     {
         for (Uint32 size = std::max(width, height); size > 1; size /= 2)

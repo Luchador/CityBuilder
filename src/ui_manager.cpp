@@ -1,4 +1,5 @@
 #include "ui_manager.hpp"
+#include "ui_zoning.hpp"
 
 #include <algorithm>
 #include <array>
@@ -135,6 +136,13 @@ void UiManager::SetSettings(const UiSettings& next)
 
 void UiManager::OnUiButtonClicked(UiButtonId id)
 {
+    if (const auto zone = ZoneTypeForButton(id); zone && actions.selectZoneTool)
+    {
+        actions.selectZoneTool(*zone);
+        SetSelectedToolButton(id);
+        buttons.CancelInteraction(); // Selection is complete; close all flyouts.
+        return;
+    }
     switch (id)
     {
         case UiButtonIds::ZoomInButton:
@@ -245,6 +253,15 @@ void UiManager::OnUiButtonClicked(UiButtonId id)
             break;
         }
     }
+}
+
+void UiManager::SetSelectedToolButton(std::optional<UiButtonId> id)
+{
+    if (selectedToolButton)
+        if (auto* previous = buttons.Find(*selectedToolButton)) previous->SetSelected(false);
+    selectedToolButton = id;
+    if (id)
+        if (auto* next = buttons.Find(*id)) next->SetSelected(true);
 }
 
 bool UiManager::HandleMinimapEvent(const SDL_Event& event)

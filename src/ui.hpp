@@ -41,6 +41,7 @@ namespace UiButtonIds
     inline constexpr UiButtonId LightResidentialButton = 210;
     inline constexpr UiButtonId MediumResidentialButton = 211;
     inline constexpr UiButtonId DenseResidentialButton = 212;
+    inline constexpr UiButtonId MixedResidentialButton = 213;
     inline constexpr UiButtonId LightCommercialButton = 220;
     inline constexpr UiButtonId MediumCommercialButton = 221;
     inline constexpr UiButtonId DenseCommercialButton = 222;

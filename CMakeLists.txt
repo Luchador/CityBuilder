@@ -74,6 +74,18 @@ if(CITY_BUILD_TOOL_TESTS)
     add_test(NAME CityToolTests COMMAND CityToolTests)
 endif()
 
+option(CITY_BUILD_ZONING_TESTS "Build zoning placement and pricing checks" OFF)
+if(CITY_BUILD_ZONING_TESTS)
+    enable_testing()
+    add_executable(CityZoningTests tests/zoning_tests.cpp
+        src/world_zoning.cpp src/zone_render_data.cpp src/zone.cpp src/world.cpp src/terrain.cpp
+        src/city.cpp src/minimap_map.cpp src/water.cpp
+        src/tool.cpp src/toolcontroller.cpp src/zone_tool.cpp)
+    target_compile_features(CityZoningTests PRIVATE cxx_std_20)
+    target_include_directories(CityZoningTests PRIVATE src)
+    add_test(NAME CityZoningTests COMMAND CityZoningTests)
+endif()
+
 option(CITY_BUILD_PICKING_TESTS "Build terrain cursor picking checks" OFF)
 if(CITY_BUILD_PICKING_TESTS)
     enable_testing()

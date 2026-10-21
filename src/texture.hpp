@@ -54,6 +54,7 @@ private:
     SDL_GPUTexture* handle = nullptr;
     Uint32 width = 0, height = 0;
     Uint32 mipLevels = 1;
+    TextureContent content = TextureContent::Ui;
 };
 
 // Use on the application's render thread, with one manager per GPU device.
@@ -80,7 +81,12 @@ public:
 
     // Create an uncached image from tightly packed RGBA8 (straight alpha).
     // Caller owns the result and must destroy it before the GPU device.
-    std::unique_ptr<Texture> CreateRgba(Uint32 width, Uint32 height, std::span<const Uint8> pixels);
+    std::unique_ptr<Texture> CreateRgba(Uint32 width, Uint32 height, std::span<const Uint8> pixels,
+                                        TextureOptions options = {});
+    // Replace a region of an owned, generated image. Preserves all other pixels
+    // and its original color/alpha convention. Call before acquiring a frame.
+    void UpdateRgba(Texture& texture, Uint32 x, Uint32 y, Uint32 width, Uint32 height,
+                    std::span<const Uint8> pixels);
     std::size_t Size() const noexcept 
     { 
         return textures.size(); 

@@ -7,6 +7,7 @@
 #include "ui_text.hpp"
 #include "ui_window.hpp"
 #include "ui_tooltip.hpp"
+#include "world_zoning.hpp"
 
 #include <functional>
 #include <memory>
@@ -20,6 +21,7 @@ struct UiActions
     std::function<void(float, float)> moveCameraToMapPoint; // Normalized X/Z, 0..1.
     std::function<void()> cancelWorldInteraction;
     std::function<void(UiButtonId)> buttonClicked; // Future tools and speed controls.
+    std::function<void(ZoneType)> selectZoneTool;
     std::function<void(int)> setSimulationSpeed;
     std::function<void()> resumeSimulation;
     // Build the city/world synchronously. Throw on failure: the form reports
@@ -64,6 +66,9 @@ public:
     // Supply the actual simulation speed each frame: 0 = paused, 1..4 = running.
     void Update(const City& city, int simulationSpeed);
     void RebuildMinimap(const TerrainMesh& terrain, std::span<const MinimapTileOverlay> overlays = {});
+    void UpdateMinimapZones(const World& world, ToolTileRect bounds);
+    void SetSelectedToolButton(std::optional<UiButtonId> id);
+    void SetToolStatus(std::string_view text) { bottomBarText.SetToolStatus(text); }
 
     // Prepare before acquiring the frame command buffer (text/geometry uploads).
     void PrepareFrame(bool mousePanning);
@@ -109,6 +114,8 @@ private:
     UiImageRenderer imageRenderer;
     PanOverlay panOverlay;
     std::unique_ptr<Texture> minimapTexture;
+    MinimapImage minimapBase;
+    std::optional<UiButtonId> selectedToolButton;
     bool initialized = false;
     bool layoutDirty = true;
     bool geometryDirty = true;
