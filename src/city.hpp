@@ -6,6 +6,7 @@
 
 enum class CityDifficulty { Easy, Medium, Hard };
 enum class CityMapSize { Small, Medium, Large, Giant };
+enum class Biome { Deciduous, Evergreen, Prairie, Redwood, Desert, Chaparal, Subtropical};
 
 // Convert the creation form's choice to the number of tiles on each side.
 std::uint32_t GetMapTileCount(CityMapSize size);

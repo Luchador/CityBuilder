@@ -5,9 +5,9 @@ namespace
 {
     // Nearest the toolbar first, extending left. The first four are direct tools.
     constexpr std::array<UiToolButtonDefinition, 6> Categories{{
-        {UiButtonIds::RaiseTerrainButton, "Raise Terrain", "ui/toolbar/btn_raise_terrain"},
-        {UiButtonIds::LowerTerrainButton, "Lower Terrain", "ui/toolbar/btn_lower_terrain"},
-        {UiButtonIds::FlattenTerrainButton, "Flatten Terrain", "ui/toolbar/btn_flatten_terrain"},
+        {UiButtonIds::RaiseTerrainButton, "**Raise Terrain**\nHold Control and use the Scroll Wheel to change tool radius.", "ui/toolbar/btn_raise_terrain"},
+        {UiButtonIds::LowerTerrainButton, "**Lower Terrain**\nHold Control and use the Scroll Wheel to change tool radius.", "ui/toolbar/btn_lower_terrain"},
+        {UiButtonIds::FlattenTerrainButton, "**Flatten Terrain**\nHold Control and use the Scroll Wheel to change tool radius.", "ui/toolbar/btn_flatten_terrain"},
         {UiButtonIds::CreateWaterButton, "Create Water", "ui/toolbar/btn_create_water"},
         {UiButtonIds::PlantFoliageMenuButton, "Plant Foliage", "ui/toolbar/btn_plant_trees"},
         {UiButtonIds::CreateAnimalMenuButton, "Create Animal", "ui/toolbar/btn_create_animal"}
