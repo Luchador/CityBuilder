@@ -18,6 +18,10 @@ public:
     void ClearTool();
     const Tool* GetTool() const { return currentTool.get(); }
     bool HasTool() const { return currentTool != nullptr; }
+    ToolSuccessSound GetSuccessSound() const noexcept
+    {
+        return currentTool ? currentTool->GetSuccessSound() : ToolSuccessSound::None;
+    }
     bool IsInteracting() const { return interacting; }
 
     // The application will route world input here after UI/camera arbitration.

@@ -48,7 +48,8 @@ namespace
         controller.SetTool(std::make_unique<RoadTool>());
         Check(Empty(controller.Update(At(2, 3), .016f)) && Empty(controller.End(At(2, 3))),
               "Hover or flyout release placed a road");
-        Check(controller.BuildPreview().roadTile == ToolTile{2, 3} && controller.BuildPreview().roadAllowed,
+        Check(controller.BuildPreview().tiles == ToolTileRect{2, 3, 2, 3} &&
+              !controller.BuildPreview().zoneType && controller.BuildPreview().placementAllowed,
               "Valid road preview missing");
         world.GetTile(2, 3).zoneType = ZoneType::ResidentialLight;
         Check(controller.Begin(At(2, 3)), "Valid road click rejected");
@@ -62,7 +63,10 @@ namespace
         Check(!world.PlaceRoad(2, 3) && world.GetRoads().size() == 1 && !CanZoneTile(world, 2, 3),
               "Duplicate road or zoning over road allowed");
         controller.Update(At(2, 3), .016f);
-        Check(!controller.BuildPreview().roadAllowed && !controller.Begin(At(2, 3)), "Occupied preview/press allowed");
+        Check(!controller.BuildPreview().placementAllowed && controller.Begin(At(2, 3)),
+              "Invalid preview must still accept a gesture for rejection feedback");
+        const auto blocked = std::get<RoadRequest>(controller.End(At(2, 3)));
+        Check(!world.PlaceRoad(blocked.tile.x, blocked.tile.z), "Occupied road request was not rejected at commit");
         world.GetTile(4, 4).buildingId = 7;
         world.GetTile(5, 4).infrastructureId = 99;
         Check(!world.PlaceRoad(4, 4) && !world.PlaceRoad(5, 4), "Road replaced occupied tile");
@@ -81,7 +85,7 @@ namespace
         Check(world.GetRoads()[0].id != world.GetRoads()[1].id, "Infrastructure IDs repeated");
         controller.Begin(At(3, 3));
         controller.Update(At(3, 4), .016f);
-        Check(!controller.BuildPreview().roadTile && Empty(controller.End(At(3, 4))), "Drag created a road");
+        Check(!controller.BuildPreview().tiles && Empty(controller.End(At(3, 4))), "Drag created a road");
         controller.Begin(At(3, 3));
         controller.Cancel();
         Check(Empty(controller.End(At(3, 3))), "Canceled click created a road");
@@ -89,7 +93,8 @@ namespace
         Check(Empty(controller.End({})), "UI/off-map release used stale hover");
         controller.Begin(At(3, 3));
         world.GetTile(3, 3).buildingId = 1;
-        Check(Empty(controller.End(At(3, 3))), "Release ignored newly occupied tile");
+        const auto newlyBlocked = std::get<RoadRequest>(controller.End(At(3, 3)));
+        Check(!world.PlaceRoad(newlyBlocked.tile.x, newlyBlocked.tile.z), "Commit ignored newly occupied tile");
         Check(world.PlaceRoad(15, 15), "Last map tile rejected");
         std::cout << "PASS: click/cancel, bounds, flat/dry rules, occupancy, IDs and zone replacement\n";
     }

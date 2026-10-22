@@ -6,7 +6,7 @@
 class ZoneTool final : public Tool
 {
 public:
-    explicit ZoneTool(ZoneType type);
+    explicit ZoneTool(ZoneType type, ToolSuccessSound successSound = ToolSuccessSound::PlaceZone);
 
     ZoneType GetZoneType() const { return zoneType; }
     bool Begin(const ToolContext& context, const ToolPointer& pointer) override;

@@ -2,7 +2,7 @@
 
 #include <stdexcept>
 
-ZoneTool::ZoneTool(ZoneType type) : zoneType(type)
+ZoneTool::ZoneTool(ZoneType type, ToolSuccessSound successSound) : Tool(successSound), zoneType(type)
 {
     switch (type)
     {

@@ -1,6 +1,7 @@
 #pragma once
 
 #include "zone.hpp"
+#include "tool_feedback.hpp"
 
 #include <optional>
 #include <variant>
@@ -99,6 +100,8 @@ class Tool
 public:
     virtual ~Tool();
 
+    ToolSuccessSound GetSuccessSound() const noexcept { return successSound; }
+
     // Return true to capture a new gesture. Begin requires a valid world hit.
     virtual bool Begin(const ToolContext& context, const ToolPointer& pointer) = 0;
     // Called every frame, including while hovering. Continuous tools can emit
@@ -110,4 +113,11 @@ public:
     // Clear pending input/preview; this does not undo already-applied edits.
     virtual void Cancel() noexcept = 0;
     virtual void BuildPreview(ToolPreview& preview) const = 0;
+
+protected:
+    // Tools declare feedback without owning audio resources or playing sounds.
+    explicit Tool(ToolSuccessSound sound = ToolSuccessSound::None) noexcept : successSound(sound) {}
+
+private:
+    ToolSuccessSound successSound;
 };

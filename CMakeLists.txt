@@ -106,6 +106,18 @@ if(CITY_BUILD_TOOLTIP_TESTS)
     add_test(NAME CityTooltipTextTests COMMAND CityTooltipTextTests)
 endif()
 
+option(CITY_BUILD_TOOL_SOUND_TESTS "Build tool sound selection and feedback checks" OFF)
+if(CITY_BUILD_TOOL_SOUND_TESTS)
+    enable_testing()
+    add_executable(CityToolSoundTests tests/tool_sound_tests.cpp src/tool_sound_player.cpp
+        src/tool.cpp src/toolcontroller.cpp src/road_tool.cpp src/zone_tool.cpp src/world.cpp src/terrain.cpp)
+    target_compile_features(CityToolSoundTests PRIVATE cxx_std_20)
+    target_include_directories(CityToolSoundTests PRIVATE src)
+    # Playback double needs SDL's public SoundEffect types, but no audio device.
+    target_link_libraries(CityToolSoundTests PRIVATE SDL3::Headers)
+    add_test(NAME CityToolSoundTests COMMAND CityToolSoundTests)
+endif()
+
 option(CITY_BUILD_TOOL_TESTS "Build tool lifecycle and zone selection checks" OFF)
 if(CITY_BUILD_TOOL_TESTS)
     enable_testing()

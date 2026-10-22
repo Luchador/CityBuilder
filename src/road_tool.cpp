@@ -1,6 +1,10 @@
 #include "road_tool.hpp"
 #include "world.hpp"
 
+RoadTool::RoadTool(ToolSuccessSound successSound) : Tool(successSound)
+{
+}
+
 void RoadTool::UpdateHover(const ToolContext& context, const ToolPointer& pointer)
 {
     hovered.reset();

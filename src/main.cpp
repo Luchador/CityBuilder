@@ -17,6 +17,7 @@
 #include "debug_commands.hpp"
 #include "simulation.hpp"
 #include "sound.hpp"
+#include "tool_sound_player.hpp"
 #include "terrain.hpp"
 #include "terrain_material.hpp"
 #include "terrain_picking.hpp"
@@ -254,6 +255,11 @@ public:
         toolDeniedSound.Load("sfx/ui/sfx_denied.wav");
         placeZoneSound.Load("sfx/ui/sfx_place_zone.wav");
         buildRoadSound.Load("sfx/ui/sfx_build_road.wav");
+
+        // Register each loaded effect once. Any number of tools can share an ID.
+        toolSounds.Bind(ToolSuccessSound::PlaceZone, placeZoneSound);
+        toolSounds.Bind(ToolSuccessSound::BuildRoad, buildRoadSound);
+        toolSounds.SetDeniedSound(toolDeniedSound);
     }
 
     void Run()
@@ -355,6 +361,7 @@ private:
     SoundEffect toolDeniedSound;
     SoundEffect buildRoadSound;
     SoundEffect placeZoneSound;
+    ToolSoundPlayer toolSounds;
 
     // Invoked only by the creation form's Accept action. The optional City and
     // World stay empty until all world resources have been prepared.
@@ -833,8 +840,9 @@ private:
         ui.SetToolStatus("");
     }
 
-    void ApplyToolResult(const ToolResult& result)
+    void ApplyToolResult(const ToolResult& result, ToolSuccessSound successSound)
     {
+        ToolOutcome outcome = ToolOutcome::NoChange;
         if (const auto* request = std::get_if<ZoneRequest>(&result); request && world && city)
         {
             const auto placement = ApplyZoning(*world, *city, *request);
@@ -844,11 +852,11 @@ private:
                 // Upload only the edited region, before the next frame is acquired.
                 zoneOverlay.Update(*world, request->tiles);
                 ui.UpdateMinimapZones(*world, request->tiles);
-                placeZoneSound.Play();
+                outcome = placement.evaluation.blocked > 0 ? ToolOutcome::PartialSuccess : ToolOutcome::Success;
             }
             else if (!placement.evaluation.valid || !placement.evaluation.affordable || placement.evaluation.blocked > 0)
             {
-                toolDeniedSound.Play();
+                outcome = ToolOutcome::Rejected;
             }
 
             previewDirty = true;
@@ -863,15 +871,19 @@ private:
                 // from both terrain and minimap. Roads have no minimap layer yet.
                 zoneOverlay.Update(*world, bounds);
                 ui.UpdateMinimapZones(*world, bounds);
-                buildRoadSound.Play();
+                outcome = ToolOutcome::Success;
             }
             else
             {
-                toolDeniedSound.Play();
+                outcome = ToolOutcome::Rejected;
             }
     
             previewDirty = true;
         }
+
+        // All tools share this playback path. Future edit handlers only report
+        // their outcome; they never select or directly play an audio resource.
+        toolSounds.Play(outcome, successSound);
     }
 
     bool BeginWorldTool(float x, float y)
@@ -889,9 +901,11 @@ private:
 
     void EndWorldTool(float x, float y)
     {
+        // Capture the originating tool's setting before completing the request.
+        const auto successSound = toolController->GetSuccessSound();
         const auto result = toolController->End(CurrentToolPointer(x, y));
         ReleaseToolCapture();
-        ApplyToolResult(result);
+        ApplyToolResult(result, successSound);
     }
 
     void PrepareWorldTool(float elapsedSeconds)
@@ -912,7 +926,8 @@ private:
         }
 
         toolPointer = CurrentToolPointer(x, y);
-        ApplyToolResult(toolController->Update(toolPointer, elapsedSeconds));
+        const auto successSound = toolController->GetSuccessSound();
+        ApplyToolResult(toolController->Update(toolPointer, elapsedSeconds), successSound);
         toolPreview = toolController->BuildPreview();
     
         if (previewDirty || toolPreview.tiles != evaluatedPreview.tiles || toolPreview.zoneType != evaluatedPreview.zoneType || evaluatedFunds != city->funds)

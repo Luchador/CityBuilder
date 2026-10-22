@@ -5,6 +5,8 @@
 class RoadTool final : public Tool
 {
 public:
+    explicit RoadTool(ToolSuccessSound successSound = ToolSuccessSound::BuildRoad);
+
     bool Begin(const ToolContext& context, const ToolPointer& pointer) override;
     ToolResult Update(const ToolContext& context, const ToolPointer& pointer, float elapsedSeconds) override;
     ToolResult End(const ToolContext& context, const ToolPointer& pointer) override;
