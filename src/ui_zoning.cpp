@@ -12,20 +12,20 @@ namespace
         {UiButtonIds::DezoneButton, "Dezone", "ui/toolbar/btn_dezone"}
     }};
     constexpr std::array<UiToolButtonDefinition, 4> Residential{{
-        {UiButtonIds::LightResidentialButton, "Light Residential", "ui/toolbar/btn_res_light"},
-        {UiButtonIds::MediumResidentialButton, "Medium Residential", "ui/toolbar/btn_res_medium"},
-        {UiButtonIds::DenseResidentialButton, "Dense Residential", "ui/toolbar/btn_res_dense"},
+        {UiButtonIds::LightResidentialButton, "Light Residential (Q)", "ui/toolbar/btn_res_light"},
+        {UiButtonIds::MediumResidentialButton, "Medium Residential (W)", "ui/toolbar/btn_res_medium"},
+        {UiButtonIds::DenseResidentialButton, "Dense Residential (E)", "ui/toolbar/btn_res_dense"},
         {UiButtonIds::MixedResidentialButton, "Mixed-Use Residential", "ui/toolbar/btn_mixed"}
     }};
     constexpr std::array<UiToolButtonDefinition, 3> Commercial{{
-        {UiButtonIds::LightCommercialButton, "Light Commercial", "ui/toolbar/btn_com_light"},
-        {UiButtonIds::MediumCommercialButton, "Medium Commercial", "ui/toolbar/btn_com_medium"},
-        {UiButtonIds::DenseCommercialButton, "Dense Commercial", "ui/toolbar/btn_com_dense"}
+        {UiButtonIds::LightCommercialButton, "Light Commercial (A)", "ui/toolbar/btn_com_light"},
+        {UiButtonIds::MediumCommercialButton, "Medium Commercial (S)", "ui/toolbar/btn_com_medium"},
+        {UiButtonIds::DenseCommercialButton, "Dense Commercial (D)", "ui/toolbar/btn_com_dense"}
     }};
     constexpr std::array<UiToolButtonDefinition, 3> Industrial{{
-        {UiButtonIds::FarmButton, "Farm", "ui/toolbar/btn_farm"},
-        {UiButtonIds::MediumIndustrialButton, "Medium Industrial", "ui/toolbar/btn_ind_medium"},
-        {UiButtonIds::HeavyIndustrialButton, "Heavy Industrial", "ui/toolbar/btn_ind_heavy"}
+        {UiButtonIds::FarmButton, "Farm (Z)", "ui/toolbar/btn_farm"},
+        {UiButtonIds::MediumIndustrialButton, "Medium Industrial (X)", "ui/toolbar/btn_ind_medium"},
+        {UiButtonIds::HeavyIndustrialButton, "Heavy Industrial (C)", "ui/toolbar/btn_ind_heavy"}
     }};
     constexpr std::array<UiToolMenuDefinition, 3> Menus{{
         {UiButtonIds::ResidentialButton, Residential},

@@ -71,6 +71,8 @@ public:
     void RebuildMinimap(const TerrainMesh& terrain, std::span<const MinimapTileOverlay> overlays = {});
     void UpdateMinimapZones(const World& world, ToolTileRect bounds);
     void SetSelectedToolButton(std::optional<UiButtonId> id);
+    // Shared selection path for zoning toolbar clicks and keyboard shortcuts.
+    bool SelectZoneTool(UiButtonId id);
     void SetToolStatus(std::string_view text) { bottomBarText.SetToolStatus(text); }
 
     // Prepare before acquiring the frame command buffer (text/geometry uploads).

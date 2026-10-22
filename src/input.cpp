@@ -7,6 +7,26 @@
 #include <stdexcept>
 #include <utility>
 
+namespace
+{
+    std::optional<UiButtonId> ZoneHotkeyButton(SDL_Keycode key)
+    {
+        switch (key)
+        {
+            case SDLK_Q: return UiButtonIds::LightResidentialButton;
+            case SDLK_W: return UiButtonIds::MediumResidentialButton;
+            case SDLK_E: return UiButtonIds::DenseResidentialButton;
+            case SDLK_A: return UiButtonIds::LightCommercialButton;
+            case SDLK_S: return UiButtonIds::MediumCommercialButton;
+            case SDLK_D: return UiButtonIds::DenseCommercialButton;
+            case SDLK_Z: return UiButtonIds::FarmButton;
+            case SDLK_X: return UiButtonIds::MediumIndustrialButton;
+            case SDLK_C: return UiButtonIds::HeavyIndustrialButton;
+            default: return std::nullopt;
+        }
+    }
+}
+
 Input::Input(UiManager& uiManager, Camera& gameCamera, std::optional<ToolController>& tools, InputActions callbacks) : ui(uiManager), camera(gameCamera), toolController(tools), actions(std::move(callbacks))
 {
     if (!actions.hasCity || !actions.toggleFullscreen || !actions.toggleGrid ||
@@ -94,6 +114,16 @@ bool Input::PollInput()
 
         if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat)
         {
+            // UI text entry has already had first refusal. These are bare-key
+            // shortcuts; modified combinations remain available to other commands.
+            if (!(event.key.mod & (SDL_KMOD_CTRL | SDL_KMOD_SHIFT | SDL_KMOD_ALT | SDL_KMOD_GUI)))
+            {
+                if (const auto id = ZoneHotkeyButton(event.key.key); id && ui.SelectZoneTool(*id))
+                {
+                    continue;
+                }
+            }
+
             if (event.key.key == SDLK_ESCAPE)
             {
                 if (toolController && toolController->HasTool())

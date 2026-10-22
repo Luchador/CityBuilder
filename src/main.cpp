@@ -697,9 +697,10 @@ private:
 
         const bool* keys = SDL_GetKeyboardState(nullptr);
 
-        const float right = static_cast<float>(keys[SDL_SCANCODE_D] || keys[SDL_SCANCODE_RIGHT]) - static_cast<float>(keys[SDL_SCANCODE_A] || keys[SDL_SCANCODE_LEFT]);
+        // WASD now selects zones; arrow keys remain the keyboard pan controls.
+        const float right = static_cast<float>(keys[SDL_SCANCODE_RIGHT]) - static_cast<float>(keys[SDL_SCANCODE_LEFT]);
 
-        const float down = static_cast<float>(keys[SDL_SCANCODE_S] || keys[SDL_SCANCODE_DOWN]) - static_cast<float>(keys[SDL_SCANCODE_W] || keys[SDL_SCANCODE_UP]);
+        const float down = static_cast<float>(keys[SDL_SCANCODE_DOWN]) - static_cast<float>(keys[SDL_SCANCODE_UP]);
 
         camera.UpdatePan(right, down, dt, layout.world.h);
     }

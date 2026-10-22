@@ -134,15 +134,24 @@ void UiManager::SetSettings(const UiSettings& next)
     RefreshLayout();
 }
 
-void UiManager::OnUiButtonClicked(UiButtonId id)
+bool UiManager::SelectZoneTool(UiButtonId id)
 {
+    if (!initialized || cityCreationPending) return false;
     if (const auto zone = ZoneTypeForButton(id); zone && actions.selectZoneTool)
     {
         actions.selectZoneTool(*zone);
         SetSelectedToolButton(id);
-        buttons.CancelInteraction(); // Selection is complete; close all flyouts.
-        return;
+        // A hotkey can also be used while a toolbar flyout owns mouse capture.
+        CancelUiButtonInteraction(buttons);
+        tooltip.Hide();
+        return true;
     }
+    return false;
+}
+
+void UiManager::OnUiButtonClicked(UiButtonId id)
+{
+    if (SelectZoneTool(id)) return;
     switch (id)
     {
         case UiButtonIds::ZoomInButton:
