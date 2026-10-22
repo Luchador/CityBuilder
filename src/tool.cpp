@@ -8,8 +8,7 @@ Tool::~Tool() = default;
 
 ToolTileRect ToolTileRect::FromCorners(ToolTile first, ToolTile second)
 {
-    return {std::min(first.x, second.x), std::min(first.z, second.z),
-            std::max(first.x, second.x), std::max(first.z, second.z)};
+    return {std::min(first.x, second.x), std::min(first.z, second.z), std::max(first.x, second.x), std::max(first.z, second.z)};
 }
 
 bool ToolPointer::HasValidHit(const World& world) const

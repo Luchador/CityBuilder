@@ -13,14 +13,14 @@ namespace
         //              Name                       Category                   Color (R, G, B)           Cost
         ZoneDefinition{"None",                     ZoneCategory::None,        {0.00f, 0.00f, 0.00f},       0},
 
-        ZoneDefinition{"Light Residential",        ZoneCategory::Residential, {0.36f, 0.60f, 0.33f},       20},
-        ZoneDefinition{"Medium Residential",       ZoneCategory::Residential, {0.25f, 0.70f, 0.20f},       40},
-        ZoneDefinition{"Dense Residential",        ZoneCategory::Residential, {0.08f, 0.45f, 0.12f},      100},
-        ZoneDefinition{"Mixed-Use Residential",    ZoneCategory::Residential, {0.20f, 0.75f, 0.65f},       60},
+        ZoneDefinition{"Light Residential",        ZoneCategory::Residential, {0.36f, 0.65f, 0.36f},       20},
+        ZoneDefinition{"Medium Residential",       ZoneCategory::Residential, {0.20f, 0.55f, 0.20f},       40},
+        ZoneDefinition{"Dense Residential",        ZoneCategory::Residential, {0.04f, 0.40f, 0.10f},      100},
+        ZoneDefinition{"Mixed-Use Residential",    ZoneCategory::Residential, {0.20f, 0.75f, 0.45f},       60},
 
-        ZoneDefinition{"Light Commercial",         ZoneCategory::Commercial,  {0.45f, 0.75f, 1.00f},       20},
-        ZoneDefinition{"Medium Commercial",        ZoneCategory::Commercial,  {0.20f, 0.45f, 0.90f},       40},
-        ZoneDefinition{"Dense Commercial",         ZoneCategory::Commercial,  {0.10f, 0.20f, 0.65f},      100},
+        ZoneDefinition{"Light Commercial",         ZoneCategory::Commercial,  {0.32f, 0.41f, 1.00f},       20},
+        ZoneDefinition{"Medium Commercial",        ZoneCategory::Commercial,  {0.13f, 0.20f, 0.90f},       40},
+        ZoneDefinition{"Dense Commercial",         ZoneCategory::Commercial,  {0.08f, 0.10f, 0.75f},      100},
 
         ZoneDefinition{"Farm",                     ZoneCategory::Industrial,  {0.85f, 0.75f, 0.35f},       20},
         ZoneDefinition{"Medium Industrial",        ZoneCategory::Industrial,  {1.00f, 0.85f, 0.15f},       40},

@@ -43,13 +43,14 @@ bool ZoneTool::Begin(const ToolContext& context, const ToolPointer& pointer)
 
     UpdateHover(context, pointer);
     anchor = hovered;
+
     return anchor.has_value();
 }
 
-ToolResult ZoneTool::Update(const ToolContext& context, const ToolPointer& pointer,
-                            float /*elapsedSeconds*/)
+ToolResult ZoneTool::Update(const ToolContext& context, const ToolPointer& pointer, float /*elapsedSeconds*/)
 {
     UpdateHover(context, pointer);
+
     return {}; // Hovering/dragging only changes the preview.
 }
 
@@ -58,12 +59,14 @@ ToolResult ZoneTool::End(const ToolContext& context, const ToolPointer& pointer)
     // Use the release position even if no motion/update frame preceded it.
     UpdateHover(context, pointer);
     ToolResult result;
+
     if (anchor && hovered)
     {
         result = ZoneRequest{ToolTileRect::FromCorners(*anchor, *hovered), zoneType};
     }
 
     Cancel();
+
     return result;
 }
 
@@ -76,6 +79,7 @@ void ZoneTool::Cancel() noexcept
 void ZoneTool::BuildPreview(ToolPreview& preview) const
 {
     preview = {};
+
     if (hovered)
     {
         preview.tiles = ToolTileRect::FromCorners(anchor.value_or(*hovered), *hovered);

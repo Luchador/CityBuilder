@@ -10,8 +10,7 @@ public:
 
     ZoneType GetZoneType() const { return zoneType; }
     bool Begin(const ToolContext& context, const ToolPointer& pointer) override;
-    ToolResult Update(const ToolContext& context, const ToolPointer& pointer,
-                      float elapsedSeconds) override;
+    ToolResult Update(const ToolContext& context, const ToolPointer& pointer, float elapsedSeconds) override;
     ToolResult End(const ToolContext& context, const ToolPointer& pointer) override;
     void Cancel() noexcept override;
     void BuildPreview(ToolPreview& preview) const override;
