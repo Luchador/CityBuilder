@@ -27,6 +27,7 @@ namespace
     Uint32 drawnInstances = 0;
     SDL_GPUBuffer* boundInstances = nullptr;
     SDL_GPUBuffer* boundIndices = nullptr;
+    SDL_GPUBuffer* boundVertices = nullptr;
     Uint32 instanceOffset = 0;
     SDL_GPUTexture* boundTexture = nullptr;
     std::array<Uint32, static_cast<std::size_t>(RoadShape::Count)> shapeInstances{};
@@ -117,6 +118,7 @@ void SDL_BindGPUVertexBuffers(SDL_GPURenderPass*, Uint32 first, const SDL_GPUBuf
 {
     Check(first == 0 && count == 2 && binding[0].buffer && binding[1].buffer, "Missing mesh or instance binding");
     boundInstances = binding[1].buffer;
+    boundVertices = binding[0].buffer;
     instanceOffset = binding[1].offset;
 }
 void SDL_BindGPUIndexBuffer(SDL_GPURenderPass*, const SDL_GPUBufferBinding* binding, SDL_GPUIndexElementSize size)
@@ -134,7 +136,20 @@ void SDL_DrawGPUIndexedPrimitives(SDL_GPURenderPass*, Uint32 indices, Uint32 ins
     Check(instances && !first && !offset && !firstInstance && boundIndices->bytes.size() == indices * 4 &&
           instanceOffset + instances * 32 <= boundInstances->bytes.size(), "Incorrect indexed road draw");
     const Uint32 counts[] = {6, 24, 30, 93, 72};
-    const auto shape = static_cast<std::size_t>(std::find(std::begin(counts), std::end(counts), indices) - std::begin(counts));
+    auto shape = static_cast<std::size_t>(std::find(std::begin(counts), std::end(counts), indices) - std::begin(counts));
+    for (std::size_t offsetBytes = 0; offsetBytes < boundVertices->bytes.size(); offsetBytes += 32)
+    {
+        float position[3];
+        std::memcpy(position, boundVertices->bytes.data() + offsetBytes, sizeof(position));
+        if (std::abs(position[0]) > .5001f || std::abs(position[2]) > .5001f)
+        {
+            Check(shape == static_cast<std::size_t>(RoadShape::ThreeWay) || shape == static_cast<std::size_t>(RoadShape::FourWay),
+                  "Unexpected oversized source mesh");
+            shape = static_cast<std::size_t>(shape == static_cast<std::size_t>(RoadShape::ThreeWay) ?
+                RoadShape::DiagonalThreeWay : RoadShape::DiagonalFourWay);
+            break;
+        }
+    }
     Check(shape < RoadAssets.size() && boundTexture->path == RoadAssets[shape].texture, "Wrong mesh/texture pair");
     shapeInstances[shape] += instances;
     for (Uint32 i = 0; i < instances; ++i)
@@ -170,10 +185,10 @@ int main(int argc, char** argv)
         settings.dimensions = MapDimensions(16); settings.hillHeight = 0; settings.lakes.count = 0;
         World world(settings);
         renderer.Prepare(world); renderer.Draw(&pass);
-        Check(draws == 0 && buffers == 10, "Empty world allocated/drew instances");
+        Check(draws == 0 && buffers == 14, "Empty world allocated/drew instances");
         Check(world.PlaceRoad(3, 4), "Test road placement failed");
         renderer.Prepare(world); renderer.Draw(&pass);
-        Check(drawnInstances == 1 && buffers == 11 && boundInstances->bytes.size() == 32 &&
+        Check(drawnInstances == 1 && buffers == 15 && boundInstances->bytes.size() == 32 &&
               shapeInstances[static_cast<std::size_t>(RoadShape::DeadEnd)] == 1, "Single road draw failed");
         float position[4];
         std::memcpy(position, boundInstances->bytes.data(), sizeof(position));
@@ -187,12 +202,12 @@ int main(int argc, char** argv)
         Throws([&] { renderer.Prepare(world); });
         drawnInstances = 0;
         renderer.Draw(&pass);
-        Check(drawnInstances == 1 && buffers == 11, "Failed upload discarded previous render data");
+        Check(drawnInstances == 1 && buffers == 15, "Failed upload discarded previous render data");
         failUpload = false;
         drawnInstances = 0;
         instanceTurns.clear();
         renderer.Prepare(world); renderer.Draw(&pass);
-        Check(drawnInstances == 2 && buffers == 11 && uploads == previousUploads + 1 &&
+        Check(drawnInstances == 2 && buffers == 15 && uploads == previousUploads + 1 &&
               instanceTurns == std::vector<float>{2, 0}, "Two ends did not face each other using shared instances");
 
         Check(world.PlaceRoads({4, 3, 4, 5, false}).changed == 2, "Cross fixture failed");
@@ -200,9 +215,9 @@ int main(int argc, char** argv)
         Check(world.PlaceRoads({8, 8, 11, 9}).changed == 5 && world.PlaceRoad(9, 7), "Mixed shapes fixture failed");
         drawnInstances = 0; draws = 0; shapeInstances = {}; instanceTurns.clear();
         renderer.Prepare(world); renderer.Draw(&pass);
-        Check(drawnInstances == world.GetRoads().size() && draws == 5 && buffers == 11,
+        Check(drawnInstances == world.GetRoads().size() && draws == 5 && buffers == 15,
               "Five shapes were not batched into five draws/one instance buffer");
-        for (const auto count : shapeInstances) Check(count > 0, "A required shape was not drawn");
+        for (std::size_t i = 0; i < 5; ++i) Check(shapeInstances[i] > 0, "A required shape was not drawn");
         const auto mixedUploads = uploads;
         renderer.Prepare(world);
         Check(uploads == mixedUploads, "Stable connected roads reuploaded");
@@ -232,7 +247,7 @@ int main(int argc, char** argv)
               diagonal.PlaceRoads({10, 3, 7, 6, true, true}).changed == 4, "Diagonal renderer fixture failed");
         drawnInstances = 0; draws = 0; shapeInstances = {};
         renderer.Prepare(diagonal); renderer.Draw(&pass);
-        Check(drawnInstances == 8 && draws == 2 && buffers == 11 &&
+        Check(drawnInstances == 8 && draws == 2 && buffers == 15 &&
               shapeInstances[static_cast<std::size_t>(RoadShape::Straight)] == 4 &&
               shapeInstances[static_cast<std::size_t>(RoadShape::DeadEnd)] == 4,
               "Diagonals did not share the existing mesh batches");
@@ -246,14 +261,44 @@ int main(int argc, char** argv)
                   values[7] == (GetRoadVisual(*road).shape == RoadShape::Straight ? 1.0f : 0.0f),
                   "Diagonal orientation/scale/UV mode lost in instance stream");
         }
+        World junction(settings);
+        junction.PlaceRoads({3, 3, 11, 11, true, true});
+        Check(junction.PlaceRoads({3, 11, 7, 7, true, true}).evaluation.upgrades == 1, "Renderer T fixture failed");
+        drawnInstances = 0; draws = 0; shapeInstances = {};
+        renderer.Prepare(junction); renderer.Draw(&pass);
+        Check(drawnInstances == 13 && draws == 3 && shapeInstances[static_cast<std::size_t>(RoadShape::DiagonalThreeWay)] == 1,
+              "Diagonal T did not use its adapted mesh batch");
+        const auto previousJunctionUploads = uploads;
+        renderer.Prepare(junction);
+        Check(uploads == previousJunctionUploads, "Unchanged junction reuploaded");
+        Check(junction.PlaceRoads({7, 7, 11, 3, true, true}).evaluation.upgrades == 1, "Renderer cross fixture failed");
+        drawnInstances = 0; draws = 0; shapeInstances = {};
+        renderer.Prepare(junction); renderer.Draw(&pass);
+        Check(drawnInstances == 17 && draws == 3 && uploads == previousJunctionUploads + 1 &&
+              shapeInstances[static_cast<std::size_t>(RoadShape::DiagonalThreeWay)] == 0 &&
+              shapeInstances[static_cast<std::size_t>(RoadShape::DiagonalFourWay)] == 1,
+              "Junction upgrade retained the old batch or failed to invalidate its cache");
+        bool foundJunction = false;
+        for (unsigned i = 0; i < drawnInstances; ++i)
+        {
+            float values[8];
+            std::memcpy(values, boundInstances->bytes.data() + i * 32, sizeof(values));
+            if (values[0] == 7.5f && values[2] == 7.5f)
+            {
+                foundJunction = true;
+                Check(values[3] == .5f && values[6] == 1 && values[7] == 0,
+                      "Junction was stretched twice or used the straight's repeating texture mode");
+            }
+        }
+        Check(foundJunction, "Junction center missing from the instance buffer");
         World empty(settings);
         renderer.Prepare(empty);
         drawnInstances = 0;
         renderer.Draw(&pass);
-        Check(drawnInstances == 0 && buffers == 10, "Switching worlds retained stale road instances");
+        Check(drawnInstances == 0 && buffers == 14, "Switching worlds retained stale road instances");
         renderer.Release(); renderer.Release();
         CheckReleased();
-        std::cout << "PASS: five mesh/texture batches, rotated instances, previews' shader bindings, upload cache, failure recovery and cleanup\n";
+        std::cout << "PASS: seven shared mesh batches, diagonal junction upgrades, instance layout, upload cache, failure recovery and cleanup\n";
         return 0;
     }
     catch (const std::exception& error)

@@ -1,7 +1,7 @@
 #pragma once
 
 // Compile with WorldViewShaderSource. Locations 3 (pose) and 4 (slope/length/UV mode) advance once per road,
-// while locations 0..2 read one of the five shared meshes.
+// while locations 0..2 read one of the seven shared meshes.
 inline constexpr char RoadVertexShaderSource[] = R"hlsl(
 struct Output {
     float4 position : SV_Position;

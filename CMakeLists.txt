@@ -67,7 +67,7 @@ endif()
 option(CITY_BUILD_ROAD_TESTS "Build road placement and static GLB import checks" OFF)
 if(CITY_BUILD_ROAD_TESTS)
     enable_testing()
-    add_executable(CityRoadTests tests/road_tests.cpp src/road_tool.cpp src/static_mesh.cpp
+    add_executable(CityRoadTests tests/road_tests.cpp src/road_tool.cpp src/static_mesh.cpp src/road_mesh.cpp
         src/tool.cpp src/toolcontroller.cpp src/world.cpp src/terrain.cpp src/world_zoning.cpp src/zone.cpp)
     target_compile_features(CityRoadTests PRIVATE cxx_std_20)
     target_include_directories(CityRoadTests PRIVATE src)
@@ -76,12 +76,18 @@ if(CITY_BUILD_ROAD_TESTS)
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/transportation/roads/road_straight.glb"
         "${CMAKE_CURRENT_BINARY_DIR}")
     add_executable(CityRoadRendererTests tests/road_renderer_tests.cpp src/road_renderer.cpp
-        src/static_mesh.cpp src/world.cpp src/terrain.cpp)
+        src/static_mesh.cpp src/road_mesh.cpp src/world.cpp src/terrain.cpp)
     target_compile_features(CityRoadRendererTests PRIVATE cxx_std_20)
     target_include_directories(CityRoadRendererTests PRIVATE src)
     target_include_directories(CityRoadRendererTests SYSTEM PRIVATE "${renderkit_cgltf_SOURCE_DIR}")
     target_link_libraries(CityRoadRendererTests PRIVATE SDL3::Headers)
     add_test(NAME CityRoadRendererTests COMMAND CityRoadRendererTests "${CMAKE_CURRENT_SOURCE_DIR}")
+    add_executable(CityRoadPreviewTests tests/road_preview_tests.cpp src/zone_overlay.cpp src/zone_render_data.cpp
+        src/world.cpp src/terrain.cpp src/world_zoning.cpp src/zone.cpp src/tool.cpp)
+    target_compile_features(CityRoadPreviewTests PRIVATE cxx_std_20)
+    target_include_directories(CityRoadPreviewTests PRIVATE src)
+    target_link_libraries(CityRoadPreviewTests PRIVATE SDL3::Headers)
+    add_test(NAME CityRoadPreviewTests COMMAND CityRoadPreviewTests)
 endif()
 
 option(CITY_BUILD_DEBUG_CONSOLE_TESTS "Build debug console command and text submission checks" OFF)

@@ -5,6 +5,7 @@
 
 #include <stdexcept>
 #include <string>
+#include <algorithm>
 
 void ZoneOverlay::Initialize(SDL_GPUDevice* gpu, TextureManager& manager, const World& world)
 {
@@ -43,8 +44,32 @@ void ZoneOverlay::Initialize(SDL_GPUDevice* gpu, TextureManager& manager, const 
 
 void ZoneOverlay::Update(const World& world, ToolTileRect bounds)
 {
+    preparedRoadPath.reset();
     textures->UpdateRgba(*image, bounds.minX, bounds.minZ, bounds.maxX - bounds.minX + 1, bounds.maxZ - bounds.minZ + 1, BuildZonePixels(world, bounds));
     textures->UpdateRgba(*roadImage, bounds.minX, bounds.minZ, bounds.maxX - bounds.minX + 1, bounds.maxZ - bounds.minZ + 1, BuildRoadPreviewPixels(world, bounds));
+}
+
+void ZoneOverlay::PrepareRoadPreview(const World& world, const ToolPreview& preview)
+{
+    if (!preview.roadPath || !preview.roadPath->diagonal) return;
+    const auto& path = *preview.roadPath;
+    if (preparedWorld == &world && preparedRoadRevision == world.GetRoadRevision() && preparedRoadPath == path) return;
+    // A failed partial upload must not leave the old preview marked as cached.
+    preparedRoadPath.reset();
+    const auto plan = world.PlanRoads(path);
+    // A long diagonal only uploads small blocks around its anchor tiles. The
+    // shader samples G only on this exact path, so old off-path values are ignored.
+    for (std::size_t first = 0; first < plan.tiles.size(); first += 16)
+    {
+        const auto& a = plan.tiles[first];
+        const auto& b = plan.tiles[std::min(first + 15, plan.tiles.size() - 1)];
+        const auto r = ToolTileRect::FromCorners({a.x, a.z}, {b.x, b.z});
+        textures->UpdateRgba(*roadImage, r.minX, r.minZ, r.maxX - r.minX + 1, r.maxZ - r.minZ + 1,
+            BuildPlannedRoadPreviewPixels(world, plan, r));
+    }
+    preparedRoadPath = path;
+    preparedWorld = &world;
+    preparedRoadRevision = world.GetRoadRevision();
 }
 
 void ZoneOverlay::Bind(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, const ToolPreview& preview, const ZoneEvaluation& evaluation, Uint32 samplerSlot, Uint32 uniformSlot) const
@@ -111,4 +136,7 @@ void ZoneOverlay::Release() noexcept
     sampler = nullptr;
     textures = nullptr;
     device = nullptr;
+    preparedRoadPath.reset();
+    preparedWorld = nullptr;
+    preparedRoadRevision = 0;
 }

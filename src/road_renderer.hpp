@@ -6,7 +6,7 @@
 class World;
 
 // Owns shared geometry for each shape; borrows cached base-color textures.
-// One instance buffer groups roads into at most five draw calls.
+// One instance buffer groups roads into at most seven draw calls.
 class RoadRenderer
 {
 public:

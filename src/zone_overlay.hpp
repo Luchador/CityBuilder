@@ -23,6 +23,9 @@ public:
     void Initialize(SDL_GPUDevice* gpu, TextureManager& textures, const World& world);
     // Also call after future occupancy/height edits to refresh eligibility.
     void Update(const World& world, ToolTileRect bounds);
+    // Upload a changed diagonal preview before acquiring the frame command buffer.
+    // Cardinal previews continue using the static eligibility channel.
+    void PrepareRoadPreview(const World& world, const ToolPreview& preview);
     // Binds zone data at samplerSlot and road eligibility at samplerSlot + 1.
     void Bind(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, const ToolPreview& preview,
               const ZoneEvaluation& evaluation, Uint32 samplerSlot = 2, Uint32 uniformSlot = 1) const;
@@ -33,4 +36,7 @@ private:
     SDL_GPUSampler* sampler = nullptr;
     std::unique_ptr<Texture> image;
     std::unique_ptr<Texture> roadImage;
+    std::optional<RoadPath> preparedRoadPath;
+    const World* preparedWorld = nullptr;
+    std::uint64_t preparedRoadRevision = 0;
 };

@@ -50,16 +50,21 @@ std::vector<std::uint8_t> BuildRoadPreviewPixels(const World& world, ToolTileRec
         for (int x = r.minX; x <= r.maxX; ++x)
         {
             pixels[offset] = world.GetRoadAllowedConnections(x, z);
-            const auto allowed = [&](std::uint8_t axis)
-            {
-                const auto status = world.CheckRoadPlacement(x, z, axis);
-                return status == RoadPlacementStatus::Allowed || status == RoadPlacementStatus::ExistingRoad;
-            };
-            pixels[offset + 1] = allowed(RoadDiagonalNWSE) ? 255 : 0;
-            pixels[offset + 2] = allowed(RoadDiagonalNESW) ? 255 : 0;
             pixels[offset + 3] = 255;
             offset += 4;
         }
+    }
+    return pixels;
+}
+
+std::vector<std::uint8_t> BuildPlannedRoadPreviewPixels(const World& world, const RoadPlan& plan, ToolTileRect r)
+{
+    auto pixels = BuildRoadPreviewPixels(world, r);
+    for (const auto& tile : plan.tiles)
+    {
+        if (tile.x < r.minX || tile.x > r.maxX || tile.z < r.minZ || tile.z > r.maxZ) continue;
+        const auto offset = (static_cast<std::size_t>(tile.z - r.minZ) * (r.maxX - r.minX + 1) + tile.x - r.minX) * 4;
+        pixels[offset + 1] = RoadPlacementAccepted(tile.status) ? 255 : 0;
     }
     return pixels;
 }

@@ -3,7 +3,7 @@
 #include "shaders.hpp"
 #include "zone_overlay_shaders.hpp"
 #include "gpu_utils.hpp"
-#include "static_mesh.hpp"
+#include "road_mesh.hpp"
 #include "world.hpp"
 
 #include <cmath>
@@ -57,18 +57,7 @@ void RoadRenderer::Initialize(SDL_GPUDevice* gpu, TextureManager& textures, SDL_
         {
             const auto& asset = RoadAssets[i];
             const auto path = std::filesystem::path(unicodeBase) / "assets" / asset.model;
-            auto geometry = LoadStaticGlb(path, 1.0f / MetersPerTile);
-        
-            for (auto& v : geometry.vertices)
-            {
-                // Preserve the authored geometry and baked GLB node transform.
-                if (std::abs(v.x) > 0.5001f || std::abs(v.z) > 0.5001f)
-                {
-                    throw std::runtime_error(std::string(asset.model) + " must fit a centered 16 x 16 meter tile");
-                }
-    
-                v.u = v.u * asset.uScale + asset.uOffset;
-            }
+            auto geometry = LoadRoadMesh(path, asset);
             auto& mesh = meshes[i];
     
             mesh.baseColor = &textures.Load(asset.texture, {TextureContent::Color, true});

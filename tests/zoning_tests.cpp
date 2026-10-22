@@ -219,10 +219,11 @@ namespace
             {2, 12, 12, 2, true, true}, {12, 2, 2, 12, true, true}, {0, 0, 15, 15, true, true}};
         for (const auto& path : paths)
         {
-            const auto pixels = BuildRoadPreviewPixels(world, {0, 0, 15, 15});
+            const auto plan = world.PlanRoads(path);
+            const auto pixels = BuildPlannedRoadPreviewPixels(world, plan, {0, 0, 15, 15});
             const auto zonePixels = BuildZonePixels(world, {0, 0, 15, 15});
             unsigned accepted = 0, blocked = 0;
-            const int channel = (path.endX - path.startX) * (path.endZ - path.startZ) > 0 ? 1 : 2;
+            const int channel = 1;
             std::set<std::pair<int, int>> footprint;
             path.ForEachTile([&](int x, int z)
             {
@@ -251,7 +252,7 @@ namespace
         }
         // The R channel distinguishes diagonal anchors from unbuildable shoulders,
         // so a single click can reuse an anchor but a cardinal route cannot cross it.
-        const auto pixels = BuildRoadPreviewPixels(world, {3, 3, 4, 3});
+        const auto pixels = BuildPlannedRoadPreviewPixels(world, world.PlanRoads({2, 2, 4, 4, true, true}), {3, 3, 4, 3});
         Check(pixels[0] == RoadDiagonalNWSE && pixels[1] == 255 && pixels[2] == 0 && pixels[4] == 0,
               "Diagonal eligibility metadata lost axis or shoulder occupancy");
         std::cout << "PASS: diagonal footprint preview, partial/blocked/reused placement, and zone exclusion\n";

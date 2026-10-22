@@ -35,14 +35,13 @@ bool DiagonalFootprint(float2 tile, out bool allowed)
     bool covered = false;
     allowed = true;
     const float2 offsets[5] = {float2(0, 0), float2(-1, 0), float2(0, -1), float2(1, 0), float2(0, 1)};
-    bool nwse = (roadPath.z - roadPath.x) * (roadPath.w - roadPath.y) > 0;
     [unroll] for (int i = 0; i < 5; ++i)
     {
         float2 anchor = tile + offsets[i];
         if (OnRoadPath(anchor))
         {
             float4 eligibility = roadMap.SampleLevel(roadSampler, (anchor + 0.5) / zoneSettings.x, 0);
-            allowed = allowed && (nwse ? eligibility.g > 0.5 : eligibility.b > 0.5);
+            allowed = allowed && eligibility.g > 0.5;
             covered = true;
         }
     }

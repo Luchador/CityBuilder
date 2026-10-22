@@ -984,7 +984,8 @@ private:
             if (toolPreview.roadPath)
             {
                 const auto evaluation = world->EvaluateRoads(*toolPreview.roadPath);
-                status = "Road: " + std::to_string(evaluation.changes) + " new, " +
+                status = "Road: " + std::to_string(evaluation.changes - evaluation.upgrades) + " new, " +
+                    std::to_string(evaluation.upgrades) + " upgraded, " +
                     std::to_string(evaluation.unchanged) + " existing, " + std::to_string(evaluation.blocked) +
                     " blocked - release to build (free for now)";
             }
@@ -998,6 +999,7 @@ private:
         PrepareWorldTool(elapsedSeconds);
         if (world) 
         {
+            zoneOverlay.PrepareRoadPreview(*world, toolPreview);
             roadRenderer.Prepare(*world);
         }
 

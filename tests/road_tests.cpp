@@ -1,5 +1,6 @@
 #include "road_tool.hpp"
 #include "static_mesh.hpp"
+#include "road_mesh.hpp"
 #include "toolcontroller.hpp"
 #include "world.hpp"
 #include "world_zoning.hpp"
@@ -294,6 +295,7 @@ namespace
     {
         for (const auto& asset : RoadAssets)
         {
+            if (asset.extendDiagonalApproaches) continue;
             const auto mesh = LoadStaticGlb(directory / std::filesystem::path(asset.model).filename(), 1.0f / MetersPerTile);
             std::uint8_t openings = 0;
             for (unsigned d = 0; d < 4; ++d)
@@ -477,6 +479,198 @@ namespace
         std::cout << "PASS: supplied straight/end geometry fits diagonal reservations, preserves width and joins without gaps\n";
     }
 
+    void CheckDiagonalJunctions()
+    {
+        for (bool firstNWSE : {false, true}) for (int branchSign : {-1, 1}) for (bool reverse : {false, true})
+        {
+            auto world = FlatWorld();
+            const RoadPath first = firstNWSE ? RoadPath{3, 3, 11, 11, true, true} : RoadPath{3, 11, 11, 3, true, true};
+            Check(world.PlaceRoads(first).changed == 9, "Initial diagonal junction road failed");
+            const auto original = *world.GetRoadAt(7, 7);
+            const int dx = branchSign, dz = firstNWSE ? -branchSign : branchSign;
+            RoadPath branch{7, 7, 7 + 4 * dx, 7 + 4 * dz, true, true};
+            if (reverse) { std::swap(branch.startX, branch.endX); std::swap(branch.startZ, branch.endZ); }
+            const auto planned = world.PlanRoads(branch);
+            Check(planned.evaluation.changes == 5 && planned.evaluation.upgrades == 1 && !planned.evaluation.blocked,
+                  "T junction preview failed to plan its existing center upgrade");
+            const auto placed = world.PlaceRoads(branch);
+            Check(placed.changed == 5 && world.GetRoads().size() == 13, "T junction duplicated or skipped the center");
+            const auto* junction = world.GetRoadAt(7, 7);
+            const auto toward = dx < 0 ? (dz < 0 ? RoadNorthWest : RoadSouthWest) : (dz < 0 ? RoadNorthEast : RoadSouthEast);
+            Check(junction->id == original.id && junction->connections == (original.connections | toward) &&
+                  junction->diagonalAxis == RoadAllDiagonals && GetRoadVisual(*junction).shape == RoadShape::DiagonalThreeWay,
+                  "T junction lost its ID, arms, or mesh selection");
+            const auto revision = world.GetRoadRevision();
+            const auto repeat = world.PlaceRoads(branch);
+            Check(!repeat.changed && repeat.evaluation.unchanged == 5 && !repeat.evaluation.blocked &&
+                  revision == world.GetRoadRevision(), "Repeated T drag mutated a road");
+            const auto fourth = world.PlaceRoads({7, 7, 7 - 4 * dx, 7 - 4 * dz, true, true});
+            junction = world.GetRoadAt(7, 7);
+            Check(fourth.changed == 5 && fourth.evaluation.upgrades == 1 && junction->id == original.id &&
+                  junction->connections == RoadAllDiagonals && GetRoadVisual(*junction).shape == RoadShape::DiagonalFourWay,
+                  "T junction did not upgrade to a cross");
+            for (const auto& road : world.GetRoads())
+            {
+                Check(SupportedDiagonalConnections(road.connections), "Junction produced an unsupported neighbor shape");
+                if (road.tileX != 7 || road.tileZ != 7)
+                    Check(GetRoadVisual(road).shape == RoadShape::Straight || GetRoadVisual(road).shape == RoadShape::DeadEnd,
+                          "Approach turned into an unintended junction");
+            }
+        }
+        for (bool reverse : {false, true})
+        {
+            auto world = FlatWorld();
+            world.PlaceRoads({3, 3, 11, 11, true, true});
+            const RoadPath cross = reverse ? RoadPath{11, 3, 3, 11, true, true} : RoadPath{3, 11, 11, 3, true, true};
+            const auto placed = world.PlaceRoads(cross);
+            Check(placed.changed == 9 && placed.evaluation.upgrades == 1 && world.GetRoads().size() == 17 &&
+                  world.GetRoadAt(7, 7)->connections == RoadAllDiagonals, "One drag failed to create a diagonal cross");
+        }
+
+        // A junction can also fill a missing center between existing arms.
+        auto gap = FlatWorld();
+        gap.PlaceRoads({3, 3, 6, 6, true, true}); gap.PlaceRoads({8, 8, 11, 11, true, true});
+        Check(gap.PlaceRoads({3, 11, 11, 3, true, true}).changed == 9 &&
+              gap.GetRoadAt(7, 7)->connections == RoadAllDiagonals, "Missing-center junction failed");
+
+        // A perpendicular road ending at an existing dead end needs a bend,
+        // whereas a road passing through that end can form a supported T.
+        auto ends = FlatWorld();
+        ends.PlaceRoads({3, 3, 7, 7, true, true});
+        const auto original = *ends.GetRoadAt(7, 7);
+        const auto turn = ends.PlaceRoads({3, 11, 7, 7, true, true});
+        Check(turn.evaluation.blocked == 1 && turn.changed == 4 &&
+              ends.GetRoadAt(7, 7)->connections == original.connections &&
+              ends.GetRoadAt(7, 7)->diagonalAxis == original.diagonalAxis,
+              "Unsupported two-arm diagonal bend was built");
+        Check(ends.PlaceRoads({3, 11, 11, 3, true, true}).evaluation.upgrades == 1 &&
+              GetRoadVisual(*ends.GetRoadAt(7, 7)).shape == RoadShape::DiagonalThreeWay,
+              "Passing through a dead end did not form a T");
+
+        auto partial = FlatWorld();
+        partial.PlaceRoads({3, 3, 7, 7, true, true});
+        partial.GetTile(8, 6).buildingId = 42;
+        const auto planned = partial.PlanRoads({3, 11, 11, 3, true, true});
+        Check(planned.tiles[4].status == RoadPlacementStatus::UnsupportedConnection,
+              "Blocked approach left a two-arm junction upgrade in the plan");
+        const auto built = partial.PlaceRoads({3, 11, 11, 3, true, true});
+        Check(built.changed == planned.evaluation.changes &&
+              partial.GetRoadAt(7, 7)->diagonalAxis == RoadDiagonalNWSE && partial.GetTile(8, 6).buildingId == 42,
+              "Commit disagreed with its blocked-approach plan");
+
+        auto halfTile = FlatWorld();
+        halfTile.PlaceRoads({2, 2, 12, 12, true, true});
+        const auto before = *halfTile.GetRoadAt(7, 7);
+        const auto halfCross = halfTile.PlaceRoads({3, 12, 12, 3, true, true});
+        Check(halfCross.evaluation.blocked > 0 && halfTile.GetRoadAt(7, 7)->connections == before.connections &&
+              halfTile.GetRoadAt(7, 7)->diagonalAxis == before.diagonalAxis,
+              "A between-tile crossing modified the existing road");
+        auto cardinal = FlatWorld();
+        cardinal.PlaceRoads({2, 7, 12, 7});
+        const auto mixed = cardinal.PlaceRoads({3, 3, 11, 11, true, true});
+        Check(mixed.evaluation.blocked > 0 && !cardinal.GetRoadAt(7, 7)->diagonalAxis,
+              "Mixed cardinal/diagonal junction accepted");
+        std::cout << "PASS: all diagonal T orientations, cross/extension/gap upgrades, stable IDs, reuse, partial approaches and rejected bends/half-tile crossings\n";
+    }
+
+    void CheckDiagonalJunctionGeometry(const std::filesystem::path& directory)
+    {
+        for (auto shape : {RoadShape::DiagonalThreeWay, RoadShape::DiagonalFourWay})
+        {
+            const auto& asset = RoadAssets[static_cast<std::size_t>(shape)];
+            const auto path = directory / std::filesystem::path(asset.model).filename();
+            const auto source = LoadStaticGlb(path, 1.0f / MetersPerTile);
+            const auto mesh = LoadRoadMesh(path, asset);
+            Check(mesh.vertices.size() == source.vertices.size() && mesh.indices == source.indices,
+                  "Junction adaptation replaced authored topology");
+            unsigned mask = 0;
+            for (unsigned d = 0; d < 4; ++d)
+            {
+                float minimum = 100, maximum = -100;
+                for (std::size_t i = 0; i < mesh.vertices.size(); ++i)
+                {
+                    const auto& v = mesh.vertices[i]; const auto& old = source.vertices[i];
+                    Check(std::abs(v.x) <= RoadDiagonalLength * .5f + .00001f &&
+                          std::abs(v.z) <= RoadDiagonalLength * .5f + .00001f && Near(v.ny, 1) && Near(v.y, 0),
+                          "Junction escaped its rotated cell or changed surface/normal");
+                    if (std::abs(old.x) < .25001f && std::abs(old.z) < .25001f)
+                        Check(Near(old.x, v.x) && Near(old.z, v.z), "Junction center was scaled");
+                    Check(Near(v.u, old.u) && Near(v.v, old.v), "Junction adaptation lost its texture mapping");
+                    const float axis = d % 2 ? v.z : v.x, across = d % 2 ? v.x : v.z;
+                    if (Near(axis, (d < 2 ? -.5f : .5f) * RoadDiagonalLength))
+                    { minimum = std::min(minimum, across); maximum = std::max(maximum, across); }
+                }
+                if (minimum <= maximum)
+                {
+                    Check(Near(minimum, -.25f) && Near(maximum, .25f), "Diagonal junction opening lost its eight-meter width");
+                    mask |= 16 << d;
+                }
+            }
+            Check(mask == asset.connections, "Diagonal junction openings disagree with its mask");
+            for (unsigned turn = 0; turn < 4; ++turn)
+            {
+                const auto rotated = RotateRoadConnections(static_cast<std::uint8_t>(mask), turn);
+                const auto visual = GetRoadVisual(rotated);
+                Check(visual.shape == shape && visual.lengthScale == 1 &&
+                      RotateRoadConnections(asset.connections, static_cast<unsigned>(visual.quarterTurns)) == rotated &&
+                      visual.quarterTurns - std::floor(visual.quarterTurns) == .5f,
+                      "Junction visual is stretched twice or faces the wrong directions");
+            }
+        }
+        std::cout << "PASS: real junction GLBs, unchanged centers/UVs, eight-meter openings and diagonal seam positions\n";
+    }
+
+    void CheckMixedNetworks()
+    {
+        // Reproducible combinations of partial routes, close junctions and both
+        // drag directions catch topology errors beyond isolated T/cross fixtures.
+        for (std::uint32_t seed = 1; seed <= 8; ++seed)
+        {
+            auto world = FlatWorld();
+            auto random = seed;
+            const auto next = [&] { random ^= random << 13; random ^= random >> 17; random ^= random << 5; return random; };
+            world.GetTile(5, 6).buildingId = 1;
+            world.GetTile(10, 9).infrastructureId = 99;
+            for (int edit = 0; edit < 64; ++edit)
+            {
+                const int x = 1 + static_cast<int>(next() % 14), z = 1 + static_cast<int>(next() % 14);
+                const int dx = (next() & 1) ? 1 : -1, dz = (next() & 1) ? 1 : -1;
+                const int available = std::min(dx > 0 ? 14 - x : x - 1, dz > 0 ? 14 - z : z - 1);
+                if (!available) continue;
+                const int steps = 1 + static_cast<int>(next() % available);
+                RoadPath path{x, z, x + dx * steps, z + dz * steps, true, true};
+                if (edit % 5 == 0) { path.diagonal = false; path.endZ = z; }
+                auto backward = world;
+                auto reverse = path;
+                std::swap(reverse.startX, reverse.endX); std::swap(reverse.startZ, reverse.endZ);
+                const auto plan = world.PlanRoads(path);
+                const auto placed = world.PlaceRoads(path), reversed = backward.PlaceRoads(reverse);
+                Check(placed.changed == plan.evaluation.changes && placed.changed == reversed.changed,
+                      "Network plan/commit or reverse drag counts disagree");
+                for (int pz = 0; pz < 16; ++pz) for (int px = 0; px < 16; ++px)
+                {
+                    const auto* a = world.GetRoadAt(px, pz); const auto* b = backward.GetRoadAt(px, pz);
+                    Check((a != nullptr) == (b != nullptr) && (!a ||
+                          (a->connections == b->connections && a->diagonalAxis == b->diagonalAxis)),
+                          "Reversing a drag changed the road topology");
+                }
+                for (const auto& road : world.GetRoads())
+                {
+                    if (road.diagonalAxis) Check(SupportedDiagonalConnections(road.connections),
+                        "A neighboring network edit created an unsupported diagonal bend");
+                    constexpr int nx[] = {-1, 0, 1, 0, -1, 1, 1, -1}, nz[] = {0, -1, 0, 1, -1, -1, 1, 1};
+                    for (int i = 0; i < 8; ++i) if (road.connections & (1 << i))
+                    {
+                        const auto* neighbor = world.GetRoadAt(road.tileX + nx[i], road.tileZ + nz[i]);
+                        Check(neighbor && (neighbor->connections & RotateRoadConnections(static_cast<std::uint8_t>(1 << i), 2)),
+                              "A road connection is not reciprocal");
+                    }
+                }
+            }
+        }
+        std::cout << "PASS: mixed-network plans match commits, reverse drags agree, and every connection remains reciprocal/supported\n";
+    }
+
     // Standalone transformed GLB fixture; no JSON library or GPU needed.
     void WriteFixture(const std::filesystem::path& path, bool badIndex = false, bool missingUv = false)
     {
@@ -564,9 +758,12 @@ int main(int argc, char** argv)
         CheckConnectionsAndRoutes();
         CheckSlopes();
         CheckDiagonals();
+        CheckDiagonalJunctions();
+        CheckMixedNetworks();
         CheckImporter(argv[1], argv[2]);
         CheckModularAssets(std::filesystem::path(argv[1]).parent_path());
         CheckDiagonalGeometry(std::filesystem::path(argv[1]).parent_path());
+        CheckDiagonalJunctionGeometry(std::filesystem::path(argv[1]).parent_path());
         return 0;
     }
     catch (const std::exception& error)

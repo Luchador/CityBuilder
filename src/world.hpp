@@ -88,16 +88,22 @@ public:
     RoadPlacementStatus CheckRoadPlacement(int x, int z, std::uint8_t requiredConnections = 0) const;
     // 0 = blocked, otherwise the directions a road can use on this tile.
     std::uint8_t GetRoadAllowedConnections(int x, int z) const;
+    RoadPlan PlanRoads(const RoadPath& path) const;
     RoadEvaluation EvaluateRoads(const RoadPath& path) const;
     RoadPlacementResult PlaceRoads(const RoadPath& path);
     // Clears zones in the footprint, reserves occupancy and reconnects neighbors.
-    // Existing roads are unchanged. No construction cost yet.
+    // May upgrade an existing diagonal junction without changing its ID.
+    // No construction cost yet.
     bool PlaceRoad(int x, int z, std::uint8_t requiredConnections = 0);
 
 private:
     std::size_t TileIndex(int x, int z) const;
     void ReconnectRoad(int x, int z);
-    RoadPlacementStatus CheckDiagonalRoad(int x, int z, std::uint8_t axis) const;
+    RoadPlacementStatus CheckDiagonalFootprint(int x, int z) const;
+    std::uint8_t DiagonalConnectionsAt(int x, int z, std::uint8_t axes,
+        const RoadPath* path = nullptr, const RoadPlan* plan = nullptr) const;
+    void InsertRoad(int x, int z, std::uint8_t diagonalAxis);
+    void ReconnectRoadNeighborhood(int x, int z);
 
     TerrainSettings terrainSettings;
     TerrainHeightmap terrain;
@@ -106,8 +112,9 @@ private:
     // 0 = no road, otherwise index + 1. Constant-time neighbor lookup, even
     // on giant maps; infrastructure IDs remain independent of vector indices.
     std::vector<std::uint32_t> roadAtTile;
-    // First road whose footprint reserves a tile (index + 1). Collinear pieces
-    // may share reservations. Separate from roadAtTile, which only holds anchors.
+    // First road whose footprint reserves a tile (index + 1). Diagonal anchors
+    // on the same checkerboard parity can share reservations; their meshes fit
+    // non-overlapping rotated cells. Separate from roadAtTile (anchors only).
     // Future removal must transfer a shared reservation to a surviving owner.
     std::vector<std::uint32_t> roadFootprintAtTile;
     std::uint64_t roadRevision = 0;

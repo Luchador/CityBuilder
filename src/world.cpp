@@ -73,7 +73,16 @@ RoadPlacementStatus World::CheckRoadPlacement(int x, int z, std::uint8_t require
     if (requiredConnections & 240)
     {
         const auto axis = DiagonalRoadAxis(requiredConnections);
-        return axis ? CheckDiagonalRoad(x, z, axis) : RoadPlacementStatus::UnsupportedConnection;
+        if (!axis) return RoadPlacementStatus::UnsupportedConnection;
+        const auto status = CheckDiagonalFootprint(x, z);
+        if (!RoadPlacementAccepted(status)) return status;
+        const auto* road = GetRoadAt(x, z);
+        if (!road || (road->diagonalAxis & axis) == axis) return status;
+        const auto connections = DiagonalConnectionsAt(x, z, static_cast<std::uint8_t>(road->diagonalAxis | axis));
+        // A direct one-tile upgrade can only use neighbors already present.
+        // PlanRoads also considers the new neighbors in a complete drag.
+        return connections != road->connections && SupportedDiagonalConnections(connections) ?
+            RoadPlacementStatus::UpgradeRoad : RoadPlacementStatus::UnsupportedConnection;
     }
     const auto* road = GetRoadAt(x, z);
     const auto& tile = GetTile(x, z);
@@ -93,10 +102,11 @@ RoadPlacementStatus World::CheckRoadPlacement(int x, int z, std::uint8_t require
     return road ? RoadPlacementStatus::ExistingRoad : RoadPlacementStatus::Allowed;
 }
 
-RoadPlacementStatus World::CheckDiagonalRoad(int x, int z, std::uint8_t axis) const
+RoadPlacementStatus World::CheckDiagonalFootprint(int x, int z) const
 {
+    if (!ContainsTile(x, z)) return RoadPlacementStatus::OutsideMap;
     const auto* existing = GetRoadAt(x, z);
-    if (existing && existing->diagonalAxis != axis) return RoadPlacementStatus::UnsupportedConnection;
+    if (existing && !existing->diagonalAxis) return RoadPlacementStatus::UnsupportedConnection;
     RoadSurface center;
     const auto centerStatus = ReadRoadSurface(terrain, x, z, center);
     if (centerStatus != RoadPlacementStatus::Allowed) return centerStatus;
@@ -118,10 +128,12 @@ RoadPlacementStatus World::CheckDiagonalRoad(int x, int z, std::uint8_t axis) co
             const auto owner = roadFootprintAtTile[index];
             if (!owner) return RoadPlacementStatus::Occupied;
             const auto& other = roads[owner - 1];
-            if (tile.infrastructureId != other.id || other.diagonalAxis != axis)
+            if (tile.infrastructureId != other.id || !other.diagonalAxis)
                 return RoadPlacementStatus::Occupied;
-            const int deltaX = other.tileX - x, deltaZ = other.tileZ - z;
-            if (deltaX != (axis == RoadDiagonalNWSE ? deltaZ : -deltaZ))
+            // Each diagonal mesh fits |localX| + |localZ| <= 1 after yaw.
+            // Those rotated cells tile without overlap for anchors of equal
+            // parity. Opposite parity would cross between tile centers.
+            if (((other.tileX + other.tileZ) & 1) != ((x + z) & 1))
                 return RoadPlacementStatus::Occupied;
         }
         RoadSurface surface;
@@ -145,14 +157,32 @@ std::uint8_t World::GetRoadAllowedConnections(int x, int z) const
 bool World::PlaceRoad(int x, int z, std::uint8_t requiredConnections)
 {
     // Recheck at commit time; a hover preview never authorizes a stale edit.
-    if (CheckRoadPlacement(x, z, requiredConnections) != RoadPlacementStatus::Allowed) return false;
+    const auto status = CheckRoadPlacement(x, z, requiredConnections);
+    if (status == RoadPlacementStatus::UpgradeRoad)
+    {
+        auto& road = roads[roadAtTile[TileIndex(x, z)] - 1];
+        road.diagonalAxis |= DiagonalRoadAxis(requiredConnections);
+        if (const auto axis = DiagonalRoadAxis(DiagonalConnectionsAt(x, z, road.diagonalAxis)))
+            road.diagonalAxis = axis;
+        ++roadRevision;
+    }
+    else if (status == RoadPlacementStatus::Allowed)
+    {
+        InsertRoad(x, z, DiagonalRoadAxis(requiredConnections));
+    }
+    else return false;
+    ReconnectRoadNeighborhood(x, z);
+    return true;
+}
+
+void World::InsertRoad(int x, int z, std::uint8_t axis)
+{
     if (nextInfrastructureId == std::numeric_limits<InfrastructureId>::max())
         throw std::overflow_error("No infrastructure IDs remain");
     auto& tile = GetTile(x, z);
     // Allocate before changing occupancy/zoning, so allocation failure is atomic.
     RoadSurface surface;
     ReadRoadSurface(terrain, x, z, surface);
-    const auto axis = DiagonalRoadAxis(requiredConnections);
     roads.push_back({nextInfrastructureId, x, z, surface, 0, axis});
     tile.infrastructureId = nextInfrastructureId++;
     tile.zoneType = ZoneType::None;
@@ -172,18 +202,18 @@ bool World::PlaceRoad(int x, int z, std::uint8_t requiredConnections)
             tiles[index].zoneType = ZoneType::None;
         }
     }
+    ++roadRevision;
+}
+
+void World::ReconnectRoadNeighborhood(int x, int z)
+{
     ReconnectRoad(x, z);
     ReconnectRoad(x - 1, z);
     ReconnectRoad(x + 1, z);
     ReconnectRoad(x, z - 1);
     ReconnectRoad(x, z + 1);
-    if (axis)
-    {
-        ReconnectRoad(x - 1, z - 1); ReconnectRoad(x + 1, z - 1);
-        ReconnectRoad(x + 1, z + 1); ReconnectRoad(x - 1, z + 1);
-    }
-    ++roadRevision;
-    return true;
+    ReconnectRoad(x - 1, z - 1); ReconnectRoad(x + 1, z - 1);
+    ReconnectRoad(x + 1, z + 1); ReconnectRoad(x - 1, z + 1);
 }
 
 const Road* World::GetRoadAt(int x, int z) const
@@ -203,16 +233,7 @@ void World::ReconnectRoad(int x, int z)
     road.connections = 0;
     if (road.diagonalAxis)
     {
-        const int dx[] = {-1, 1, 1, -1}, dz[] = {-1, -1, 1, 1};
-        for (int i = 0; i < 4; ++i)
-        {
-            const auto bit = static_cast<std::uint8_t>(16 << i);
-            if (!(road.diagonalAxis & bit)) continue;
-            const auto* neighbor = GetRoadAt(x + dx[i], z + dz[i]);
-            if (neighbor && neighbor->diagonalAxis == road.diagonalAxis &&
-                neighbor->surface.elevation == road.surface.elevation)
-                road.connections |= bit;
-        }
+        road.connections = DiagonalConnectionsAt(x, z, road.diagonalAxis);
         return;
     }
     const auto connect = [&](int nx, int nz, RoadConnection direction)
@@ -233,33 +254,150 @@ void World::ReconnectRoad(int x, int z)
     connect(x, z + 1, RoadSouth);
 }
 
-RoadEvaluation World::EvaluateRoads(const RoadPath& path) const
+std::uint8_t World::DiagonalConnectionsAt(int x, int z, std::uint8_t axes,
+    const RoadPath* path, const RoadPlan* plan) const
 {
-    RoadEvaluation result;
+    const auto* center = GetRoadAt(x, z);
+    const float elevation = center ? center->surface.elevation : terrain.Height(x, z);
+    std::uint8_t connections = 0;
+    constexpr int dx[] = {-1, 1, 1, -1}, dz[] = {-1, -1, 1, 1};
+    for (int i = 0; i < 4; ++i)
+    {
+        const auto bit = static_cast<std::uint8_t>(16 << i);
+        if (!(axes & bit)) continue;
+        const int nx = x + dx[i], nz = z + dz[i];
+        if (!ContainsTile(nx, nz)) continue;
+        const auto* neighbor = GetRoadAt(nx, nz);
+        auto neighborAxes = neighbor ? neighbor->diagonalAxis : std::uint8_t{0};
+        const float neighborHeight = neighbor ? neighbor->surface.elevation : terrain.Height(nx, nz);
+        if (path && plan && path->Contains(nx, nz))
+        {
+            const auto& proposed = plan->tiles[static_cast<std::size_t>(std::abs(nx - path->startX))];
+            if (RoadPlacementAccepted(proposed.status)) neighborAxes = proposed.diagonalAxis;
+        }
+        if ((neighborAxes & RotateRoadConnections(bit, 2)) && neighborHeight == elevation)
+            connections |= bit;
+    }
+    return connections;
+}
+
+RoadPlan World::PlanRoads(const RoadPath& path) const
+{
+    RoadPlan result;
     if (!ContainsTile(path.startX, path.startZ) || !ContainsTile(path.endX, path.endZ) || !path.HasValidShape()) return result;
-    result.valid = true;
+    result.evaluation.valid = true;
     path.ForEachTile([&](int x, int z)
     {
-        switch (CheckRoadPlacement(x, z, path.ConnectionsAt(x, z)))
-        {
-            case RoadPlacementStatus::Allowed: ++result.changes; break;
-            case RoadPlacementStatus::ExistingRoad: ++result.unchanged; break;
-            default: ++result.blocked; break;
-        }
+        const auto required = path.ConnectionsAt(x, z);
+        const auto* existing = GetRoadAt(x, z);
+        const auto axes = static_cast<std::uint8_t>((existing ? existing->diagonalAxis : 0) | DiagonalRoadAxis(required));
+        result.tiles.push_back({x, z, path.diagonal ? CheckDiagonalFootprint(x, z) : CheckRoadPlacement(x, z, required), axes});
     });
+    if (path.diagonal)
+    {
+        // Filling a missing center between existing approaches may also create
+        // a junction. Only consider neighbors whose ports actually face it.
+        for (auto& tile : result.tiles)
+        {
+            if (tile.status != RoadPlacementStatus::Allowed) continue;
+            const auto connections = DiagonalConnectionsAt(tile.x, tile.z, RoadAllDiagonals, &path, &result);
+            if ((connections & tile.diagonalAxis) && (connections & ~tile.diagonalAxis))
+            {
+                if (SupportedDiagonalConnections(connections)) tile.diagonalAxis = RoadAllDiagonals;
+                else tile.status = RoadPlacementStatus::UnsupportedConnection;
+            }
+        }
+        // Remove upgrades that would leave an unsupported two-port bend after
+        // blocked approaches are skipped. Repeat because removing an upgrade
+        // can change the neighbors available to another planned junction.
+        bool removed;
+        do
+        {
+            removed = false;
+            for (auto& tile : result.tiles)
+            {
+                if (!RoadPlacementAccepted(tile.status)) continue;
+                const auto connections = DiagonalConnectionsAt(tile.x, tile.z, tile.diagonalAxis, &path, &result);
+                const auto* existing = GetRoadAt(tile.x, tile.z);
+                if (!SupportedDiagonalConnections(connections) ||
+                    (existing && tile.diagonalAxis != existing->diagonalAxis && connections == existing->connections))
+                {
+                    tile.status = RoadPlacementStatus::UnsupportedConnection;
+                    removed = true;
+                }
+                else if (tile.diagonalAxis == RoadAllDiagonals)
+                {
+                    // A partial drag may leave only a straight/end. Do not
+                    // retain unused perpendicular ports that could later grow
+                    // an unsupported bend from a nearby, unrelated placement.
+                    if (const auto axis = DiagonalRoadAxis(connections ? connections : path.ConnectionsAt(tile.x, tile.z)))
+                    {
+                        tile.diagonalAxis = axis;
+                        removed = true;
+                    }
+                }
+            }
+        }
+        while (removed);
+        for (auto& tile : result.tiles)
+        {
+            if (!RoadPlacementAccepted(tile.status)) continue;
+            if (const auto* existing = GetRoadAt(tile.x, tile.z))
+            {
+                const auto connections = DiagonalConnectionsAt(tile.x, tile.z, tile.diagonalAxis, &path, &result);
+                if (tile.diagonalAxis != existing->diagonalAxis ||
+                    (connections != existing->connections && std::popcount(connections) >= 3))
+                    tile.status = RoadPlacementStatus::UpgradeRoad;
+            }
+        }
+    }
+    for (const auto& tile : result.tiles)
+    {
+        switch (tile.status)
+        {
+            case RoadPlacementStatus::UpgradeRoad: ++result.evaluation.upgrades; ++result.evaluation.changes; break;
+            case RoadPlacementStatus::Allowed: ++result.evaluation.changes; break;
+            case RoadPlacementStatus::ExistingRoad: ++result.evaluation.unchanged; break;
+            default: ++result.evaluation.blocked; break;
+        }
+    }
     return result;
+}
+
+RoadEvaluation World::EvaluateRoads(const RoadPath& path) const
+{
+    return PlanRoads(path).evaluation;
 }
 
 RoadPlacementResult World::PlaceRoads(const RoadPath& path)
 {
-    RoadPlacementResult result{EvaluateRoads(path)};
+    const auto plan = PlanRoads(path);
+    RoadPlacementResult result{plan.evaluation};
     if (!result.evaluation.valid || !result.evaluation.changes) return result;
-    if (result.evaluation.changes > std::numeric_limits<InfrastructureId>::max() - nextInfrastructureId)
+    const auto additions = result.evaluation.changes - result.evaluation.upgrades;
+    if (additions > std::numeric_limits<InfrastructureId>::max() - nextInfrastructureId)
         throw std::overflow_error("No infrastructure IDs remain");
     // Reserve once before editing; a failed allocation cannot leave half a route.
-    const auto needed = roads.size() + result.evaluation.changes;
+    const auto needed = roads.size() + additions;
     if (needed > roads.capacity())
         roads.reserve(std::min(tiles.size(), std::max(needed, roads.capacity() * 2)));
-    path.ForEachTile([&](int x, int z) { if (PlaceRoad(x, z, path.ConnectionsAt(x, z))) ++result.changed; });
+    // Apply the complete plan before reconnecting. Checking against a partially
+    // committed path would incorrectly reject a junction missing its next arm.
+    for (const auto& tile : plan.tiles)
+    {
+        if (tile.status == RoadPlacementStatus::Allowed)
+        {
+            InsertRoad(tile.x, tile.z, tile.diagonalAxis);
+            ++result.changed;
+        }
+        else if (tile.status == RoadPlacementStatus::UpgradeRoad)
+        {
+            roads[roadAtTile[TileIndex(tile.x, tile.z)] - 1].diagonalAxis = tile.diagonalAxis;
+            ++roadRevision;
+            ++result.changed;
+        }
+    }
+    for (const auto& tile : plan.tiles)
+        if (RoadPlacementAccepted(tile.status)) ReconnectRoadNeighborhood(tile.x, tile.z);
     return result;
 }
