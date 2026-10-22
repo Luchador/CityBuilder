@@ -10,6 +10,7 @@
 #include <utility>
 
 #include "camera.hpp"
+#include "input.hpp"
 #include "gpu_utils.hpp"
 #include "ui_manager.hpp"
 #include "city.hpp"
@@ -205,10 +206,22 @@ public:
 
     void Run()
     {
+        InputActions inputActions;
+        inputActions.hasCity = [this] { return city.has_value(); };
+        inputActions.toggleFullscreen = [this] { ToggleFullscreen(); };
+        inputActions.toggleGrid = [this] { showGrid = !showGrid; };
+        inputActions.rotateCamera = [this](bool clockwise) { RotateCamera(clockwise); };
+        inputActions.handlePanEvent = [this](const SDL_Event& event) { HandlePanEvent(event); };
+        inputActions.stopMousePan = [this] { StopMousePan(); };
+        inputActions.beginWorldTool = [this](float x, float y) { return BeginWorldTool(x, y); };
+        inputActions.endWorldTool = [this](float x, float y) { EndWorldTool(x, y); };
+        inputActions.cancelWorldTool = [this] { CancelWorldTool(); };
+        inputActions.clearWorldTool = [this] { ClearWorldTool(); };
+        // Created once and kept alive for the entire run loop.
+        Input input(ui, camera, toolController, std::move(inputActions));
         Uint64 previous = SDL_GetTicksNS();
-        bool running = true;
 
-        while (running) 
+        while (true)
         {
             const bool cityHasBeenMade = city.has_value();
             const Uint64 now = SDL_GetTicksNS();
@@ -220,119 +233,7 @@ public:
 
             const float dt = std::min(static_cast<float>(elapsedMilliseconds / 1000.0), 0.05f);
 
-            SDL_Event event;
-
-            while (SDL_PollEvent(&event)) 
-            {
-                // Termination must not depend on the UI declining this event.
-                if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_WINDOW_MINIMIZED ||
-                    event.type == SDL_EVENT_WINDOW_HIDDEN || event.type == SDL_EVENT_WINDOW_RESIZED ||
-                    event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED ||
-                    (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_RIGHT) ||
-                    (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_TAB)) CancelWorldTool();
-
-                const bool wasDragging = toolController && toolController->IsInteracting();
-                const bool consumed = ui.HandleEvent(event);
-
-                if (wasDragging && event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT)
-                {
-                    if (consumed) CancelWorldTool();
-                    else EndWorldTool(event.button.x, event.button.y);
-                    continue;
-                }
-
-                if (consumed)
-                {
-                    continue;
-                }
-
-                if (event.type == SDL_EVENT_QUIT)
-                {
-                    running = false;
-                    continue;
-                }
-
-                if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && (event.key.key == SDLK_F11 || (event.key.key == SDLK_RETURN && (event.key.mod & SDL_KMOD_ALT))))
-                {
-                    ToggleFullscreen();
-                    continue;
-                }
-    
-                if (!city) 
-                {
-                    continue;
-                }
-                HandlePanEvent(event);
-
-                if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_LEFT && toolController)
-                {
-                    if (toolController->Begin(CurrentToolPointer(event.button.x, event.button.y)))
-                    {
-                        toolMouseCaptured = SDL_CaptureMouse(true);
-                        previewDirty = true;
-                        continue;
-                    }
-                }
-    
-                if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat) 
-                {
-                    if (event.key.key == SDLK_ESCAPE) 
-                    {
-                        if (toolController && toolController->HasTool())
-                        {
-                            if (toolController->IsInteracting()) 
-                            {
-                                CancelWorldTool();
-                            }
-                            else 
-                            {
-                                ClearWorldTool();
-                            }
-
-                            continue;
-                        }
-                        running = false;
-                    }
-        
-                    if (event.key.key == SDLK_G) 
-                    {
-                        showGrid = !showGrid;
-                    }
-
-                    if (event.key.key == SDLK_COMMA)
-                    {
-                        RotateCamera(true);
-                    }
-
-                    if (event.key.key == SDLK_PERIOD)
-                    {
-                        RotateCamera(false);
-                    }
-    
-                    if (event.key.key == SDLK_HOME) 
-                    {
-                        CancelWorldTool();
-                        StopMousePan();
-                        camera.SetPosition(camera.GetMapExtent() * 0.5f, camera.GetMapExtent() * 0.5f);
-                        camera.ResetZoom();
-                    }
-                }
-
-                if (event.type == SDL_EVENT_MOUSE_WHEEL) 
-                {
-                    CancelWorldTool();
-                    float amount = event.wheel.y;
-    
-                    if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) 
-                    {
-                        amount = -amount;
-                    }
-        
-                    camera.Zoom(amount);
-                }
-            }
-
-            if (!running) 
+            if (!input.PollInput())
             {
                 break;
             }
@@ -862,6 +763,18 @@ private:
             }
             previewDirty = true;
         }
+    }
+
+    bool BeginWorldTool(float x, float y)
+    {
+        if (!toolController || !toolController->Begin(CurrentToolPointer(x, y)))
+        {
+            return false;
+        }
+
+        toolMouseCaptured = SDL_CaptureMouse(true);
+        previewDirty = true;
+        return true;
     }
 
     void EndWorldTool(float x, float y)
