@@ -884,10 +884,10 @@ private:
         else if (roadToolActive)
         {
             std::string status = "Road - click one flat, dry tile; Esc to cancel";
-            if (toolPreview.roadTile)
+            if (toolPreview.tiles)
             {
-                const auto tile = *toolPreview.roadTile;
-                switch (world->CheckRoadPlacement(tile.x, tile.z))
+                const auto bounds = *toolPreview.tiles;
+                switch (world->CheckRoadPlacement(bounds.minX, bounds.minZ))
                 {
                     case RoadPlacementStatus::Allowed: status = "Road - click to place (free for now)"; break;
                     case RoadPlacementStatus::NotFlat: status = "Road - terrain must be flat"; break;

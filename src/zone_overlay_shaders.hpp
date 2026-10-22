@@ -10,7 +10,7 @@ Texture2D<float4> zoneMap : register(ZONE_TEXTURE, space2);
 SamplerState zoneSampler : register(ZONE_SAMPLER, space2);
 cbuffer ZoneOverlay : register(ZONE_UNIFORMS, space3)
 {
-    float4 zoneSettings; // map size, opacity, preview (0=off, 1=zone, 2=road), affordable
+    float4 zoneSettings; // map size, opacity, preview (0=off, 1=zone, 2=non-zone), affordable
     float4 zoneBounds;   // inclusive min X/Z, max X/Z
     float4 zonePreview;  // RGB, zone type
 };

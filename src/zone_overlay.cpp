@@ -1,5 +1,6 @@
 #include "zone_overlay.hpp"
 #include "zone_render_data.hpp"
+#include "tool.hpp"
 #include "world.hpp"
 
 #include <stdexcept>
@@ -64,16 +65,18 @@ void ZoneOverlay::Bind(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, 
         uniforms.blue = *preview.zoneType == ZoneType::None ? 0.95f : color.b;
         uniforms.zoneType = static_cast<float>(*preview.zoneType);
     }
-    else if (preview.roadTile)
+    else if (preview.tiles && !preview.zoneType)
     {
-        // Mode 2 uses the road tool's own eligibility rather than zone type or
-        // cost comparisons. The same overlay also marks invalid water tiles.
+        // All non-zone tools use the same palette, with their own placement
+        // rules. Their preview may cover one tile or a rectangular footprint.
+        const auto r = *preview.tiles;
+        const auto color = preview.placementAllowed ? ValidToolPreviewColor : InvalidToolPreviewColor;
         uniforms.previewEnabled = 2;
-        uniforms.minX = uniforms.maxX = static_cast<float>(preview.roadTile->x);
-        uniforms.minZ = uniforms.maxZ = static_cast<float>(preview.roadTile->z);
-        uniforms.red = preview.roadAllowed ? 0.0f : 1.0f;
-        uniforms.green = preview.roadAllowed ? 0.61f : 0.12f;
-        uniforms.blue = preview.roadAllowed ? 0.74f : 0.10f;
+        uniforms.minX = static_cast<float>(r.minX); uniforms.minZ = static_cast<float>(r.minZ);
+        uniforms.maxX = static_cast<float>(r.maxX); uniforms.maxZ = static_cast<float>(r.maxZ);
+        uniforms.red = color.r;
+        uniforms.green = color.g;
+        uniforms.blue = color.b;
     }
 
     const SDL_GPUTextureSamplerBinding binding{image->Handle(), sampler};

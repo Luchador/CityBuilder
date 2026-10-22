@@ -7,6 +7,15 @@
 
 class World;
 
+struct ToolPreviewColor
+{
+    float r, g, b;
+};
+
+// Shared hover colors for non-zone tools.
+inline constexpr ToolPreviewColor ValidToolPreviewColor{0.05f, 0.61f, 0.76f};
+inline constexpr ToolPreviewColor InvalidToolPreviewColor{1.0f, 0.12f, 0.10f};
+
 struct ToolTile
 {
     int x = 0;
@@ -77,9 +86,12 @@ using ToolResult = std::variant<std::monostate, ZoneRequest, RoadRequest>;
 struct ToolPreview
 {
     std::optional<ToolTileRect> tiles;
+    // Present for zoning (including ZoneType::None for dezoning). Leave empty
+    // for other tools to use the shared valid/invalid preview colors.
     std::optional<ZoneType> zoneType;
-    std::optional<ToolTile> roadTile;
-    bool roadAllowed = false;
+    // Non-zone tools supply their own rule check; zoning uses ZoneEvaluation
+    // and per-tile eligibility instead. This flag never authorizes an edit.
+    bool placementAllowed = false;
 };
 
 class Tool
