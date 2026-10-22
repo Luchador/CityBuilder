@@ -5,6 +5,7 @@ void RoadTool::UpdateHover(const ToolContext& context, const ToolPointer& pointe
 {
     hovered.reset();
     allowed = false;
+
     if (pointer.HasValidHit(context.world))
     {
         hovered = pointer.hit->tile;
@@ -14,9 +15,13 @@ void RoadTool::UpdateHover(const ToolContext& context, const ToolPointer& pointe
 
 bool RoadTool::Begin(const ToolContext& context, const ToolPointer& pointer)
 {
-    if (anchor) return false;
+    if (anchor) 
+    {
+        return false;
+    }
+
     UpdateHover(context, pointer);
-    if (!allowed) return false;
+
     anchor = hovered;
     return anchor.has_value();
 }
@@ -31,10 +36,14 @@ ToolResult RoadTool::End(const ToolContext& context, const ToolPointer& pointer)
 {
     UpdateHover(context, pointer);
     ToolResult result;
-    // A click commits on release at the pressed tile. Dragging to a different
-    // tile does nothing until multi-tile road gestures are implemented.
-    if (anchor && hovered == anchor && allowed) result = RoadRequest{*anchor};
+
+    if (anchor && hovered == anchor)
+    {
+        result = RoadRequest{*anchor};
+    }
+
     Cancel();
+
     return result;
 }
 
@@ -48,6 +57,7 @@ void RoadTool::Cancel() noexcept
 void RoadTool::BuildPreview(ToolPreview& preview) const
 {
     preview = {};
+
     // Suppress a misleading placement preview during an unsupported drag.
     if (hovered && (!anchor || hovered == anchor))
     {

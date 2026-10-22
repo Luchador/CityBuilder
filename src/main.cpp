@@ -172,7 +172,7 @@ public:
             }
             else
             {
-                buttonClick.Play();
+                buttonClickSound.Play();
             }
         };
 
@@ -233,7 +233,7 @@ public:
             return true;
         };
 
-        uiActions.playToolSelectionSound = [this] { buttonClick.Play(); };
+        uiActions.playToolSelectionSound = [this] { buttonClickSound.Play(); };
         // Selecting an unimplemented tool leaves the current world tool.
         uiActions.buttonClicked = [this](UiButtonId) { ClearWorldTool(); };
         uiActions.createCity = [this](const CityCreationOptions& options) { CreateCity(options); };
@@ -250,7 +250,10 @@ public:
         rotateSound.Load("sfx/ui/sfx_rotate.wav");
         playSound.Load("sfx/ui/sfx_play.wav");
         pauseSound.Load("sfx/ui/sfx_pause.wav");
-        buttonClick.Load("sfx/ui/sfx_click.wav");
+        buttonClickSound.Load("sfx/ui/sfx_click.wav");
+        toolDeniedSound.Load("sfx/ui/sfx_denied.wav");
+        placeZoneSound.Load("sfx/ui/sfx_place_zone.wav");
+        buildRoadSound.Load("sfx/ui/sfx_build_road.wav");
     }
 
     void Run()
@@ -348,7 +351,10 @@ private:
     SoundEffect rotateSound;
     SoundEffect playSound;
     SoundEffect pauseSound;
-    SoundEffect buttonClick;
+    SoundEffect buttonClickSound;
+    SoundEffect toolDeniedSound;
+    SoundEffect buildRoadSound;
+    SoundEffect placeZoneSound;
 
     // Invoked only by the creation form's Accept action. The optional City and
     // World stay empty until all world resources have been prepared.
@@ -364,6 +370,7 @@ private:
         try
         {
             terrainMaterial.Initialize(device, textures, "materials/ground/grass01_basecolor.png", "materials/ground/grass01_normal.png");
+
             // Terrain
             TerrainSettings terrainSettings;
             terrainSettings.dimensions = MapDimensions(GetMapTileCount(options.mapSize));
@@ -753,39 +760,58 @@ private:
     ToolPointer GetToolPointer(float screenX, float screenY, Uint32 pixelWidth, Uint32 pixelHeight)
     {
         ToolPointer pointer{screenX, screenY, std::nullopt};
+    
         const auto flags = SDL_GetWindowFlags(window);
-        if (!world || !(flags & SDL_WINDOW_INPUT_FOCUS) || !(flags & SDL_WINDOW_MOUSE_FOCUS) ||
-            (flags & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN)) || camera.IsMousePanning() ||
-            !ui.IsWorldPoint(screenX, screenY)) return pointer;
+    
+        if (!world || !(flags & SDL_WINDOW_INPUT_FOCUS) || !(flags & SDL_WINDOW_MOUSE_FOCUS) || (flags & (SDL_WINDOW_MINIMIZED | SDL_WINDOW_HIDDEN)) || camera.IsMousePanning() || !ui.IsWorldPoint(screenX, screenY)) 
+        {
+            return pointer;
+        }
 
         const auto& layout = ui.GetLayout();
-        if (layout.width <= 0 || layout.height <= 0 || pixelWidth == 0 || pixelHeight == 0) return pointer;
+    
+        if (layout.width <= 0 || layout.height <= 0 || pixelWidth == 0 || pixelHeight == 0) 
+        {
+            return pointer;
+        }
+
         const auto rect = ui.GetWorldViewport(pixelWidth, pixelHeight);
-        const PickingViewport viewport{rect.x, rect.y, rect.w, rect.h,
-            static_cast<float>(pixelWidth) / layout.width,
-            static_cast<float>(pixelHeight) / layout.height};
-        pointer.hit = PickMapTile(world->GetTerrain(), camera, viewport, screenX, screenY,
-                                  {true, skirtSettings.bottomY});
+    
+        const PickingViewport viewport{rect.x, rect.y, rect.w, rect.h, static_cast<float>(pixelWidth) / layout.width, static_cast<float>(pixelHeight) / layout.height};
+        pointer.hit = PickMapTile(world->GetTerrain(), camera, viewport, screenX, screenY, {true, skirtSettings.bottomY});
+
         return pointer;
     }
 
     ToolPointer CurrentToolPointer(float x, float y)
     {
         int width = 0, height = 0;
+    
         if (!SDL_GetWindowSizeInPixels(window, &width, &height) || width <= 0 || height <= 0)
+        {
             return {x, y, std::nullopt};
+        }
+
         return GetToolPointer(x, y, static_cast<Uint32>(width), static_cast<Uint32>(height));
     }
 
     void ReleaseToolCapture()
     {
-        if (toolMouseCaptured) SDL_CaptureMouse(false);
+        if (toolMouseCaptured) 
+        {
+            SDL_CaptureMouse(false);
+        }
+
         toolMouseCaptured = false;
     }
 
     void CancelWorldTool()
     {
-        if (toolController) toolController->Cancel();
+        if (toolController) 
+        {
+            toolController->Cancel();
+        }
+
         ReleaseToolCapture();
         toolPreview = {};
         zoneEvaluation = {};
@@ -795,7 +821,12 @@ private:
     void ClearWorldTool()
     {
         CancelWorldTool();
-        if (toolController) toolController->ClearTool();
+
+        if (toolController) 
+        {
+            toolController->ClearTool();
+        }
+
         activeZoneType.reset();
         roadToolActive = false;
         ui.SetSelectedToolButton(std::nullopt);
@@ -807,12 +838,18 @@ private:
         if (const auto* request = std::get_if<ZoneRequest>(&result); request && world && city)
         {
             const auto placement = ApplyZoning(*world, *city, *request);
+
             if (placement.changed)
             {
                 // Upload only the edited region, before the next frame is acquired.
                 zoneOverlay.Update(*world, request->tiles);
                 ui.UpdateMinimapZones(*world, request->tiles);
             }
+            else if (!placement.evaluation.valid || !placement.evaluation.affordable || placement.evaluation.blocked > 0)
+            {
+                toolDeniedSound.Play();
+            }
+
             previewDirty = true;
         }
         else if (const auto* road = std::get_if<RoadRequest>(&result); road && world && city)
@@ -820,11 +857,17 @@ private:
             if (world->PlaceRoad(road->tile.x, road->tile.z))
             {
                 const auto bounds = ToolTileRect::FromCorners(road->tile, road->tile);
+    
                 // Refresh occupancy eligibility and remove the replaced zone
                 // from both terrain and minimap. Roads have no minimap layer yet.
                 zoneOverlay.Update(*world, bounds);
                 ui.UpdateMinimapZones(*world, bounds);
             }
+            else
+            {
+                toolDeniedSound.Play();
+            }
+    
             previewDirty = true;
         }
     }
@@ -838,6 +881,7 @@ private:
 
         toolMouseCaptured = SDL_CaptureMouse(true);
         previewDirty = true;
+
         return true;
     }
 
@@ -851,42 +895,62 @@ private:
     void PrepareWorldTool(float elapsedSeconds)
     {
         toolPointer = {};
-        if (!world || !city || !toolController) return;
+
+        if (!world || !city || !toolController) 
+        {
+            return;
+        }
+
         float x = 0, y = 0;
         const auto held = SDL_GetMouseState(&x, &y);
-        if (toolController->IsInteracting() && !(held & SDL_BUTTON_LMASK)) CancelWorldTool();
+
+        if (toolController->IsInteracting() && !(held & SDL_BUTTON_LMASK)) 
+        {
+            CancelWorldTool();
+        }
+
         toolPointer = CurrentToolPointer(x, y);
         ApplyToolResult(toolController->Update(toolPointer, elapsedSeconds));
         toolPreview = toolController->BuildPreview();
-        if (previewDirty || toolPreview.tiles != evaluatedPreview.tiles || toolPreview.zoneType != evaluatedPreview.zoneType ||
-            evaluatedFunds != city->funds)
+    
+        if (previewDirty || toolPreview.tiles != evaluatedPreview.tiles || toolPreview.zoneType != evaluatedPreview.zoneType || evaluatedFunds != city->funds)
         {
             zoneEvaluation = {};
+    
             if (toolPreview.tiles && toolPreview.zoneType)
+            {
                 zoneEvaluation = EvaluateZoning(*world, {*toolPreview.tiles, *toolPreview.zoneType}, city->funds);
+            }
+
             evaluatedPreview = toolPreview;
             evaluatedFunds = city->funds;
             previewDirty = false;
         }
         if (activeZoneType)
         {
-            const std::string name = *activeZoneType == ZoneType::None ? "Dezone" :
-                std::string(Zone::GetZoneDefinition(*activeZoneType).name);
+            const std::string name = *activeZoneType == ZoneType::None ? "Dezone" : std::string(Zone::GetZoneDefinition(*activeZoneType).name);
             std::string status = name + " - click or drag; Esc to cancel";
+    
             if (toolPreview.tiles && zoneEvaluation.valid)
             {
-                status = name + ": " + std::to_string(zoneEvaluation.changes) + " tiles, $" +
-                    std::to_string(zoneEvaluation.cost) + "; " + std::to_string(zoneEvaluation.blocked) + " blocked";
-                if (!zoneEvaluation.affordable) status += " - insufficient funds";
+                status = name + ": " + std::to_string(zoneEvaluation.changes) + " tiles, $" + std::to_string(zoneEvaluation.cost) + "; " + std::to_string(zoneEvaluation.blocked) + " blocked";
+
+                if (!zoneEvaluation.affordable) 
+                {
+                    status += " - insufficient funds";
+                }
             }
+
             ui.SetToolStatus(status);
         }
         else if (roadToolActive)
         {
             std::string status = "Road - click one flat, dry tile; Esc to cancel";
+
             if (toolPreview.tiles)
             {
                 const auto bounds = *toolPreview.tiles;
+
                 switch (world->CheckRoadPlacement(bounds.minX, bounds.minZ))
                 {
                     case RoadPlacementStatus::Allowed: status = "Road - click to place (free for now)"; break;
@@ -904,7 +968,11 @@ private:
     void Render(float elapsedSeconds)
     {
         PrepareWorldTool(elapsedSeconds);
-        if (world) roadRenderer.Prepare(*world);
+        if (world) 
+        {
+            roadRenderer.Prepare(*world);
+        }
+
         // UI atlas and static geometry uploads precede the presentation commands.
         ui.PrepareFrame(camera.IsMousePanning());
 
