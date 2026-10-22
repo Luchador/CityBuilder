@@ -71,9 +71,9 @@ void ZoneOverlay::Bind(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, 
         uniforms.previewEnabled = 2;
         uniforms.minX = uniforms.maxX = static_cast<float>(preview.roadTile->x);
         uniforms.minZ = uniforms.maxZ = static_cast<float>(preview.roadTile->z);
-        uniforms.red = preview.roadAllowed ? 0.2f : 1.0f;
-        uniforms.green = preview.roadAllowed ? 0.95f : 0.12f;
-        uniforms.blue = preview.roadAllowed ? 0.35f : 0.10f;
+        uniforms.red = preview.roadAllowed ? 0.0f : 1.0f;
+        uniforms.green = preview.roadAllowed ? 0.61f : 0.12f;
+        uniforms.blue = preview.roadAllowed ? 0.74f : 0.10f;
     }
 
     const SDL_GPUTextureSamplerBinding binding{image->Handle(), sampler};
