@@ -63,9 +63,14 @@ struct ZoneRequest
     ZoneType zoneType = ZoneType::None; // None requests dezoning.
 };
 
+struct RoadRequest
+{
+    ToolTile tile;
+};
+
 // An empty result means there is no edit to request. Add other request types
 // here as terrain, network, and building tools are implemented.
-using ToolResult = std::variant<std::monostate, ZoneRequest>;
+using ToolResult = std::variant<std::monostate, ZoneRequest, RoadRequest>;
 
 // CPU preview data only. A renderer will turn these bounds into an overlay.
 // This describes a selection, not a promise that placement rules permit it.
@@ -73,6 +78,8 @@ struct ToolPreview
 {
     std::optional<ToolTileRect> tiles;
     std::optional<ZoneType> zoneType;
+    std::optional<ToolTile> roadTile;
+    bool roadAllowed = false;
 };
 
 class Tool

@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <stdexcept>
 
 void TerrainHeightmap::Validate() const
@@ -43,4 +44,33 @@ Tile& World::GetTile(int x, int z)
 const Tile& World::GetTile(int x, int z) const
 {
     return tiles[TileIndex(x, z)];
+}
+
+RoadPlacementStatus World::CheckRoadPlacement(int x, int z) const
+{
+    if (!ContainsTile(x, z)) return RoadPlacementStatus::OutsideMap;
+    if (GetTile(x, z).IsOccupied()) return RoadPlacementStatus::Occupied;
+    const auto ix = static_cast<std::uint32_t>(x), iz = static_cast<std::uint32_t>(z);
+    const float corners[] = {terrain.Height(ix, iz), terrain.Height(ix + 1, iz),
+                             terrain.Height(ix, iz + 1), terrain.Height(ix + 1, iz + 1)};
+    for (const float height : corners)
+        if (IsWaterElevation(height)) return RoadPlacementStatus::Underwater;
+    for (const float height : corners)
+        if (height != corners[0]) return RoadPlacementStatus::NotFlat;
+    return RoadPlacementStatus::Allowed;
+}
+
+bool World::PlaceRoad(int x, int z)
+{
+    // Recheck at commit time; a hover preview never authorizes a stale edit.
+    if (CheckRoadPlacement(x, z) != RoadPlacementStatus::Allowed) return false;
+    if (nextInfrastructureId == std::numeric_limits<InfrastructureId>::max())
+        throw std::overflow_error("No infrastructure IDs remain");
+    auto& tile = GetTile(x, z);
+    // Allocate before changing occupancy/zoning, so allocation failure is atomic.
+    roads.push_back({nextInfrastructureId, x, z,
+                     terrain.Height(static_cast<std::uint32_t>(x), static_cast<std::uint32_t>(z))});
+    tile.infrastructureId = nextInfrastructureId++;
+    tile.zoneType = ZoneType::None;
+    return true;
 }

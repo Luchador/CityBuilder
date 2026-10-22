@@ -2,6 +2,7 @@
 
 #include "map_dimensions.hpp"
 #include "tile.hpp"
+#include "road.hpp"
 
 #include <cstddef>
 #include <cstdint>
@@ -78,10 +79,18 @@ public:
     Tile& GetTile(int x, int z);
     const Tile& GetTile(int x, int z) const;
 
+    std::span<const Road> GetRoads() const { return roads; }
+    RoadPlacementStatus CheckRoadPlacement(int x, int z) const;
+    // Single-tile, X-axis straight roads for this first pass. Clears an empty
+    // zone and reserves infrastructure occupancy. No construction cost yet.
+    bool PlaceRoad(int x, int z);
+
 private:
     std::size_t TileIndex(int x, int z) const;
 
     TerrainSettings terrainSettings;
     TerrainHeightmap terrain;
     std::vector<Tile> tiles; // Row-major: z * tileCount + x.
+    std::vector<Road> roads;
+    InfrastructureId nextInfrastructureId = 1;
 };

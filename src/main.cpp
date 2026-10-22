@@ -30,6 +30,8 @@
 #include "world.hpp"
 #include "texture.hpp"
 #include "zone_tool.hpp"
+#include "road_tool.hpp"
+#include "road_renderer.hpp"
 #include "zone_overlay.hpp"
 #include "zone_overlay_shaders.hpp"
 #include "world_zoning.hpp"
@@ -68,6 +70,7 @@ public:
             ReleaseTerrainBuffers();
             terrainMaterial.Release();
             zoneOverlay.Release();
+            roadRenderer.Release();
             textures.Release();
             if (terrainPipeline) SDL_ReleaseGPUGraphicsPipeline(device, terrainPipeline);
             if (terrainVertexShader) SDL_ReleaseGPUShader(device, terrainVertexShader);
@@ -189,9 +192,34 @@ public:
             StopMousePan();
             toolController->SetTool(std::make_unique<ZoneTool>(type));
             activeZoneType = type;
+            roadToolActive = false;
             buttonClick.Play();
         };
-        // Until other tools are implemented, selecting one leaves zoning mode.
+        uiActions.selectRoadTool = [this]() -> bool
+        {
+            if (!toolController) return false;
+            CancelWorldTool();
+            StopMousePan();
+            try
+            {
+                // Load once, on first selection. A missing road asset should
+                // not prevent opening the game or creating a city.
+                if (!roadRenderer.IsInitialized())
+                    roadRenderer.Initialize(device, textures, SDL_GetGPUSwapchainTextureFormat(device, window));
+            }
+            catch (const std::exception& error)
+            {
+                SDL_Log("Load road: %s", error.what());
+                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Cannot load straight road", error.what(), window);
+                return false;
+            }
+            toolController->SetTool(std::make_unique<RoadTool>());
+            activeZoneType.reset();
+            roadToolActive = true;
+            buttonClick.Play();
+            return true;
+        };
+        // Selecting an unimplemented tool leaves the current world tool.
         uiActions.buttonClicked = [this](UiButtonId) { ClearWorldTool(); };
         uiActions.createCity = [this](const CityCreationOptions& options) { CreateCity(options); };
         uiActions.executeDebugCommand = [this](std::string_view command)
@@ -290,7 +318,8 @@ private:
     std::optional<ToolController> toolController;
     ToolPointer toolPointer; // Current cursor hit, refreshed with the rendered camera/view.
     std::optional<ZoneType> activeZoneType;
-    ToolPreview zonePreview;
+    bool roadToolActive = false;
+    ToolPreview toolPreview;
     ZoneEvaluation zoneEvaluation;
     ToolPreview evaluatedPreview;
     std::int64_t evaluatedFunds = 0;
@@ -742,7 +771,7 @@ private:
     {
         if (toolController) toolController->Cancel();
         ReleaseToolCapture();
-        zonePreview = {};
+        toolPreview = {};
         zoneEvaluation = {};
         previewDirty = true;
     }
@@ -752,6 +781,7 @@ private:
         CancelWorldTool();
         if (toolController) toolController->ClearTool();
         activeZoneType.reset();
+        roadToolActive = false;
         ui.SetSelectedToolButton(std::nullopt);
         ui.SetToolStatus("");
     }
@@ -766,6 +796,18 @@ private:
                 // Upload only the edited region, before the next frame is acquired.
                 zoneOverlay.Update(*world, request->tiles);
                 ui.UpdateMinimapZones(*world, request->tiles);
+            }
+            previewDirty = true;
+        }
+        else if (const auto* road = std::get_if<RoadRequest>(&result); road && world && city)
+        {
+            if (world->PlaceRoad(road->tile.x, road->tile.z))
+            {
+                const auto bounds = ToolTileRect::FromCorners(road->tile, road->tile);
+                // Refresh occupancy eligibility and remove the replaced zone
+                // from both terrain and minimap. Roads have no minimap layer yet.
+                zoneOverlay.Update(*world, bounds);
+                ui.UpdateMinimapZones(*world, bounds);
             }
             previewDirty = true;
         }
@@ -799,14 +841,14 @@ private:
         if (toolController->IsInteracting() && !(held & SDL_BUTTON_LMASK)) CancelWorldTool();
         toolPointer = CurrentToolPointer(x, y);
         ApplyToolResult(toolController->Update(toolPointer, elapsedSeconds));
-        zonePreview = toolController->BuildPreview();
-        if (previewDirty || zonePreview.tiles != evaluatedPreview.tiles || zonePreview.zoneType != evaluatedPreview.zoneType ||
+        toolPreview = toolController->BuildPreview();
+        if (previewDirty || toolPreview.tiles != evaluatedPreview.tiles || toolPreview.zoneType != evaluatedPreview.zoneType ||
             evaluatedFunds != city->funds)
         {
             zoneEvaluation = {};
-            if (zonePreview.tiles && zonePreview.zoneType)
-                zoneEvaluation = EvaluateZoning(*world, {*zonePreview.tiles, *zonePreview.zoneType}, city->funds);
-            evaluatedPreview = zonePreview;
+            if (toolPreview.tiles && toolPreview.zoneType)
+                zoneEvaluation = EvaluateZoning(*world, {*toolPreview.tiles, *toolPreview.zoneType}, city->funds);
+            evaluatedPreview = toolPreview;
             evaluatedFunds = city->funds;
             previewDirty = false;
         }
@@ -815,11 +857,28 @@ private:
             const std::string name = *activeZoneType == ZoneType::None ? "Dezone" :
                 std::string(Zone::GetZoneDefinition(*activeZoneType).name);
             std::string status = name + " - click or drag; Esc to cancel";
-            if (zonePreview.tiles && zoneEvaluation.valid)
+            if (toolPreview.tiles && zoneEvaluation.valid)
             {
                 status = name + ": " + std::to_string(zoneEvaluation.changes) + " tiles, $" +
                     std::to_string(zoneEvaluation.cost) + "; " + std::to_string(zoneEvaluation.blocked) + " blocked";
                 if (!zoneEvaluation.affordable) status += " - insufficient funds";
+            }
+            ui.SetToolStatus(status);
+        }
+        else if (roadToolActive)
+        {
+            std::string status = "Road - click one flat, dry tile; Esc to cancel";
+            if (toolPreview.roadTile)
+            {
+                const auto tile = *toolPreview.roadTile;
+                switch (world->CheckRoadPlacement(tile.x, tile.z))
+                {
+                    case RoadPlacementStatus::Allowed: status = "Road - click to place (free for now)"; break;
+                    case RoadPlacementStatus::NotFlat: status = "Road - terrain must be flat"; break;
+                    case RoadPlacementStatus::Underwater: status = "Road - cannot place in water"; break;
+                    case RoadPlacementStatus::Occupied: status = "Road - tile already contains a building or infrastructure"; break;
+                    case RoadPlacementStatus::OutsideMap: break;
+                }
             }
             ui.SetToolStatus(status);
         }
@@ -829,6 +888,7 @@ private:
     void Render(float elapsedSeconds)
     {
         PrepareWorldTool(elapsedSeconds);
+        if (world) roadRenderer.Prepare(*world);
         // UI atlas and static geometry uploads precede the presentation commands.
         ui.PrepareFrame(camera.IsMousePanning());
 
@@ -969,7 +1029,7 @@ private:
         SDL_BindGPUIndexBuffer(pass, &indexBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
         SDL_PushGPUVertexUniformData(commands, 0, &view, sizeof(view));
         terrainMaterial.Bind(commands, pass, terrainMaterialSettings);
-        zoneOverlay.Bind(commands, pass, zonePreview, zoneEvaluation);
+        zoneOverlay.Bind(commands, pass, toolPreview, zoneEvaluation);
         SDL_DrawGPUIndexedPrimitives(pass, indexCount, 1, 0, 0, 0);
 
         // Render the terrain line grid.
@@ -1006,9 +1066,17 @@ private:
             view.blue = WaterColor.b;
             view.depthOffset = 0.0f;
             SDL_PushGPUVertexUniformData(commands, 0, &view, sizeof(view));
-            zoneOverlay.Bind(commands, pass, zonePreview, zoneEvaluation, 0, 0);
+            zoneOverlay.Bind(commands, pass, toolPreview, zoneEvaluation, 0, 0);
             SDL_DrawGPUIndexedPrimitives(pass, waterIndexCount, 1, 0, 0, 0);
         }
+
+        // Draw roads after ground/grid/water, with the same view and depth test.
+        // This small bias also keeps the grid's own bias from drawing through
+        // the coplanar road surface. The road remains opaque and depth-writing.
+        view.red = view.green = view.blue = 1.0f;
+        view.depthOffset = -0.00002f;
+        SDL_PushGPUVertexUniformData(commands, 0, &view, sizeof(view));
+        roadRenderer.Draw(pass);
 
         SDL_EndGPURenderPass(pass);
 
@@ -1058,6 +1126,7 @@ private:
     TextureManager textures;
     TerrainMaterial terrainMaterial;
     ZoneOverlay zoneOverlay;
+    RoadRenderer roadRenderer;
     TerrainMaterialSettings terrainMaterialSettings;
     UiManager ui;
     bool restoreCursor = false;

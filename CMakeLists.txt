@@ -26,6 +26,14 @@ FetchContent_Declare(SDL_ttf
     GIT_SUBMODULES_RECURSE OFF)
 FetchContent_MakeAvailable(SDL_ttf)
 
+# Reuse Render Kit's pinned GLB parser. FetchContent shares this dependency
+# when CITY_BUILD_RENDER_KIT is enabled; the game needs no Render Kit UI/FBX code.
+FetchContent_Declare(renderkit_cgltf
+    GIT_REPOSITORY https://github.com/jkuhlmann/cgltf.git
+    GIT_TAG 85cd62382dfea638278962690cf515023f33ed00
+    SOURCE_SUBDIR render_kit_no_subproject)
+FetchContent_MakeAvailable(renderkit_cgltf)
+
 file(GLOB_RECURSE CITYBUILDER_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp"
@@ -34,6 +42,7 @@ file(GLOB_RECURSE CITYBUILDER_SOURCES CONFIGURE_DEPENDS
 add_executable(CityBuilder ${CITYBUILDER_SOURCES})
 
 target_compile_features(CityBuilder PRIVATE cxx_std_20)
+target_include_directories(CityBuilder SYSTEM PRIVATE "${renderkit_cgltf_SOURCE_DIR}")
 target_compile_definitions(CityBuilder PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 # D3DCompile is supplied by the Windows SDK; no separate shader tools needed.
 target_link_libraries(CityBuilder PRIVATE SDL3::SDL3-static SDL3_ttf::SDL3_ttf-static d3dcompiler)
@@ -53,6 +62,26 @@ add_dependencies(CityBuilder copy_assets)
 option(CITY_BUILD_RENDER_KIT "Build the Cities Unlimited sprite authoring companion" OFF)
 if(CITY_BUILD_RENDER_KIT)
     add_subdirectory(render_kit)
+endif()
+
+option(CITY_BUILD_ROAD_TESTS "Build road placement and static GLB import checks" OFF)
+if(CITY_BUILD_ROAD_TESTS)
+    enable_testing()
+    add_executable(CityRoadTests tests/road_tests.cpp src/road_tool.cpp src/static_mesh.cpp
+        src/tool.cpp src/toolcontroller.cpp src/world.cpp src/terrain.cpp src/world_zoning.cpp src/zone.cpp)
+    target_compile_features(CityRoadTests PRIVATE cxx_std_20)
+    target_include_directories(CityRoadTests PRIVATE src)
+    target_include_directories(CityRoadTests SYSTEM PRIVATE "${renderkit_cgltf_SOURCE_DIR}")
+    add_test(NAME CityRoadTests COMMAND CityRoadTests
+        "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/transportation/roads/road_straight.glb"
+        "${CMAKE_CURRENT_BINARY_DIR}")
+    add_executable(CityRoadRendererTests tests/road_renderer_tests.cpp src/road_renderer.cpp
+        src/static_mesh.cpp src/world.cpp src/terrain.cpp)
+    target_compile_features(CityRoadRendererTests PRIVATE cxx_std_20)
+    target_include_directories(CityRoadRendererTests PRIVATE src)
+    target_include_directories(CityRoadRendererTests SYSTEM PRIVATE "${renderkit_cgltf_SOURCE_DIR}")
+    target_link_libraries(CityRoadRendererTests PRIVATE SDL3::Headers)
+    add_test(NAME CityRoadRendererTests COMMAND CityRoadRendererTests "${CMAKE_CURRENT_SOURCE_DIR}")
 endif()
 
 option(CITY_BUILD_DEBUG_CONSOLE_TESTS "Build debug console command and text submission checks" OFF)

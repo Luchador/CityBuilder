@@ -3,6 +3,10 @@
 #include <cstdint>
 #include <stdexcept>
 
+// One world coordinate unit is one tile. Apply this conversion uniformly to
+// imported model X/Y/Z; a 16-meter road segment is one game unit long.
+inline constexpr float MetersPerTile = 16.0f;
+
 // Square maps, measured in tiles. Keep dimensions with each map/mesh rather
 // than in mutable globals, so generation and rendering agree on the stride.
 class MapDimensions

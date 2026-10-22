@@ -1,0 +1,177 @@
+#include "road_renderer.hpp"
+#include "gpu_utils.hpp"
+#include "world.hpp"
+
+#include <cmath>
+#include <cstring>
+#include <filesystem>
+#include <iostream>
+#include <stdexcept>
+#include <vector>
+
+// SDL/GPU doubles check bindings, instance uploads and partial-failure cleanup.
+// These are CPU checks, not a substitute for a Windows/D3D12 visual run.
+struct SDL_GPUDevice {};
+struct SDL_GPURenderPass {};
+struct SDL_GPUShader {};
+struct SDL_GPUSampler {};
+struct SDL_GPUGraphicsPipeline {};
+struct SDL_GPUTexture {};
+struct SDL_GPUBuffer { std::vector<Uint8> bytes; };
+namespace
+{
+    int buffers = 0, shaders = 0, samplers = 0, pipelines = 0, uploads = 0, draws = 0;
+    bool failPipeline = false, failUpload = false;
+    Uint32 drawnInstances = 0;
+    SDL_GPUBuffer* boundInstances = nullptr;
+    SDL_GPUTexture textureHandle;
+    std::string basePath;
+    void Check(bool condition, const char* message)
+    {
+        if (!condition) throw std::runtime_error(message);
+    }
+    template<class F> void Throws(F operation)
+    {
+        bool threw = false;
+        try { operation(); } catch (const std::exception&) { threw = true; }
+        Check(threw, "Expected injected failure");
+    }
+    void CheckReleased()
+    {
+        Check(!buffers && !shaders && !samplers && !pipelines, "Road GPU resource leaked");
+    }
+}
+
+const char* SDL_GetBasePath() { return basePath.c_str(); }
+const char* SDL_GetError() { return "Injected GPU failure"; }
+Texture::~Texture() = default;
+void TextureManager::Initialize(SDL_GPUDevice* gpu) { device = gpu; }
+void TextureManager::Release() noexcept { textures.clear(); device = nullptr; }
+const Texture& TextureManager::Load(std::string_view path, TextureOptions options)
+{
+    Check(path == StraightRoadTexturePath && options.content == TextureContent::Color && options.mipmaps,
+          "Road must load its base color as mipmapped sRGB");
+    auto& entry = textures[std::string(path)];
+    if (!entry)
+    {
+        entry.reset(new Texture(device));
+        entry->handle = &textureHandle;
+        entry->mipLevels = 9;
+    }
+    return *entry;
+}
+SDL_GPUBuffer* UploadBuffer(SDL_GPUDevice*, const void* data, Uint32 size, SDL_GPUBufferUsageFlags)
+{
+    if (failUpload) throw std::runtime_error("Injected upload failure");
+    const auto* bytes = static_cast<const Uint8*>(data);
+    auto* buffer = new SDL_GPUBuffer{{bytes, bytes + size}};
+    ++buffers; ++uploads;
+    return buffer;
+}
+SDL_GPUShader* CompileShader(SDL_GPUDevice*, const char*, SDL_GPUShaderStage stage, Uint32 samplerCount,
+                             const char* preamble, Uint32 uniformCount)
+{
+    Check(preamble && *preamble && uniformCount == 0 &&
+          samplerCount == (stage == SDL_GPU_SHADERSTAGE_VERTEX ? 0u : 1u), "Incorrect road shader resources");
+    ++shaders;
+    return new SDL_GPUShader;
+}
+SDL_GPUSampler* SDL_CreateGPUSampler(SDL_GPUDevice*, const SDL_GPUSamplerCreateInfo* info)
+{
+    Check(info->min_filter == SDL_GPU_FILTER_LINEAR && info->max_lod == 8, "Missing mipmap sampler");
+    ++samplers;
+    return new SDL_GPUSampler;
+}
+SDL_GPUGraphicsPipeline* SDL_CreateGPUGraphicsPipeline(SDL_GPUDevice*, const SDL_GPUGraphicsPipelineCreateInfo* info)
+{
+    Check(info->depth_stencil_state.enable_depth_test && info->depth_stencil_state.enable_depth_write &&
+          info->rasterizer_state.cull_mode == SDL_GPU_CULLMODE_BACK &&
+          info->rasterizer_state.front_face == SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE &&
+          !info->target_info.color_target_descriptions[0].blend_state.enable_blend, "Incorrect opacity/depth/culling");
+    const auto& input = info->vertex_input_state;
+    Check(input.num_vertex_buffers == 2 && input.num_vertex_attributes == 4 &&
+          input.vertex_buffer_descriptions[0].pitch == 32 && input.vertex_buffer_descriptions[1].pitch == 16 &&
+          input.vertex_buffer_descriptions[1].input_rate == SDL_GPU_VERTEXINPUTRATE_INSTANCE &&
+          input.vertex_buffer_descriptions[1].instance_step_rate == 0 && input.vertex_attributes[3].buffer_slot == 1,
+          "Incorrect instanced vertex layout");
+    if (failPipeline) return nullptr;
+    ++pipelines;
+    return new SDL_GPUGraphicsPipeline;
+}
+void SDL_ReleaseGPUBuffer(SDL_GPUDevice*, SDL_GPUBuffer* buffer) { delete buffer; --buffers; }
+void SDL_ReleaseGPUShader(SDL_GPUDevice*, SDL_GPUShader* shader) { delete shader; --shaders; }
+void SDL_ReleaseGPUSampler(SDL_GPUDevice*, SDL_GPUSampler* sampler) { delete sampler; --samplers; }
+void SDL_ReleaseGPUGraphicsPipeline(SDL_GPUDevice*, SDL_GPUGraphicsPipeline* pipeline) { delete pipeline; --pipelines; }
+void SDL_BindGPUGraphicsPipeline(SDL_GPURenderPass*, SDL_GPUGraphicsPipeline* pipeline) { Check(pipeline, "Null pipeline"); }
+void SDL_BindGPUVertexBuffers(SDL_GPURenderPass*, Uint32 first, const SDL_GPUBufferBinding* binding, Uint32 count)
+{
+    Check(first == 0 && count == 2 && binding[0].buffer && binding[1].buffer, "Missing mesh or instance binding");
+    boundInstances = binding[1].buffer;
+}
+void SDL_BindGPUIndexBuffer(SDL_GPURenderPass*, const SDL_GPUBufferBinding* binding, SDL_GPUIndexElementSize size)
+{
+    Check(binding->buffer && size == SDL_GPU_INDEXELEMENTSIZE_32BIT, "Incorrect road index binding");
+}
+void SDL_BindGPUFragmentSamplers(SDL_GPURenderPass*, Uint32 first, const SDL_GPUTextureSamplerBinding* binding, Uint32 count)
+{
+    Check(first == 0 && count == 1 && binding->texture == &textureHandle && binding->sampler, "Incorrect base color binding");
+}
+void SDL_DrawGPUIndexedPrimitives(SDL_GPURenderPass*, Uint32 indices, Uint32 instances, Uint32 first, Sint32 offset, Uint32 firstInstance)
+{
+    Check(indices == 6 && instances && !first && !offset && !firstInstance, "Incorrect indexed road draw");
+    ++draws; drawnInstances = instances;
+}
+
+int main(int argc, char** argv)
+{
+    try
+    {
+        if (argc != 2) throw std::runtime_error("Usage: CityRoadRendererTests project-directory");
+        basePath = std::filesystem::absolute(argv[1]).string();
+        SDL_GPUDevice device;
+        SDL_GPURenderPass pass;
+        TextureManager textures;
+        textures.Initialize(&device);
+        RoadRenderer renderer;
+        renderer.Draw(&pass);
+        Check(draws == 0, "Uninitialized renderer drew");
+        failPipeline = true;
+        Throws([&] { renderer.Initialize(&device, textures, SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM); });
+        Check(!renderer.IsInitialized(), "Failed renderer stayed initialized");
+        CheckReleased();
+        failPipeline = false;
+        renderer.Initialize(&device, textures, SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM);
+        TerrainSettings settings;
+        settings.dimensions = MapDimensions(16); settings.hillHeight = 0; settings.lakes.count = 0;
+        World world(settings);
+        renderer.Prepare(world); renderer.Draw(&pass);
+        Check(draws == 0 && buffers == 2, "Empty world allocated/drew instances");
+        Check(world.PlaceRoad(3, 4), "Test road placement failed");
+        renderer.Prepare(world); renderer.Draw(&pass);
+        Check(drawnInstances == 1 && buffers == 3 && boundInstances->bytes.size() == 16, "Single road draw failed");
+        float position[4];
+        std::memcpy(position, boundInstances->bytes.data(), sizeof(position));
+        Check(position[0] == 3.5f && position[2] == 4.5f && position[1] > TerrainBaseElevation &&
+              position[1] < TerrainBaseElevation + .01f, "Road not centered/raised on terrain");
+        const int previousUploads = uploads;
+        renderer.Prepare(world);
+        Check(uploads == previousUploads, "Unchanged frame reuploaded roads");
+        Check(world.PlaceRoad(4, 4), "Second test road placement failed");
+        failUpload = true;
+        Throws([&] { renderer.Prepare(world); });
+        renderer.Draw(&pass);
+        Check(drawnInstances == 1 && buffers == 3, "Failed upload discarded previous render data");
+        failUpload = false;
+        renderer.Prepare(world); renderer.Draw(&pass);
+        Check(drawnInstances == 2 && buffers == 3 && uploads == previousUploads + 1, "Instances not batched in one shared mesh");
+        renderer.Release(); renderer.Release();
+        CheckReleased();
+        std::cout << "PASS: renderer resource layout, shared mesh instances, upload cache, failure recovery and cleanup\n";
+        return 0;
+    }
+    catch (const std::exception& error)
+    {
+        std::cerr << "FAIL: " << error.what() << '\n';
+        return 1;
+    }
+}

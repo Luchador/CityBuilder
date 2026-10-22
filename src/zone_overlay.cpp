@@ -64,6 +64,17 @@ void ZoneOverlay::Bind(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, 
         uniforms.blue = *preview.zoneType == ZoneType::None ? 0.95f : color.b;
         uniforms.zoneType = static_cast<float>(*preview.zoneType);
     }
+    else if (preview.roadTile)
+    {
+        // Mode 2 uses the road tool's own eligibility rather than zone type or
+        // cost comparisons. The same overlay also marks invalid water tiles.
+        uniforms.previewEnabled = 2;
+        uniforms.minX = uniforms.maxX = static_cast<float>(preview.roadTile->x);
+        uniforms.minZ = uniforms.maxZ = static_cast<float>(preview.roadTile->z);
+        uniforms.red = preview.roadAllowed ? 0.2f : 1.0f;
+        uniforms.green = preview.roadAllowed ? 0.95f : 0.12f;
+        uniforms.blue = preview.roadAllowed ? 0.35f : 0.10f;
+    }
 
     const SDL_GPUTextureSamplerBinding binding{image->Handle(), sampler};
     SDL_BindGPUFragmentSamplers(pass, samplerSlot, &binding, 1);

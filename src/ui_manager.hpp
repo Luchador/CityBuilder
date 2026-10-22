@@ -23,6 +23,8 @@ struct UiActions
     std::function<void()> cancelWorldInteraction;
     std::function<void(UiButtonId)> buttonClicked; // Future tools and speed controls.
     std::function<void(ZoneType)> selectZoneTool;
+    // False means asset loading failed; keep the previously selected tool.
+    std::function<bool()> selectRoadTool;
     std::function<void(int)> setSimulationSpeed;
     std::function<void()> resumeSimulation;
     std::function<std::string(std::string_view)> executeDebugCommand;

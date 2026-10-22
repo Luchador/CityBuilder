@@ -154,6 +154,16 @@ void UiManager::OnUiButtonClicked(UiButtonId id)
     if (SelectZoneTool(id)) return;
     switch (id)
     {
+        case UiButtonIds::RoadButton:
+        {
+            if (!cityCreationPending && actions.selectRoadTool && actions.selectRoadTool())
+            {
+                SetSelectedToolButton(id);
+                CancelUiButtonInteraction(buttons);
+                tooltip.Hide();
+            }
+            break;
+        }
         case UiButtonIds::ZoomInButton:
         {
             if (actions.zoomCamera) 
