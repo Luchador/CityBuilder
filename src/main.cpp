@@ -143,6 +143,7 @@ public:
         {
             CancelWorldTool();
             camera.Zoom(steps);
+
             if (steps > 0.0f) 
             {
                 zoomInSound.Play();
@@ -154,6 +155,7 @@ public:
         };
     
         uiActions.rotateCamera = [this](bool clockwise) { RotateCamera(clockwise); };
+    
         uiActions.moveCameraToMapPoint = [this](float x, float z)
         {
             CancelWorldTool();
@@ -185,9 +187,14 @@ public:
             StopMousePan();
             CancelWorldTool();
         };
+
         uiActions.selectZoneTool = [this](ZoneType type)
         {
-            if (!toolController) return;
+            if (!toolController) 
+            {
+                return;
+            }
+
             CancelWorldTool();
             StopMousePan();
             toolController->SetTool(std::make_unique<ZoneTool>(type));
@@ -195,11 +202,17 @@ public:
             roadToolActive = false;
             buttonClick.Play();
         };
+
         uiActions.selectRoadTool = [this]() -> bool
         {
-            if (!toolController) return false;
+            if (!toolController) 
+            {
+                return false;
+            }
+
             CancelWorldTool();
             StopMousePan();
+
             try
             {
                 // Load once, on first selection. A missing road asset should
@@ -213,12 +226,15 @@ public:
                 SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Cannot load straight road", error.what(), window);
                 return false;
             }
+
             toolController->SetTool(std::make_unique<RoadTool>());
             activeZoneType.reset();
             roadToolActive = true;
             buttonClick.Play();
+
             return true;
         };
+
         // Selecting an unimplemented tool leaves the current world tool.
         uiActions.buttonClicked = [this](UiButtonId) { ClearWorldTool(); };
         uiActions.createCity = [this](const CityCreationOptions& options) { CreateCity(options); };
@@ -226,6 +242,7 @@ public:
         {
             return ExecuteDebugCommand(command, city ? &*city : nullptr);
         };
+
         ui.Initialize(device, window, textures, std::move(uiActions));
 
         // Load sound effects.

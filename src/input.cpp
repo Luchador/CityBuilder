@@ -122,6 +122,11 @@ bool Input::PollInput()
                 {
                     continue;
                 }
+
+                if (event.key.key == SDLK_R && ui.SelectRoadTool())
+                {
+                    continue;
+                }
             }
 
             if (event.key.key == SDLK_ESCAPE)

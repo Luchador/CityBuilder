@@ -61,6 +61,7 @@ public:
     bool IsWorldPoint(float x, float y);
     bool BlocksWorldKeyboard() const;
     bool IsCreatingCity() const { return cityCreationPending; }
+
     // References remain valid until Release(); Close() hides a reusable window.
     UiWindow& AddWindow(std::string_view title, UiRect bounds);
     UiWindow* FindWindow(UiWindowId id);
@@ -73,18 +74,20 @@ public:
     void RebuildMinimap(const TerrainMesh& terrain, std::span<const MinimapTileOverlay> overlays = {});
     void UpdateMinimapZones(const World& world, ToolTileRect bounds);
     void SetSelectedToolButton(std::optional<UiButtonId> id);
+
     // Shared selection path for zoning toolbar clicks and keyboard shortcuts.
     bool SelectZoneTool(UiButtonId id);
+    bool SelectRoadTool();
     void SetToolStatus(std::string_view text) { bottomBarText.SetToolStatus(text); }
 
     // Prepare before acquiring the frame command buffer (text/geometry uploads).
     void PrepareFrame(bool mousePanning);
+
     // Upload the camera outline before any render pass, using the world aspect.
-    void UploadFrame(SDL_GPUCommandBuffer* commands, const Camera& camera, float mapExtent,
-                     Uint32 pixelWidth, Uint32 pixelHeight);
+    void UploadFrame(SDL_GPUCommandBuffer* commands, const Camera& camera, float mapExtent, Uint32 pixelWidth, Uint32 pixelHeight);
+
     // Draw the UI pass after the world. Pan graphics remain visible when minimized.
-    void Draw(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target, Uint32 pixelWidth,
-              Uint32 pixelHeight, const Camera& camera);
+    void Draw(SDL_GPUCommandBuffer* commands, SDL_GPUTexture* target, Uint32 pixelWidth, Uint32 pixelHeight, const Camera& camera);
 
 private:
     void RefreshLayout();

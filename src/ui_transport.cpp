@@ -17,7 +17,7 @@ namespace
     // Submenu order is top to bottom, directly below the category button.
     constexpr std::array<UiToolButtonDefinition, 6> Roads{{
         {UiButtonIds::DirtRoadButton, "Dirt Road", "ui/toolbar/btn_dirt_road"},
-        {UiButtonIds::RoadButton, "Road", "ui/toolbar/btn_road"},
+        {UiButtonIds::RoadButton, "**Build Road**\nHotkey: R", "ui/toolbar/btn_road"},
         {UiButtonIds::AvenueButton, "Avenue", "ui/toolbar/btn_avenue"},
         {UiButtonIds::OneWayRoadButton, "One-way", "ui/toolbar/btn_oneway"},
         {UiButtonIds::TramButton, "Tram", "ui/toolbar/btn_tram"},

@@ -83,9 +83,16 @@ void UiManager::CancelInteraction()
     CancelWindowInteraction();
 }
 
+/**
+ * Minimize the UI.
+ */
 void UiManager::SetMinimized(bool minimized)
 {
-    if (minimized && cityCreationPending) return;
+    if (minimized && cityCreationPending) 
+    {
+        return;
+    }
+
     if (settings.minimized == minimized) 
     {
         return;
@@ -117,6 +124,7 @@ void UiManager::SetSettings(const UiSettings& next)
         SetSettings(visibleSettings);
         return;
     }
+
     if (settings.barSlimDimension == next.barSlimDimension && settings.minimapSize == next.minimapSize && settings.minimized == next.minimized) 
     {
         return;
@@ -136,32 +144,57 @@ void UiManager::SetSettings(const UiSettings& next)
 
 bool UiManager::SelectZoneTool(UiButtonId id)
 {
-    if (!initialized || cityCreationPending) return false;
+    if (!initialized || cityCreationPending) 
+    {
+        return false;
+    }
+
     if (const auto zone = ZoneTypeForButton(id); zone && actions.selectZoneTool)
     {
         actions.selectZoneTool(*zone);
         SetSelectedToolButton(id);
+    
         // A hotkey can also be used while a toolbar flyout owns mouse capture.
         CancelUiButtonInteraction(buttons);
         tooltip.Hide();
+
         return true;
     }
+
     return false;
+}
+
+bool UiManager::SelectRoadTool()
+{
+    if (!initialized || cityCreationPending || !actions.selectRoadTool)
+    {
+        return false;
+    }
+
+    if (!actions.selectRoadTool())
+    {
+        return false;
+    }
+
+    SetSelectedToolButton(UiButtonIds::RoadButton);
+    CancelUiButtonInteraction(buttons);
+    tooltip.Hide();
+
+    return true;
 }
 
 void UiManager::OnUiButtonClicked(UiButtonId id)
 {
-    if (SelectZoneTool(id)) return;
+    if (SelectZoneTool(id)) 
+    {
+        return;
+    }
+
     switch (id)
     {
         case UiButtonIds::RoadButton:
         {
-            if (!cityCreationPending && actions.selectRoadTool && actions.selectRoadTool())
-            {
-                SetSelectedToolButton(id);
-                CancelUiButtonInteraction(buttons);
-                tooltip.Hide();
-            }
+            SelectRoadTool();
             break;
         }
         case UiButtonIds::ZoomInButton:
@@ -277,10 +310,22 @@ void UiManager::OnUiButtonClicked(UiButtonId id)
 void UiManager::SetSelectedToolButton(std::optional<UiButtonId> id)
 {
     if (selectedToolButton)
-        if (auto* previous = buttons.Find(*selectedToolButton)) previous->SetSelected(false);
+    {
+        if (auto* previous = buttons.Find(*selectedToolButton)) 
+        {
+            previous->SetSelected(false);
+        }
+    }
+
     selectedToolButton = id;
+
     if (id)
-        if (auto* next = buttons.Find(*id)) next->SetSelected(true);
+    {
+        if (auto* next = buttons.Find(*id)) 
+        {
+            next->SetSelected(true);
+        }
+    }
 }
 
 bool UiManager::HandleMinimapEvent(const SDL_Event& event)
