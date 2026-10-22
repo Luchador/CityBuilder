@@ -139,6 +139,11 @@ namespace
         const auto restored = BuildZoneMinimapPatch(base, world, {1, 1, 1, 1});
         Check(std::equal(restored.rgba.begin(), restored.rgba.begin() + 4, base.rgba.begin() + original),
               "Dezone did not restore original minimap color");
+        Check(world.PlaceRoad(1, 1), "Road metadata fixture failed");
+        const auto roadPixels = BuildZonePixels(world, {1, 1, 2, 1});
+        Check(roadPixels[3] == 128 && (roadPixels[3] & 127) / 2 == 0 &&
+              (roadPixels[3] & 1) == 0 && roadPixels[7] == 0,
+              "Reusable road flag changed zone type/eligibility or marked a building as a road");
 
         for (unsigned int n : {128u, 256u, 512u, 1024u})
         {
@@ -151,6 +156,10 @@ namespace
             const auto region = BuildZonePixels(sized, {last, last, last, last});
             Check(region.size() == 4 && region[3] == 2 * static_cast<unsigned int>(ZoneType::Seaport) + 1,
                   "Zone texture region stride failed on large map");
+            const auto roads = sized.PlaceRoads({0, last, last, last});
+            Check(roads.changed == n && sized.GetRoadAt(last, last)->connections == RoadWest &&
+                  sized.GetTile(last, last).zoneType == ZoneType::None,
+                  "Full-width road or lookup failed on a supported map size");
         }
         std::cout << "PASS: overlay/minimap data, dezone restoration, and all four map sizes\n";
     }

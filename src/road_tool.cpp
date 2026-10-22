@@ -1,6 +1,8 @@
 #include "road_tool.hpp"
 #include "world.hpp"
 
+#include <cstdlib>
+
 RoadTool::RoadTool(ToolSuccessSound successSound) : Tool(successSound)
 {
 }
@@ -8,12 +10,19 @@ RoadTool::RoadTool(ToolSuccessSound successSound) : Tool(successSound)
 void RoadTool::UpdateHover(const ToolContext& context, const ToolPointer& pointer)
 {
     hovered.reset();
+    path.reset();
     allowed = false;
 
     if (pointer.HasValidHit(context.world))
     {
         hovered = pointer.hit->tile;
-        allowed = context.world.CheckRoadPlacement(hovered->x, hovered->z) == RoadPlacementStatus::Allowed;
+        const auto start = anchor.value_or(*hovered);
+
+        // Longest leg first, with X winning ties. This is a preview from the
+        // anchor, so skipped mouse-motion events cannot create gaps.
+        path = RoadPath{start.x, start.z, hovered->x, hovered->z, std::abs(hovered->x - start.x) >= std::abs(hovered->z - start.z)};
+        const auto evaluation = context.world.EvaluateRoads(*path);
+        allowed = evaluation.valid && evaluation.blocked == 0;
     }
 }
 
@@ -41,9 +50,9 @@ ToolResult RoadTool::End(const ToolContext& context, const ToolPointer& pointer)
     UpdateHover(context, pointer);
     ToolResult result;
 
-    if (anchor && hovered == anchor)
+    if (anchor && path)
     {
-        result = RoadRequest{*anchor};
+        result = RoadRequest{*path};
     }
 
     Cancel();
@@ -55,6 +64,7 @@ void RoadTool::Cancel() noexcept
 {
     anchor.reset();
     hovered.reset();
+    path.reset();
     allowed = false;
 }
 
@@ -62,10 +72,10 @@ void RoadTool::BuildPreview(ToolPreview& preview) const
 {
     preview = {};
 
-    // Suppress a misleading placement preview during an unsupported drag.
-    if (hovered && (!anchor || hovered == anchor))
+    if (path)
     {
-        preview.tiles = ToolTileRect::FromCorners(*hovered, *hovered);
+        preview.tiles = ToolTileRect::FromCorners({path->startX, path->startZ}, {path->endX, path->endZ});
         preview.placementAllowed = allowed;
+        preview.roadPath = path;
     }
 }

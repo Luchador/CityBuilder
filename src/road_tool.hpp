@@ -17,5 +17,6 @@ private:
     void UpdateHover(const ToolContext& context, const ToolPointer& pointer);
     std::optional<ToolTile> anchor;
     std::optional<ToolTile> hovered;
+    std::optional<RoadPath> path;
     bool allowed = false;
 };

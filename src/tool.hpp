@@ -1,6 +1,7 @@
 #pragma once
 
 #include "zone.hpp"
+#include "road.hpp"
 #include "tool_feedback.hpp"
 
 #include <optional>
@@ -75,7 +76,7 @@ struct ZoneRequest
 
 struct RoadRequest
 {
-    ToolTile tile;
+    RoadPath path;
 };
 
 // An empty result means there is no edit to request. Add other request types
@@ -93,6 +94,8 @@ struct ToolPreview
     // Non-zone tools supply their own rule check; zoning uses ZoneEvaluation
     // and per-tile eligibility instead. This flag never authorizes an edit.
     bool placementAllowed = false;
+    // Road previews use a one-tile-wide route inside tiles' bounding rectangle.
+    std::optional<RoadPath> roadPath;
 };
 
 class Tool

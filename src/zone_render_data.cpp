@@ -21,7 +21,7 @@ namespace
 
 std::vector<std::uint8_t> BuildZonePixels(const World& world, ToolTileRect r)
 {
-    static_assert(static_cast<unsigned int>(ZoneType::Count) <= 128, "Zone texture metadata needs another channel");
+    static_assert(static_cast<unsigned int>(ZoneType::Count) <= 64, "Zone texture metadata needs another channel");
     CheckBounds(world, r);
     std::vector<std::uint8_t> pixels(static_cast<std::size_t>(r.maxX - r.minX + 1) * (r.maxZ - r.minZ + 1) * 4);
     std::size_t offset = 0;
@@ -33,7 +33,9 @@ std::vector<std::uint8_t> BuildZonePixels(const World& world, ToolTileRect r)
             pixels[offset++] = Byte(color.r);
             pixels[offset++] = Byte(color.g);
             pixels[offset++] = Byte(color.b);
-            pixels[offset++] = static_cast<std::uint8_t>(2 * static_cast<unsigned int>(type) + (CanZoneTile(world, x, z) ? 1 : 0));
+            pixels[offset++] = static_cast<std::uint8_t>(2 * static_cast<unsigned int>(type) +
+                (CanZoneTile(world, x, z) ? 1 : 0) +
+                (world.CheckRoadPlacement(x, z) == RoadPlacementStatus::ExistingRoad ? 128 : 0));
         }
     return pixels;
 }

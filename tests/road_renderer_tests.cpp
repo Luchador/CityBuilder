@@ -3,6 +3,8 @@
 #include "world.hpp"
 
 #include <cmath>
+#include <algorithm>
+#include <array>
 #include <cstring>
 #include <filesystem>
 #include <iostream>
@@ -16,7 +18,7 @@ struct SDL_GPURenderPass {};
 struct SDL_GPUShader {};
 struct SDL_GPUSampler {};
 struct SDL_GPUGraphicsPipeline {};
-struct SDL_GPUTexture {};
+struct SDL_GPUTexture { std::string path; };
 struct SDL_GPUBuffer { std::vector<Uint8> bytes; };
 namespace
 {
@@ -24,7 +26,11 @@ namespace
     bool failPipeline = false, failUpload = false;
     Uint32 drawnInstances = 0;
     SDL_GPUBuffer* boundInstances = nullptr;
-    SDL_GPUTexture textureHandle;
+    SDL_GPUBuffer* boundIndices = nullptr;
+    Uint32 instanceOffset = 0;
+    SDL_GPUTexture* boundTexture = nullptr;
+    std::array<Uint32, static_cast<std::size_t>(RoadShape::Count)> shapeInstances{};
+    std::vector<float> instanceTurns;
     std::string basePath;
     void Check(bool condition, const char* message)
     {
@@ -44,18 +50,19 @@ namespace
 
 const char* SDL_GetBasePath() { return basePath.c_str(); }
 const char* SDL_GetError() { return "Injected GPU failure"; }
-Texture::~Texture() = default;
+Texture::~Texture() { delete handle; }
 void TextureManager::Initialize(SDL_GPUDevice* gpu) { device = gpu; }
 void TextureManager::Release() noexcept { textures.clear(); device = nullptr; }
 const Texture& TextureManager::Load(std::string_view path, TextureOptions options)
 {
-    Check(path == StraightRoadTexturePath && options.content == TextureContent::Color && options.mipmaps,
+    Check(std::any_of(RoadAssets.begin(), RoadAssets.end(), [&](const auto& asset) { return path == asset.texture; }) &&
+          options.content == TextureContent::Color && options.mipmaps,
           "Road must load its base color as mipmapped sRGB");
     auto& entry = textures[std::string(path)];
     if (!entry)
     {
         entry.reset(new Texture(device));
-        entry->handle = &textureHandle;
+        entry->handle = new SDL_GPUTexture{std::string(path)};
         entry->mipLevels = 9;
     }
     return *entry;
@@ -71,8 +78,8 @@ SDL_GPUBuffer* UploadBuffer(SDL_GPUDevice*, const void* data, Uint32 size, SDL_G
 SDL_GPUShader* CompileShader(SDL_GPUDevice*, const char*, SDL_GPUShaderStage stage, Uint32 samplerCount,
                              const char* preamble, Uint32 uniformCount)
 {
-    Check(preamble && *preamble && uniformCount == 0 &&
-          samplerCount == (stage == SDL_GPU_SHADERSTAGE_VERTEX ? 0u : 1u), "Incorrect road shader resources");
+    Check(preamble && *preamble && uniformCount == (stage == SDL_GPU_SHADERSTAGE_VERTEX ? 0u : 1u) &&
+          samplerCount == (stage == SDL_GPU_SHADERSTAGE_VERTEX ? 0u : 2u), "Incorrect road shader resources");
     ++shaders;
     return new SDL_GPUShader;
 }
@@ -92,7 +99,8 @@ SDL_GPUGraphicsPipeline* SDL_CreateGPUGraphicsPipeline(SDL_GPUDevice*, const SDL
     Check(input.num_vertex_buffers == 2 && input.num_vertex_attributes == 4 &&
           input.vertex_buffer_descriptions[0].pitch == 32 && input.vertex_buffer_descriptions[1].pitch == 16 &&
           input.vertex_buffer_descriptions[1].input_rate == SDL_GPU_VERTEXINPUTRATE_INSTANCE &&
-          input.vertex_buffer_descriptions[1].instance_step_rate == 0 && input.vertex_attributes[3].buffer_slot == 1,
+          input.vertex_buffer_descriptions[1].instance_step_rate == 0 && input.vertex_attributes[3].buffer_slot == 1 &&
+          input.vertex_attributes[3].format == SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4,
           "Incorrect instanced vertex layout");
     if (failPipeline) return nullptr;
     ++pipelines;
@@ -107,19 +115,34 @@ void SDL_BindGPUVertexBuffers(SDL_GPURenderPass*, Uint32 first, const SDL_GPUBuf
 {
     Check(first == 0 && count == 2 && binding[0].buffer && binding[1].buffer, "Missing mesh or instance binding");
     boundInstances = binding[1].buffer;
+    instanceOffset = binding[1].offset;
 }
 void SDL_BindGPUIndexBuffer(SDL_GPURenderPass*, const SDL_GPUBufferBinding* binding, SDL_GPUIndexElementSize size)
 {
     Check(binding->buffer && size == SDL_GPU_INDEXELEMENTSIZE_32BIT, "Incorrect road index binding");
+    boundIndices = binding->buffer;
 }
 void SDL_BindGPUFragmentSamplers(SDL_GPURenderPass*, Uint32 first, const SDL_GPUTextureSamplerBinding* binding, Uint32 count)
 {
-    Check(first == 0 && count == 1 && binding->texture == &textureHandle && binding->sampler, "Incorrect base color binding");
+    Check(first == 0 && count == 1 && binding->texture && binding->sampler, "Incorrect base color binding");
+    boundTexture = binding->texture;
 }
 void SDL_DrawGPUIndexedPrimitives(SDL_GPURenderPass*, Uint32 indices, Uint32 instances, Uint32 first, Sint32 offset, Uint32 firstInstance)
 {
-    Check(indices == 6 && instances && !first && !offset && !firstInstance, "Incorrect indexed road draw");
-    ++draws; drawnInstances = instances;
+    Check(instances && !first && !offset && !firstInstance && boundIndices->bytes.size() == indices * 4 &&
+          instanceOffset + instances * 16 <= boundInstances->bytes.size(), "Incorrect indexed road draw");
+    const Uint32 counts[] = {6, 24, 30, 93, 72};
+    const auto shape = static_cast<std::size_t>(std::find(std::begin(counts), std::end(counts), indices) - std::begin(counts));
+    Check(shape < RoadAssets.size() && boundTexture->path == RoadAssets[shape].texture, "Wrong mesh/texture pair");
+    shapeInstances[shape] += instances;
+    for (Uint32 i = 0; i < instances; ++i)
+    {
+        float values[4];
+        std::memcpy(values, boundInstances->bytes.data() + instanceOffset + i * 16, sizeof(values));
+        Check(values[3] >= 0 && values[3] <= 3 && std::floor(values[3]) == values[3], "Invalid rotation in instance");
+        instanceTurns.push_back(values[3]);
+    }
+    ++draws; drawnInstances += instances;
 }
 
 int main(int argc, char** argv)
@@ -145,10 +168,11 @@ int main(int argc, char** argv)
         settings.dimensions = MapDimensions(16); settings.hillHeight = 0; settings.lakes.count = 0;
         World world(settings);
         renderer.Prepare(world); renderer.Draw(&pass);
-        Check(draws == 0 && buffers == 2, "Empty world allocated/drew instances");
+        Check(draws == 0 && buffers == 10, "Empty world allocated/drew instances");
         Check(world.PlaceRoad(3, 4), "Test road placement failed");
         renderer.Prepare(world); renderer.Draw(&pass);
-        Check(drawnInstances == 1 && buffers == 3 && boundInstances->bytes.size() == 16, "Single road draw failed");
+        Check(drawnInstances == 1 && buffers == 11 && boundInstances->bytes.size() == 16 &&
+              shapeInstances[static_cast<std::size_t>(RoadShape::DeadEnd)] == 1, "Single road draw failed");
         float position[4];
         std::memcpy(position, boundInstances->bytes.data(), sizeof(position));
         Check(position[0] == 3.5f && position[2] == 4.5f && position[1] > TerrainBaseElevation &&
@@ -159,14 +183,35 @@ int main(int argc, char** argv)
         Check(world.PlaceRoad(4, 4), "Second test road placement failed");
         failUpload = true;
         Throws([&] { renderer.Prepare(world); });
+        drawnInstances = 0;
         renderer.Draw(&pass);
-        Check(drawnInstances == 1 && buffers == 3, "Failed upload discarded previous render data");
+        Check(drawnInstances == 1 && buffers == 11, "Failed upload discarded previous render data");
         failUpload = false;
+        drawnInstances = 0;
+        instanceTurns.clear();
         renderer.Prepare(world); renderer.Draw(&pass);
-        Check(drawnInstances == 2 && buffers == 3 && uploads == previousUploads + 1, "Instances not batched in one shared mesh");
+        Check(drawnInstances == 2 && buffers == 11 && uploads == previousUploads + 1 &&
+              instanceTurns == std::vector<float>{2, 0}, "Two ends did not face each other using shared instances");
+
+        Check(world.PlaceRoads({4, 3, 4, 5, false}).changed == 2, "Cross fixture failed");
+        Check(world.PlaceRoad(5, 4), "Cross fixture failed");
+        Check(world.PlaceRoads({8, 8, 11, 9}).changed == 5 && world.PlaceRoad(9, 7), "Mixed shapes fixture failed");
+        drawnInstances = 0; draws = 0; shapeInstances = {}; instanceTurns.clear();
+        renderer.Prepare(world); renderer.Draw(&pass);
+        Check(drawnInstances == world.GetRoads().size() && draws == 5 && buffers == 11,
+              "Five shapes were not batched into five draws/one instance buffer");
+        for (const auto count : shapeInstances) Check(count > 0, "A required shape was not drawn");
+        const auto mixedUploads = uploads;
+        renderer.Prepare(world);
+        Check(uploads == mixedUploads, "Stable connected roads reuploaded");
+        World empty(settings);
+        renderer.Prepare(empty);
+        drawnInstances = 0;
+        renderer.Draw(&pass);
+        Check(drawnInstances == 0 && buffers == 10, "Switching worlds retained stale road instances");
         renderer.Release(); renderer.Release();
         CheckReleased();
-        std::cout << "PASS: renderer resource layout, shared mesh instances, upload cache, failure recovery and cleanup\n";
+        std::cout << "PASS: five mesh/texture batches, rotated instances, previews' shader bindings, upload cache, failure recovery and cleanup\n";
         return 0;
     }
     catch (const std::exception& error)

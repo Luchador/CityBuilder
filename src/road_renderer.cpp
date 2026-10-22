@@ -1,11 +1,13 @@
 #include "road_renderer.hpp"
 #include "road_shaders.hpp"
 #include "shaders.hpp"
+#include "zone_overlay_shaders.hpp"
 #include "gpu_utils.hpp"
 #include "static_mesh.hpp"
 #include "world.hpp"
 
 #include <cmath>
+#include <algorithm>
 #include <cstddef>
 #include <filesystem>
 #include <stdexcept>
@@ -17,7 +19,7 @@ namespace
     // A small physical lift prevents the coplanar authored road plane from
     // sharing the terrain surface. It does not alter terrain/picking heights.
     constexpr float RoadSurfaceLift = 0.001f;
-    struct RoadInstance { float x, y, z, padding = 0.0f; };
+    struct RoadInstance { float x, y, z, quarterTurns; };
     static_assert(sizeof(RoadInstance) == 16);
     [[noreturn]] void Fail(const char* message)
     {
@@ -27,27 +29,50 @@ namespace
 
 void RoadRenderer::Initialize(SDL_GPUDevice* gpu, TextureManager& textures, SDL_GPUTextureFormat colorFormat)
 {
-    if (device || !gpu) throw std::logic_error("Invalid road renderer initialization");
+    if (device || !gpu) 
+    {
+        throw std::logic_error("Invalid road renderer initialization");
+    }
+
     device = gpu;
+
     try
     {
         const char* base = SDL_GetBasePath();
-        if (!base) Fail("Find road asset directory");
+    
+        if (!base) 
+        {
+            Fail("Find road asset directory");
+        }
+
         const std::string utf8Base(base);
         const std::u8string unicodeBase(utf8Base.begin(), utf8Base.end());
-        const auto path = std::filesystem::path(unicodeBase) / "assets" / StraightRoadModelPath;
-        const auto mesh = LoadStaticGlb(path, 1.0f / MetersPerTile);
-        // No silent normalization/stretching: preserve the authored 16 x 8 m
-        // proportions and reject a misplaced pivot or oversized single tile.
-        for (const auto& v : mesh.vertices)
-            if (std::abs(v.x) > 0.5001f || std::abs(v.z) > 0.5001f)
-                throw std::runtime_error("Straight road must fit a 16 x 16 meter tile centered at X/Z = 0");
-        baseColor = &textures.Load(StraightRoadTexturePath, {TextureContent::Color, true});
-        vertices = UploadBuffer(device, mesh.vertices.data(),
-                                static_cast<Uint32>(mesh.vertices.size() * sizeof(StaticMeshVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
-        indices = UploadBuffer(device, mesh.indices.data(),
-                               static_cast<Uint32>(mesh.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
-        indexCount = static_cast<Uint32>(mesh.indices.size());
+        Uint32 maxMipLevels = 1;
+    
+        for (std::size_t i = 0; i < meshes.size(); ++i)
+        {
+            const auto& asset = RoadAssets[i];
+            const auto path = std::filesystem::path(unicodeBase) / "assets" / asset.model;
+            auto geometry = LoadStaticGlb(path, 1.0f / MetersPerTile);
+        
+            for (auto& v : geometry.vertices)
+            {
+                // Preserve the authored geometry and baked GLB node transform.
+                if (std::abs(v.x) > 0.5001f || std::abs(v.z) > 0.5001f)
+                {
+                    throw std::runtime_error(std::string(asset.model) + " must fit a centered 16 x 16 meter tile");
+                }
+    
+                v.u = v.u * asset.uScale + asset.uOffset;
+            }
+            auto& mesh = meshes[i];
+    
+            mesh.baseColor = &textures.Load(asset.texture, {TextureContent::Color, true});
+            maxMipLevels = std::max(maxMipLevels, mesh.baseColor->MipLevels());
+            mesh.vertices = UploadBuffer(device, geometry.vertices.data(), static_cast<Uint32>(geometry.vertices.size() * sizeof(StaticMeshVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
+            mesh.indices = UploadBuffer(device, geometry.indices.data(), static_cast<Uint32>(geometry.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
+            mesh.indexCount = static_cast<Uint32>(geometry.indices.size());
+        }
 
         SDL_GPUSamplerCreateInfo sampling{};
         sampling.min_filter = sampling.mag_filter = SDL_GPU_FILTER_LINEAR;
@@ -55,12 +80,17 @@ void RoadRenderer::Initialize(SDL_GPUDevice* gpu, TextureManager& textures, SDL_
         sampling.address_mode_u = sampling.address_mode_v = sampling.address_mode_w = SDL_GPU_SAMPLERADDRESSMODE_CLAMP_TO_EDGE;
         sampling.enable_anisotropy = true;
         sampling.max_anisotropy = 8.0f;
-        sampling.max_lod = static_cast<float>(baseColor->MipLevels() - 1);
+        sampling.max_lod = static_cast<float>(maxMipLevels - 1);
         sampler = SDL_CreateGPUSampler(device, &sampling);
-        if (!sampler) Fail("Create road sampler");
+
+        if (!sampler) 
+        {
+            Fail("Create road sampler");
+        }
 
         vertexShader = CompileShader(device, RoadVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
-        fragmentShader = CompileShader(device, RoadFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1, WorldLightingShaderSource);
+        const std::string fragmentPreamble = std::string(WorldLightingShaderSource) + "#define ZONE_TEXTURE t1\n#define ZONE_SAMPLER s1\n#define ZONE_UNIFORMS b0\n" + ZoneOverlayShaderSource;
+        fragmentShader = CompileShader(device, RoadFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 2, fragmentPreamble.c_str(), 1);
 
         SDL_GPUVertexBufferDescription buffers[2]{};
         buffers[0].slot = 0;
@@ -69,13 +99,15 @@ void RoadRenderer::Initialize(SDL_GPUDevice* gpu, TextureManager& textures, SDL_
         buffers[1].slot = 1;
         buffers[1].pitch = sizeof(RoadInstance);
         buffers[1].input_rate = SDL_GPU_VERTEXINPUTRATE_INSTANCE;
+    
         // SDL reserves instance_step_rate; leave it at zero even for instances.
         const SDL_GPUVertexAttribute attributes[] = {
             {0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, offsetof(StaticMeshVertex, x)},
             {1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, offsetof(StaticMeshVertex, nx)},
             {2, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, offsetof(StaticMeshVertex, u)},
-            {3, 1, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, offsetof(RoadInstance, x)}
+            {3, 1, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, offsetof(RoadInstance, x)}
         };
+    
         SDL_GPUColorTargetDescription color{};
         color.format = colorFormat;
         SDL_GPUGraphicsPipelineCreateInfo info{};
@@ -98,7 +130,10 @@ void RoadRenderer::Initialize(SDL_GPUDevice* gpu, TextureManager& textures, SDL_
         info.target_info.has_depth_stencil_target = true;
         info.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
         pipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
-        if (!pipeline) Fail("Create road pipeline");
+        if (!pipeline) 
+        {
+            Fail("Create road pipeline");
+        }
     }
     catch (...)
     {
@@ -109,54 +144,120 @@ void RoadRenderer::Initialize(SDL_GPUDevice* gpu, TextureManager& textures, SDL_
 
 void RoadRenderer::Prepare(const World& world)
 {
-    if (!IsInitialized()) return;
+    if (!IsInitialized())
+    {
+        return;
+    }
+
     const auto roads = world.GetRoads();
-    // Roads are append-only for now. Use a world edit revision instead when
-    // rotation, demolition or terrain movement can change existing records.
-    if (preparedWorld == &world && instanceCount == roads.size()) return;
+
+    if (preparedWorld == &world && preparedRevision == world.GetRoadRevision()) 
+    {
+        return;
+    }
+
+    std::array<std::vector<RoadInstance>, static_cast<std::size_t>(RoadShape::Count)> groups;
+
+    for (const auto& road : roads)
+    {
+        const auto visual = GetRoadVisual(road.connections);
+
+        groups[static_cast<std::size_t>(visual.shape)].push_back({static_cast<float>(road.tileX) + 0.5f, road.elevation + RoadSurfaceLift, static_cast<float>(road.tileZ) + 0.5f, static_cast<float>(visual.quarterTurns)});
+    }
+
     std::vector<RoadInstance> positions;
     positions.reserve(roads.size());
-    for (const auto& road : roads)
-        positions.push_back({static_cast<float>(road.tileX) + 0.5f, road.elevation + RoadSurfaceLift,
-                             static_cast<float>(road.tileZ) + 0.5f});
+
+    for (const auto& group : groups) 
+    {
+        positions.insert(positions.end(), group.begin(), group.end());
+    }
+
     SDL_GPUBuffer* uploaded = nullptr;
+
     if (!positions.empty())
+    {
         uploaded = UploadBuffer(device, positions.data(), static_cast<Uint32>(positions.size() * sizeof(RoadInstance)), SDL_GPU_BUFFERUSAGE_VERTEX);
+    }
+
     // Keep the previous buffer until the replacement upload succeeds.
-    if (instances) SDL_ReleaseGPUBuffer(device, instances);
+    if (instances) 
+    {
+        SDL_ReleaseGPUBuffer(device, instances);
+    }
+
     instances = uploaded;
     instanceCount = static_cast<Uint32>(positions.size());
+    Uint32 first = 0;
+
+    for (std::size_t i = 0; i < meshes.size(); ++i)
+    {
+        meshes[i].firstInstance = first;
+        meshes[i].instanceCount = static_cast<Uint32>(groups[i].size());
+        first += meshes[i].instanceCount;
+    }
+
     preparedWorld = &world;
+    preparedRevision = world.GetRoadRevision();
 }
 
 void RoadRenderer::Draw(SDL_GPURenderPass* pass) const
 {
-    if (!pipeline || !instanceCount) return;
+    if (!pipeline || !instanceCount) 
+    {
+        return;
+    }
+
     SDL_BindGPUGraphicsPipeline(pass, pipeline);
-    const SDL_GPUBufferBinding bindings[] = {{vertices, 0}, {instances, 0}};
-    const SDL_GPUBufferBinding indexBinding{indices, 0};
-    SDL_BindGPUVertexBuffers(pass, 0, bindings, 2);
-    SDL_BindGPUIndexBuffer(pass, &indexBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
-    const SDL_GPUTextureSamplerBinding texture{baseColor->Handle(), sampler};
-    SDL_BindGPUFragmentSamplers(pass, 0, &texture, 1);
-    SDL_DrawGPUIndexedPrimitives(pass, indexCount, instanceCount, 0, 0, 0);
+
+    for (const auto& mesh : meshes)
+    {
+        if (!mesh.instanceCount)
+        {
+            continue;
+        }
+
+        const SDL_GPUBufferBinding bindings[] = {{mesh.vertices, 0}, {instances, mesh.firstInstance * static_cast<Uint32>(sizeof(RoadInstance))}};
+        const SDL_GPUBufferBinding indexBinding{mesh.indices, 0};
+        SDL_BindGPUVertexBuffers(pass, 0, bindings, 2);
+        SDL_BindGPUIndexBuffer(pass, &indexBinding, SDL_GPU_INDEXELEMENTSIZE_32BIT);
+        const SDL_GPUTextureSamplerBinding texture{mesh.baseColor->Handle(), sampler};
+        SDL_BindGPUFragmentSamplers(pass, 0, &texture, 1);
+        SDL_DrawGPUIndexedPrimitives(pass, mesh.indexCount, mesh.instanceCount, 0, 0, 0);
+    }
 }
 
 void RoadRenderer::Release() noexcept
 {
-    if (instances) SDL_ReleaseGPUBuffer(device, instances);
-    if (indices) SDL_ReleaseGPUBuffer(device, indices);
-    if (vertices) SDL_ReleaseGPUBuffer(device, vertices);
+    if (instances) 
+    {
+        SDL_ReleaseGPUBuffer(device, instances);
+    }
+
+    for (auto& mesh : meshes)
+    {
+        if (mesh.indices) 
+        {
+            SDL_ReleaseGPUBuffer(device, mesh.indices);
+        }
+
+        if (mesh.vertices) 
+        {
+            SDL_ReleaseGPUBuffer(device, mesh.vertices);
+        }
+        mesh = {};
+    }
     if (pipeline) SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
     if (fragmentShader) SDL_ReleaseGPUShader(device, fragmentShader);
     if (vertexShader) SDL_ReleaseGPUShader(device, vertexShader);
     if (sampler) SDL_ReleaseGPUSampler(device, sampler);
+
     device = nullptr;
-    instances = indices = vertices = nullptr;
+    instances = nullptr;
     pipeline = nullptr;
     fragmentShader = vertexShader = nullptr;
     sampler = nullptr;
-    baseColor = nullptr;
     preparedWorld = nullptr;
-    indexCount = instanceCount = 0;
+    instanceCount = 0;
+    preparedRevision = 0;
 }

@@ -1,11 +1,12 @@
 #pragma once
 
 #include "texture.hpp"
+#include "road.hpp"
 
 class World;
 
-// Owns GPU geometry/pipeline/sampler, borrows the cached base-color texture.
-// The mesh is uploaded once; per-road positions are an instanced vertex stream.
+// Owns shared geometry for each shape; borrows cached base-color textures.
+// One instance buffer groups roads into at most five draw calls.
 class RoadRenderer
 {
 public:
@@ -28,10 +29,16 @@ private:
     SDL_GPUShader* fragmentShader = nullptr;
     SDL_GPUGraphicsPipeline* pipeline = nullptr;
     SDL_GPUSampler* sampler = nullptr;
-    const Texture* baseColor = nullptr;
-    SDL_GPUBuffer* vertices = nullptr;
-    SDL_GPUBuffer* indices = nullptr;
+    struct Mesh
+    {
+        const Texture* baseColor = nullptr;
+        SDL_GPUBuffer* vertices = nullptr;
+        SDL_GPUBuffer* indices = nullptr;
+        Uint32 indexCount = 0, firstInstance = 0, instanceCount = 0;
+    };
+    std::array<Mesh, static_cast<std::size_t>(RoadShape::Count)> meshes{};
     SDL_GPUBuffer* instances = nullptr;
-    Uint32 indexCount = 0, instanceCount = 0;
+    Uint32 instanceCount = 0;
     const World* preparedWorld = nullptr;
+    std::uint64_t preparedRevision = 0;
 };

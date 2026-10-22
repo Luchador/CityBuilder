@@ -8,8 +8,9 @@ struct alignas(16) ZoneOverlayUniforms
     float mapSize = 0, opacity = 0, previewEnabled = 0, affordable = 0;
     float minX = 0, minZ = 0, maxX = 0, maxZ = 0;
     float red = 0, green = 0, blue = 0, zoneType = 0;
+    float startX = 0, startZ = 0, endX = 0, endZ = 0;
 };
-static_assert(sizeof(ZoneOverlayUniforms) == 48);
+static_assert(sizeof(ZoneOverlayUniforms) == 64);
 
 // One texel per tile: memory and edit upload size stay small on giant maps.
 class ZoneOverlay

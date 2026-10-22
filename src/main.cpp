@@ -223,7 +223,7 @@ public:
             catch (const std::exception& error)
             {
                 SDL_Log("Load road: %s", error.what());
-                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Cannot load straight road", error.what(), window);
+                SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Cannot load road meshes", error.what(), window);
                 return false;
             }
 
@@ -863,17 +863,24 @@ private:
         }
         else if (const auto* road = std::get_if<RoadRequest>(&result); road && world && city)
         {
-            if (world->PlaceRoad(road->tile.x, road->tile.z))
+            const auto placement = world->PlaceRoads(road->path);
+            if (placement.changed)
             {
-                const auto bounds = ToolTileRect::FromCorners(road->tile, road->tile);
-    
-                // Refresh occupancy eligibility and remove the replaced zone
-                // from both terrain and minimap. Roads have no minimap layer yet.
-                zoneOverlay.Update(*world, bounds);
-                ui.UpdateMinimapZones(*world, bounds);
-                outcome = ToolOutcome::Success;
+                const auto& path = road->path;
+                const ToolTile start{path.startX, path.startZ}, end{path.endX, path.endZ};
+                const ToolTile bend = path.xFirst ? ToolTile{end.x, start.z} : ToolTile{start.x, end.z};
+                const auto refresh = [&](ToolTile first, ToolTile last)
+                {
+                    const auto bounds = ToolTileRect::FromCorners(first, last);
+                    // Upload the thin legs, not the potentially huge bounding box.
+                    zoneOverlay.Update(*world, bounds);
+                    ui.UpdateMinimapZones(*world, bounds);
+                };
+                refresh(start, bend);
+                if (bend != end) refresh(bend, end);
+                outcome = placement.evaluation.blocked ? ToolOutcome::PartialSuccess : ToolOutcome::Success;
             }
-            else
+            else if (!placement.evaluation.valid || placement.evaluation.blocked)
             {
                 outcome = ToolOutcome::Rejected;
             }
@@ -962,20 +969,14 @@ private:
         }
         else if (roadToolActive)
         {
-            std::string status = "Road - click one flat, dry tile; Esc to cancel";
+            std::string status = "Road - click or drag a route; release to build; Esc to cancel";
 
-            if (toolPreview.tiles)
+            if (toolPreview.roadPath)
             {
-                const auto bounds = *toolPreview.tiles;
-
-                switch (world->CheckRoadPlacement(bounds.minX, bounds.minZ))
-                {
-                    case RoadPlacementStatus::Allowed: status = "Road - click to place (free for now)"; break;
-                    case RoadPlacementStatus::NotFlat: status = "Road - terrain must be flat"; break;
-                    case RoadPlacementStatus::Underwater: status = "Road - cannot place in water"; break;
-                    case RoadPlacementStatus::Occupied: status = "Road - tile already contains a building or infrastructure"; break;
-                    case RoadPlacementStatus::OutsideMap: break;
-                }
+                const auto evaluation = world->EvaluateRoads(*toolPreview.roadPath);
+                status = "Road: " + std::to_string(evaluation.changes) + " new, " +
+                    std::to_string(evaluation.unchanged) + " existing, " + std::to_string(evaluation.blocked) +
+                    " blocked - release to build (free for now)";
             }
             ui.SetToolStatus(status);
         }
@@ -1177,6 +1178,7 @@ private:
         view.red = view.green = view.blue = 1.0f;
         view.depthOffset = -0.00002f;
         SDL_PushGPUVertexUniformData(commands, 0, &view, sizeof(view));
+        zoneOverlay.Bind(commands, pass, toolPreview, zoneEvaluation, 1, 0);
         roadRenderer.Draw(pass);
 
         SDL_EndGPURenderPass(pass);

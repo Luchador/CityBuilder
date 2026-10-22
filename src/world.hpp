@@ -80,17 +80,26 @@ public:
     const Tile& GetTile(int x, int z) const;
 
     std::span<const Road> GetRoads() const { return roads; }
+    const Road* GetRoadAt(int x, int z) const;
+    std::uint64_t GetRoadRevision() const { return roadRevision; }
     RoadPlacementStatus CheckRoadPlacement(int x, int z) const;
-    // Single-tile, X-axis straight roads for this first pass. Clears an empty
-    // zone and reserves infrastructure occupancy. No construction cost yet.
+    RoadEvaluation EvaluateRoads(const RoadPath& path) const;
+    RoadPlacementResult PlaceRoads(const RoadPath& path);
+    // Clears an empty zone, reserves occupancy and reconnects neighbors.
+    // Existing roads are unchanged. No construction cost yet.
     bool PlaceRoad(int x, int z);
 
 private:
     std::size_t TileIndex(int x, int z) const;
+    void ReconnectRoad(int x, int z);
 
     TerrainSettings terrainSettings;
     TerrainHeightmap terrain;
     std::vector<Tile> tiles; // Row-major: z * tileCount + x.
     std::vector<Road> roads;
+    // 0 = no road, otherwise index + 1. Constant-time neighbor lookup, even
+    // on giant maps; infrastructure IDs remain independent of vector indices.
+    std::vector<std::uint32_t> roadAtTile;
+    std::uint64_t roadRevision = 0;
     InfrastructureId nextInfrastructureId = 1;
 };
