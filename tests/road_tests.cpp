@@ -58,7 +58,7 @@ namespace
         Check(request.path == RoadPath{2, 3, 2, 3, true} && world.GetRoads().empty(), "Tool mutated world or chose wrong tile");
         Check(world.PlaceRoads(request.path).changed == 1, "Placement rejected");
         const auto& road = world.GetRoads().front();
-        Check(road.tileX == 2 && road.tileZ == 3 && road.elevation == TerrainBaseElevation &&
+        Check(road.tileX == 2 && road.tileZ == 3 && road.surface.elevation == TerrainBaseElevation &&
               road.id != NoInfrastructure && world.GetTile(2, 3).infrastructureId == road.id &&
               world.GetTile(2, 3).zoneType == ZoneType::None, "Road record/occupancy/zone replacement disagree");
         Check(!world.PlaceRoad(2, 3) && world.GetRoads().size() == 1 && !CanZoneTile(world, 2, 3),
@@ -187,6 +187,109 @@ namespace
         std::cout << "PASS: all 16 connection masks, insertion order, all drag directions, exact L previews, partial/reused/blocked routes and map edges\n";
     }
 
+    World RampWorld(bool alongX, bool descending)
+    {
+        auto world = FlatWorld();
+        auto& terrain = const_cast<TerrainHeightmap&>(world.GetTerrain());
+        for (unsigned z = 0; z <= 16; ++z) for (unsigned x = 0; x <= 16; ++x)
+        {
+            const int along = static_cast<int>(alongX ? x : z);
+            terrain.heights[z * terrain.dimensions.CornerStride() + x] =
+                2.0f + (descending ? -.25f : .25f) * static_cast<float>(std::clamp(along - 4, 0, 4));
+        }
+        return world;
+    }
+
+    void CheckSlopes()
+    {
+        for (bool alongX : {false, true}) for (bool descending : {false, true})
+        {
+            auto world = RampWorld(alongX, descending);
+            const auto tile = [&](int along, int across) { return alongX ? ToolTile{along, across} : ToolTile{across, along}; };
+            const auto a = tile(2, 8), b = tile(10, 8);
+            const RoadPath path{a.x, a.z, b.x, b.z, alongX};
+            Check(world.EvaluateRoads(path).changes == 9 && world.PlaceRoads(path).changed == 9,
+                  "Paired slope did not accept a road route");
+            const std::uint8_t axis = alongX ? RoadWest | RoadEast : RoadNorth | RoadSouth;
+            for (int along = 2; along <= 10; ++along)
+            {
+                const auto p = tile(along, 8);
+                const auto* road = world.GetRoadAt(p.x, p.z);
+                const auto& t = world.GetTerrain();
+                Check(Near(road->surface.HeightAt(-.5f, -.5f), t.Height(p.x, p.z)) &&
+                      Near(road->surface.HeightAt(.5f, .5f), t.Height(p.x + 1, p.z + 1)),
+                      "Road plane does not follow terrain corners");
+                if (along > 2 && along < 10) Check(road->connections == axis, "Incline/plateau seam failed to connect");
+                if (along >= 4 && along < 8)
+                {
+                    Check(road->surface.AllowedConnections() == axis &&
+                          GetRoadVisual(*road).shape == RoadShape::Straight && !CanZoneTile(world, p.x, p.z),
+                          "Slope created a junction or became zone-eligible");
+                }
+            }
+            const auto c = tile(6, 5), d = tile(6, 11);
+            const RoadPath cross{c.x, c.z, d.x, d.z, !alongX};
+            const auto crossing = world.PlaceRoads(cross);
+            Check(!crossing.changed && crossing.evaluation.blocked == 7 && !crossing.evaluation.unchanged,
+                  "Cross-slope road or crossing an existing sloped road accepted");
+
+            // Parallel hillside roads may coexist but must not grow sideways junctions.
+            const auto pa = tile(2, 9), pb = tile(10, 9);
+            Check(world.PlaceRoads({pa.x, pa.z, pb.x, pb.z, alongX}).changed == 9, "Parallel ramp rejected");
+            for (int along = 4; along < 8; ++along)
+            {
+                const auto p = tile(along, 8);
+                const auto q = tile(along, 9);
+                Check(world.GetRoadAt(p.x, p.z)->connections == axis && world.GetRoadAt(q.x, q.z)->connections == axis,
+                      "Parallel sloped roads connected sideways");
+            }
+
+            auto alone = RampWorld(alongX, descending);
+            const auto p = tile(6, 8);
+            Check(alone.PlaceRoad(p.x, p.z), "Isolated sloped end rejected");
+            const auto visual = GetRoadVisual(*alone.GetRoadAt(p.x, p.z));
+            const auto opening = RotateRoadConnections(RoadAssets[static_cast<std::size_t>(visual.shape)].connections, visual.quarterTurns);
+            Check(visual.shape == RoadShape::DeadEnd && opening == (alongX ?
+                  (descending ? RoadEast : RoadWest) : (descending ? RoadSouth : RoadNorth)),
+                  "Isolated end not aligned downhill");
+            const auto extension = tile(7, 8);
+            Check(alone.PlaceRoad(extension.x, extension.z) && alone.GetRoadAt(p.x, p.z)->connections ==
+                  (alongX ? RoadEast : RoadSouth), "Sloped end did not reorient to its first neighbor");
+
+            auto bendWorld = RampWorld(alongX, descending);
+            const auto bendEnd = tile(6, 10);
+            const auto bend = bendWorld.PlaceRoads({a.x, a.z, bendEnd.x, bendEnd.z, alongX});
+            Check(bend.changed == 4 && bend.evaluation.blocked == 3 && !bendWorld.GetRoadAt(p.x, p.z),
+                  "A bend/cross-slope leg was placed on the incline");
+
+            // A corner and later a four-way are still allowed on the upper/lower plateau.
+            auto plateau = RampWorld(alongX, descending);
+            const auto end = tile(8, 10), corner = tile(8, 8);
+            Check(plateau.PlaceRoads({a.x, a.z, end.x, end.z, alongX}).changed == 9 &&
+                  GetRoadVisual(*plateau.GetRoadAt(corner.x, corner.z)).shape == RoadShape::Curve,
+                  "Plateau turn after an incline rejected");
+            const auto branch1 = tile(9, 8), branch2 = tile(8, 7);
+            Check(plateau.PlaceRoad(branch1.x, branch1.z) && plateau.PlaceRoad(branch2.x, branch2.z) &&
+                  GetRoadVisual(*plateau.GetRoadAt(corner.x, corner.z)).shape == RoadShape::FourWay,
+                  "Flat junction at ramp end rejected");
+        }
+
+        // Non-planar corners, a saddle, and a diagonal plane are all unsuitable;
+        // even the diagonal plane has no level pair across either road end.
+        for (const auto heights : {std::array<float, 4>{1, 1, 1, 2}, {1, 2, 2, 1}, {1, 2, 2, 3}, {0, -1, 0, -1}})
+        {
+            auto world = FlatWorld();
+            auto& t = const_cast<TerrainHeightmap&>(world.GetTerrain());
+            t.heights[6 * t.dimensions.CornerStride() + 6] = heights[0];
+            t.heights[6 * t.dimensions.CornerStride() + 7] = heights[1];
+            t.heights[7 * t.dimensions.CornerStride() + 6] = heights[2];
+            t.heights[7 * t.dimensions.CornerStride() + 7] = heights[3];
+            Check(!world.PlaceRoad(6, 6) && world.GetRoadAllowedConnections(6, 6) == 0,
+                  "Uneven or submerged corner pairs accepted");
+        }
+        std::cout << "PASS: slopes in both axes/signs, shared edge heights, downhill ends, plateau junctions, blocked turns/crossings, parallel roads and uneven/wet pairs\n";
+    }
+
     void CheckModularAssets(const std::filesystem::path& directory)
     {
         for (const auto& asset : RoadAssets)
@@ -310,6 +413,7 @@ int main(int argc, char** argv)
         if (argc != 3) throw std::runtime_error("Usage: CityRoadTests road_straight.glb scratch-directory");
         CheckWorldAndTool();
         CheckConnectionsAndRoutes();
+        CheckSlopes();
         CheckImporter(argv[1], argv[2]);
         CheckModularAssets(std::filesystem::path(argv[1]).parent_path());
         return 0;

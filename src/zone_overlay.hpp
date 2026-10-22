@@ -12,7 +12,7 @@ struct alignas(16) ZoneOverlayUniforms
 };
 static_assert(sizeof(ZoneOverlayUniforms) == 64);
 
-// One texel per tile: memory and edit upload size stay small on giant maps.
+// Two maps with one texel per tile: zone data and direction-aware road eligibility.
 class ZoneOverlay
 {
 public:
@@ -23,6 +23,7 @@ public:
     void Initialize(SDL_GPUDevice* gpu, TextureManager& textures, const World& world);
     // Also call after future occupancy/height edits to refresh eligibility.
     void Update(const World& world, ToolTileRect bounds);
+    // Binds zone data at samplerSlot and road eligibility at samplerSlot + 1.
     void Bind(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, const ToolPreview& preview,
               const ZoneEvaluation& evaluation, Uint32 samplerSlot = 2, Uint32 uniformSlot = 1) const;
     void Release() noexcept;
@@ -31,4 +32,5 @@ private:
     TextureManager* textures = nullptr;
     SDL_GPUSampler* sampler = nullptr;
     std::unique_ptr<Texture> image;
+    std::unique_ptr<Texture> roadImage;
 };

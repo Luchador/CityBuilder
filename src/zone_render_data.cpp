@@ -40,6 +40,23 @@ std::vector<std::uint8_t> BuildZonePixels(const World& world, ToolTileRect r)
     return pixels;
 }
 
+std::vector<std::uint8_t> BuildRoadPreviewPixels(const World& world, ToolTileRect r)
+{
+    CheckBounds(world, r);
+    std::vector<std::uint8_t> pixels(static_cast<std::size_t>(r.maxX - r.minX + 1) * (r.maxZ - r.minZ + 1) * 4, 0);
+    std::size_t offset = 0;
+    for (int z = r.minZ; z <= r.maxZ; ++z)
+    {
+        for (int x = r.minX; x <= r.maxX; ++x)
+        {
+            pixels[offset] = world.GetRoadAllowedConnections(x, z);
+            pixels[offset + 3] = 255;
+            offset += 4;
+        }
+    }
+    return pixels;
+}
+
 MinimapImage BuildZoneMinimapPatch(const MinimapImage& base, const World& world, ToolTileRect r)
 {
     CheckBounds(world, r);

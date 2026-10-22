@@ -79,7 +79,7 @@ SDL_GPUShader* CompileShader(SDL_GPUDevice*, const char*, SDL_GPUShaderStage sta
                              const char* preamble, Uint32 uniformCount)
 {
     Check(preamble && *preamble && uniformCount == (stage == SDL_GPU_SHADERSTAGE_VERTEX ? 0u : 1u) &&
-          samplerCount == (stage == SDL_GPU_SHADERSTAGE_VERTEX ? 0u : 2u), "Incorrect road shader resources");
+          samplerCount == (stage == SDL_GPU_SHADERSTAGE_VERTEX ? 0u : 3u), "Incorrect road shader resources");
     ++shaders;
     return new SDL_GPUShader;
 }
@@ -96,11 +96,13 @@ SDL_GPUGraphicsPipeline* SDL_CreateGPUGraphicsPipeline(SDL_GPUDevice*, const SDL
           info->rasterizer_state.front_face == SDL_GPU_FRONTFACE_COUNTER_CLOCKWISE &&
           !info->target_info.color_target_descriptions[0].blend_state.enable_blend, "Incorrect opacity/depth/culling");
     const auto& input = info->vertex_input_state;
-    Check(input.num_vertex_buffers == 2 && input.num_vertex_attributes == 4 &&
-          input.vertex_buffer_descriptions[0].pitch == 32 && input.vertex_buffer_descriptions[1].pitch == 16 &&
+    Check(input.num_vertex_buffers == 2 && input.num_vertex_attributes == 5 &&
+          input.vertex_buffer_descriptions[0].pitch == 32 && input.vertex_buffer_descriptions[1].pitch == 32 &&
           input.vertex_buffer_descriptions[1].input_rate == SDL_GPU_VERTEXINPUTRATE_INSTANCE &&
           input.vertex_buffer_descriptions[1].instance_step_rate == 0 && input.vertex_attributes[3].buffer_slot == 1 &&
-          input.vertex_attributes[3].format == SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4,
+          input.vertex_attributes[3].format == SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4 &&
+          input.vertex_attributes[4].buffer_slot == 1 && input.vertex_attributes[4].offset == 16 &&
+          input.vertex_attributes[4].format == SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
           "Incorrect instanced vertex layout");
     if (failPipeline) return nullptr;
     ++pipelines;
@@ -130,7 +132,7 @@ void SDL_BindGPUFragmentSamplers(SDL_GPURenderPass*, Uint32 first, const SDL_GPU
 void SDL_DrawGPUIndexedPrimitives(SDL_GPURenderPass*, Uint32 indices, Uint32 instances, Uint32 first, Sint32 offset, Uint32 firstInstance)
 {
     Check(instances && !first && !offset && !firstInstance && boundIndices->bytes.size() == indices * 4 &&
-          instanceOffset + instances * 16 <= boundInstances->bytes.size(), "Incorrect indexed road draw");
+          instanceOffset + instances * 32 <= boundInstances->bytes.size(), "Incorrect indexed road draw");
     const Uint32 counts[] = {6, 24, 30, 93, 72};
     const auto shape = static_cast<std::size_t>(std::find(std::begin(counts), std::end(counts), indices) - std::begin(counts));
     Check(shape < RoadAssets.size() && boundTexture->path == RoadAssets[shape].texture, "Wrong mesh/texture pair");
@@ -138,7 +140,7 @@ void SDL_DrawGPUIndexedPrimitives(SDL_GPURenderPass*, Uint32 indices, Uint32 ins
     for (Uint32 i = 0; i < instances; ++i)
     {
         float values[4];
-        std::memcpy(values, boundInstances->bytes.data() + instanceOffset + i * 16, sizeof(values));
+        std::memcpy(values, boundInstances->bytes.data() + instanceOffset + i * 32, sizeof(values));
         Check(values[3] >= 0 && values[3] <= 3 && std::floor(values[3]) == values[3], "Invalid rotation in instance");
         instanceTurns.push_back(values[3]);
     }
@@ -171,7 +173,7 @@ int main(int argc, char** argv)
         Check(draws == 0 && buffers == 10, "Empty world allocated/drew instances");
         Check(world.PlaceRoad(3, 4), "Test road placement failed");
         renderer.Prepare(world); renderer.Draw(&pass);
-        Check(drawnInstances == 1 && buffers == 11 && boundInstances->bytes.size() == 16 &&
+        Check(drawnInstances == 1 && buffers == 11 && boundInstances->bytes.size() == 32 &&
               shapeInstances[static_cast<std::size_t>(RoadShape::DeadEnd)] == 1, "Single road draw failed");
         float position[4];
         std::memcpy(position, boundInstances->bytes.data(), sizeof(position));
@@ -204,6 +206,27 @@ int main(int argc, char** argv)
         const auto mixedUploads = uploads;
         renderer.Prepare(world);
         Check(uploads == mixedUploads, "Stable connected roads reuploaded");
+        World sloped(settings);
+        auto& terrain = const_cast<TerrainHeightmap&>(sloped.GetTerrain());
+        for (unsigned z = 0; z <= 16; ++z) for (unsigned x = 0; x <= 16; ++x)
+            terrain.heights[z * terrain.dimensions.CornerStride() + x] = 1.0f + .25f * z;
+        Check(sloped.PlaceRoads({6, 2, 6, 4, false}).changed == 3, "Sloped renderer fixture failed");
+        drawnInstances = 0; draws = 0; shapeInstances = {};
+        renderer.Prepare(sloped); renderer.Draw(&pass);
+        Check(drawnInstances == 3 && draws == 2 &&
+              shapeInstances[static_cast<std::size_t>(RoadShape::Straight)] == 1 &&
+              shapeInstances[static_cast<std::size_t>(RoadShape::DeadEnd)] == 2,
+              "Sloped roads did not share the straight/end batches");
+        for (unsigned i = 0; i < 3; ++i)
+        {
+            float values[8];
+            std::memcpy(values, boundInstances->bytes.data() + i * 32, sizeof(values));
+            const auto* road = sloped.GetRoadAt(static_cast<int>(values[0]), static_cast<int>(values[2]));
+            Check(road && values[4] == 0 && values[5] == .25f &&
+                  std::abs(values[1] - road->surface.elevation - .001f) < .00001f &&
+                  values[3] == GetRoadVisual(*road).quarterTurns,
+                  "Slope, center elevation or orientation was lost in the GPU instance stream");
+        }
         World empty(settings);
         renderer.Prepare(empty);
         drawnInstances = 0;

@@ -19,8 +19,12 @@ namespace
     // A small physical lift prevents the coplanar authored road plane from
     // sharing the terrain surface. It does not alter terrain/picking heights.
     constexpr float RoadSurfaceLift = 0.001f;
-    struct RoadInstance { float x, y, z, quarterTurns; };
-    static_assert(sizeof(RoadInstance) == 16);
+    struct RoadInstance
+    {
+        float x, y, z, quarterTurns;
+        float slopeX, slopeZ, padding0 = 0.0f, padding1 = 0.0f;
+    };
+    static_assert(sizeof(RoadInstance) == 32);
     [[noreturn]] void Fail(const char* message)
     {
         throw std::runtime_error(std::string(message) + ": " + SDL_GetError());
@@ -89,8 +93,8 @@ void RoadRenderer::Initialize(SDL_GPUDevice* gpu, TextureManager& textures, SDL_
         }
 
         vertexShader = CompileShader(device, RoadVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
-        const std::string fragmentPreamble = std::string(WorldLightingShaderSource) + "#define ZONE_TEXTURE t1\n#define ZONE_SAMPLER s1\n#define ZONE_UNIFORMS b0\n" + ZoneOverlayShaderSource;
-        fragmentShader = CompileShader(device, RoadFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 2, fragmentPreamble.c_str(), 1);
+        const std::string fragmentPreamble = std::string(WorldLightingShaderSource) + "#define ZONE_TEXTURE t1\n#define ZONE_SAMPLER s1\n#define ROAD_TEXTURE t2\n#define ROAD_SAMPLER s2\n#define ZONE_UNIFORMS b0\n" + ZoneOverlayShaderSource;
+        fragmentShader = CompileShader(device, RoadFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 3, fragmentPreamble.c_str(), 1);
 
         SDL_GPUVertexBufferDescription buffers[2]{};
         buffers[0].slot = 0;
@@ -105,7 +109,8 @@ void RoadRenderer::Initialize(SDL_GPUDevice* gpu, TextureManager& textures, SDL_
             {0, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, offsetof(StaticMeshVertex, x)},
             {1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, offsetof(StaticMeshVertex, nx)},
             {2, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, offsetof(StaticMeshVertex, u)},
-            {3, 1, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, offsetof(RoadInstance, x)}
+            {3, 1, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, offsetof(RoadInstance, x)},
+            {4, 1, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, offsetof(RoadInstance, slopeX)}
         };
     
         SDL_GPUColorTargetDescription color{};
@@ -116,7 +121,7 @@ void RoadRenderer::Initialize(SDL_GPUDevice* gpu, TextureManager& textures, SDL_
         info.vertex_input_state.vertex_buffer_descriptions = buffers;
         info.vertex_input_state.num_vertex_buffers = 2;
         info.vertex_input_state.vertex_attributes = attributes;
-        info.vertex_input_state.num_vertex_attributes = 4;
+        info.vertex_input_state.num_vertex_attributes = 5;
         info.primitive_type = SDL_GPU_PRIMITIVETYPE_TRIANGLELIST;
         info.rasterizer_state.fill_mode = SDL_GPU_FILLMODE_FILL;
         info.rasterizer_state.cull_mode = SDL_GPU_CULLMODE_BACK;
@@ -160,9 +165,11 @@ void RoadRenderer::Prepare(const World& world)
 
     for (const auto& road : roads)
     {
-        const auto visual = GetRoadVisual(road.connections);
+        const auto visual = GetRoadVisual(road);
 
-        groups[static_cast<std::size_t>(visual.shape)].push_back({static_cast<float>(road.tileX) + 0.5f, road.elevation + RoadSurfaceLift, static_cast<float>(road.tileZ) + 0.5f, static_cast<float>(visual.quarterTurns)});
+        groups[static_cast<std::size_t>(visual.shape)].push_back({static_cast<float>(road.tileX) + 0.5f,
+            road.surface.elevation + RoadSurfaceLift, static_cast<float>(road.tileZ) + 0.5f,
+            static_cast<float>(visual.quarterTurns), road.surface.slopeX, road.surface.slopeZ});
     }
 
     std::vector<RoadInstance> positions;

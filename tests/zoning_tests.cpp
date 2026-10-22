@@ -117,6 +117,50 @@ namespace
         std::cout << "PASS: terrain rules across " << flat << " flat, " << slopes << " sloped, and " << water << " water tiles\n";
     }
 
+    void CheckRoadSlopePreview()
+    {
+        World world = FlatWorld(16);
+        auto& terrain = const_cast<TerrainHeightmap&>(world.GetTerrain());
+        for (unsigned z = 0; z <= 16; ++z) for (unsigned x = 0; x <= 16; ++x)
+            terrain.heights[z * terrain.dimensions.CornerStride() + x] = 1.0f + .25f * x;
+        world.GetTile(5, 6).buildingId = 1;
+        world.GetTile(6, 6).infrastructureId = 99;
+        Check(world.PlaceRoad(4, 6), "Slope preview road fixture failed");
+        const auto zones = BuildZonePixels(world, {3, 6, 6, 6});
+        const auto roads = BuildRoadPreviewPixels(world, {3, 6, 6, 6});
+        Check(zones[3] == 0 && zones[7] == 128 && zones[11] == 0 && zones[15] == 0 &&
+              roads[0] == (RoadWest | RoadEast) && roads[4] == (RoadWest | RoadEast) && roads[8] == 0 && roads[12] == 0,
+              "Slope road eligibility leaked into zoning or ignored occupancy");
+        const RoadPath paths[] = {{1, 6, 10, 6}, {10, 6, 1, 6}, {3, 3, 3, 9, false},
+                                  {1, 6, 3, 8}, {3, 8, 1, 6, false}, {3, 6, 3, 6}, {4, 6, 4, 6}};
+        const auto pixels = BuildRoadPreviewPixels(world, {0, 0, 15, 15});
+        for (const auto& path : paths)
+        {
+            unsigned accepted = 0, blocked = 0;
+            path.ForEachTile([&](int x, int z)
+            {
+                // Independently reproduce the shader's point-in-L test, then
+                // compare its metadata result to the authoritative world edit.
+                const auto onPath = [&](int px, int pz)
+                {
+                    const bool bounds = px >= std::min(path.startX, path.endX) && px <= std::max(path.startX, path.endX) &&
+                        pz >= std::min(path.startZ, path.endZ) && pz <= std::max(path.startZ, path.endZ);
+                    return bounds && (path.xFirst ? (pz == path.startZ || px == path.endX) :
+                        (px == path.startX || pz == path.endZ));
+                };
+                const unsigned required = (onPath(x - 1, z) ? 1u : 0u) | (onPath(x, z - 1) ? 2u : 0u) |
+                    (onPath(x + 1, z) ? 4u : 0u) | (onPath(x, z + 1) ? 8u : 0u);
+                const auto allowed = pixels[(z * 16 + x) * 4];
+                if (allowed && (allowed & required) == required) ++accepted;
+                else ++blocked;
+            });
+            const auto evaluation = world.EvaluateRoads(path);
+            Check(accepted == evaluation.changes + evaluation.unchanged && blocked == evaluation.blocked,
+                  "Slope preview disagrees with actual placement");
+        }
+        std::cout << "PASS: road slope preview directions/occupancy and unchanged flat-only zoning\n";
+    }
+
     void CheckRenderingData()
     {
         World world = FlatWorld(4);
@@ -167,7 +211,7 @@ namespace
 
 int main()
 {
-    try { CheckPlacement(); CheckTerrainRules(); CheckRenderingData(); }
+    try { CheckPlacement(); CheckTerrainRules(); CheckRenderingData(); CheckRoadSlopePreview(); }
     catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }
     return 0;
 }

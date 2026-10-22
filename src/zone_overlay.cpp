@@ -22,6 +22,7 @@ void ZoneOverlay::Initialize(SDL_GPUDevice* gpu, TextureManager& manager, const 
         const int last = static_cast<int>(count) - 1;
 
         image = manager.CreateRgba(count, count, BuildZonePixels(world, {0, 0, last, last}), {TextureContent::Data});
+        roadImage = manager.CreateRgba(count, count, BuildRoadPreviewPixels(world, {0, 0, last, last}), {TextureContent::Data});
         SDL_GPUSamplerCreateInfo info{};
         info.min_filter = info.mag_filter = SDL_GPU_FILTER_NEAREST;
         info.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
@@ -43,6 +44,7 @@ void ZoneOverlay::Initialize(SDL_GPUDevice* gpu, TextureManager& manager, const 
 void ZoneOverlay::Update(const World& world, ToolTileRect bounds)
 {
     textures->UpdateRgba(*image, bounds.minX, bounds.minZ, bounds.maxX - bounds.minX + 1, bounds.maxZ - bounds.minZ + 1, BuildZonePixels(world, bounds));
+    textures->UpdateRgba(*roadImage, bounds.minX, bounds.minZ, bounds.maxX - bounds.minX + 1, bounds.maxZ - bounds.minZ + 1, BuildRoadPreviewPixels(world, bounds));
 }
 
 void ZoneOverlay::Bind(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, const ToolPreview& preview, const ZoneEvaluation& evaluation, Uint32 samplerSlot, Uint32 uniformSlot) const
@@ -91,14 +93,15 @@ void ZoneOverlay::Bind(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, 
         }
     }
 
-    const SDL_GPUTextureSamplerBinding binding{image->Handle(), sampler};
-    SDL_BindGPUFragmentSamplers(pass, samplerSlot, &binding, 1);
+    const SDL_GPUTextureSamplerBinding bindings[] = {{image->Handle(), sampler}, {roadImage->Handle(), sampler}};
+    SDL_BindGPUFragmentSamplers(pass, samplerSlot, bindings, 2);
     SDL_PushGPUFragmentUniformData(commands, uniformSlot, &uniforms, sizeof(uniforms));
 }
 
 void ZoneOverlay::Release() noexcept
 {
     image.reset();
+    roadImage.reset();
 
     if (sampler) 
     {

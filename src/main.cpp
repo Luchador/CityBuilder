@@ -127,15 +127,15 @@ public:
         fragmentShader = CompileShader(device, FragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT);
         terrainVertexShader = CompileShader(device, TerrainVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
         const std::string terrainFragmentPreamble = std::string(WorldLightingShaderSource) + ZoneOverlayShaderSource;
-        terrainFragmentShader = CompileShader(device, TerrainFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 3, terrainFragmentPreamble.c_str(), 2);
+        terrainFragmentShader = CompileShader(device, TerrainFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 4, terrainFragmentPreamble.c_str(), 2);
         terrainPipeline = MakePipeline(false);
         gridPipeline = MakePipeline(true);
         skirtVertexShader = CompileShader(device, TerrainSkirtVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, worldPreamble.c_str());
         skirtFragmentShader = CompileShader(device, TerrainSkirtFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 0, "", 1);
         skirtPipeline = MakeSkirtPipeline();
         waterVertexShader = CompileShader(device, WaterVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
-        const std::string waterFragmentPreamble = std::string("#define ZONE_TEXTURE t0\n#define ZONE_SAMPLER s0\n#define ZONE_UNIFORMS b0\n") + ZoneOverlayShaderSource;
-        waterFragmentShader = CompileShader(device, WaterFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 1, waterFragmentPreamble.c_str(), 1);
+        const std::string waterFragmentPreamble = std::string("#define ZONE_TEXTURE t0\n#define ZONE_SAMPLER s0\n#define ROAD_TEXTURE t1\n#define ROAD_SAMPLER s1\n#define ZONE_UNIFORMS b0\n") + ZoneOverlayShaderSource;
+        waterFragmentShader = CompileShader(device, WaterFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 2, waterFragmentPreamble.c_str(), 1);
         waterPipeline = MakeWaterPipeline();
 
         UiActions uiActions;

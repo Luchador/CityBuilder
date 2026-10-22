@@ -3,6 +3,7 @@
 #include "occupancy.hpp"
 
 #include <array>
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 
@@ -64,17 +65,44 @@ constexpr RoadVisual GetRoadVisual(std::uint8_t connections)
     return {RoadShape::DeadEnd, 0};
 }
 
+// Plane under a road, in world axes and relative to the tile center. Valid
+// slopes have exactly one nonzero gradient; road-width edge pairs stay level.
+struct RoadSurface
+{
+    float elevation = 0.0f;
+    float slopeX = 0.0f, slopeZ = 0.0f;
+
+    constexpr std::uint8_t AllowedConnections() const
+    {
+        return slopeX != 0 ? RoadWest | RoadEast : slopeZ != 0 ? RoadNorth | RoadSouth : 15;
+    }
+    constexpr float HeightAt(float localX, float localZ) const
+    {
+        return elevation + slopeX * localX + slopeZ * localZ;
+    }
+};
+
 // Persistent CPU data only. The renderer shares one mesh per shape.
 struct Road
 {
     InfrastructureId id = NoInfrastructure;
     int tileX = 0;
     int tileZ = 0;
-    float elevation = 0.0f;
+    RoadSurface surface;
     std::uint8_t connections = 0;
 };
 
-enum class RoadPlacementStatus { Allowed, ExistingRoad, OutsideMap, NotFlat, Underwater, Occupied };
+constexpr RoadVisual GetRoadVisual(const Road& road)
+{
+    if (road.connections) return GetRoadVisual(road.connections);
+    // An isolated end must still align with its slope. Aim its opening downhill.
+    const auto& s = road.surface;
+    if (s.slopeX != 0) return GetRoadVisual(s.slopeX > 0 ? RoadWest : RoadEast);
+    if (s.slopeZ != 0) return GetRoadVisual(s.slopeZ > 0 ? RoadNorth : RoadSouth);
+    return GetRoadVisual(0);
+}
+
+enum class RoadPlacementStatus { Allowed, ExistingRoad, OutsideMap, NotFlat, Underwater, Occupied, WrongSlopeDirection };
 
 // A one-tile-wide orthogonal route with at most one bend. World validates the
 // endpoints before traversal; never traverse arbitrary/unvalidated coordinates.
@@ -83,6 +111,23 @@ struct RoadPath
     int startX = 0, startZ = 0, endX = 0, endZ = 0;
     bool xFirst = true;
     bool operator==(const RoadPath&) const = default;
+
+    bool Contains(int x, int z) const
+    {
+        if (x < std::min(startX, endX) || x > std::max(startX, endX) ||
+            z < std::min(startZ, endZ) || z > std::max(startZ, endZ)) return false;
+        return xFirst ? (z == startZ || x == endX) : (x == startX || z == endZ);
+    }
+
+    // Required directions along the proposed route, before skipping obstacles.
+    // A bend or a cross-slope drag cannot masquerade as disconnected end tiles.
+    std::uint8_t ConnectionsAt(int x, int z) const
+    {
+        if (!Contains(x, z)) return 0;
+        return static_cast<std::uint8_t>((Contains(x - 1, z) ? RoadWest : 0) |
+            (Contains(x, z - 1) ? RoadNorth : 0) | (Contains(x + 1, z) ? RoadEast : 0) |
+            (Contains(x, z + 1) ? RoadSouth : 0));
+    }
 
     template<class Visitor> void ForEachTile(Visitor visit) const
     {

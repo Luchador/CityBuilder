@@ -4,10 +4,14 @@ inline constexpr char ZoneOverlayShaderSource[] = R"hlsl(
 #ifndef ZONE_TEXTURE
 #define ZONE_TEXTURE t2
 #define ZONE_SAMPLER s2
+#define ROAD_TEXTURE t3
+#define ROAD_SAMPLER s3
 #define ZONE_UNIFORMS b1
 #endif
 Texture2D<float4> zoneMap : register(ZONE_TEXTURE, space2);
 SamplerState zoneSampler : register(ZONE_SAMPLER, space2);
+Texture2D<float4> roadMap : register(ROAD_TEXTURE, space2);
+SamplerState roadSampler : register(ROAD_SAMPLER, space2);
 cbuffer ZoneOverlay : register(ZONE_UNIFORMS, space3)
 {
     float4 zoneSettings; // map size, opacity, preview (0=off, 1=zone, 2=rectangle, 3=road), affordable
@@ -15,6 +19,13 @@ cbuffer ZoneOverlay : register(ZONE_UNIFORMS, space3)
     float4 zonePreview;  // RGB, zone type
     float4 roadPath;     // start X/Z, end X/Z; zonePreview.w = X-first in road mode
 };
+
+bool OnRoadPath(float2 tile)
+{
+    if (any(tile < zoneBounds.xy) || any(tile > zoneBounds.zw)) return false;
+    return zonePreview.w != 0 ? (tile.y == roadPath.y || tile.x == roadPath.z) :
+        (tile.x == roadPath.x || tile.y == roadPath.w);
+}
 
 float3 ApplyZoneOverlay(float3 color, float2 worldXZ, bool showPlacedZones)
 {
@@ -30,15 +41,23 @@ float3 ApplyZoneOverlay(float3 color, float2 worldXZ, bool showPlacedZones)
         {
             // Bounds limit both legs; these equalities keep the rectangle's
             // interior unselected. Matches RoadPath::ForEachTile on the CPU.
-            bool onRoute = zonePreview.w != 0 ? (tile.y == roadPath.y || tile.x == roadPath.z) :
-                (tile.x == roadPath.x || tile.y == roadPath.w);
-            if (!onRoute) return color;
+            if (!OnRoadPath(tile)) return color;
         }
         bool unchanged = type == (uint)zonePreview.w;
         float3 tint = !eligible || (!unchanged && zoneSettings.w == 0) ? float3(1.0, 0.12, 0.10) :
             unchanged ? float3(0.65, 0.65, 0.65) : zonePreview.rgb;
         if (zoneSettings.z == 2) tint = zonePreview.rgb;
-        if (zoneSettings.z == 3) tint = eligible || (flags & 128) != 0 ? zonePreview.rgb : float3(1.0, 0.12, 0.10);
+        if (zoneSettings.z == 3)
+        {
+            uint allowed = (uint)round(roadMap.SampleLevel(roadSampler, (tile + 0.5) / zoneSettings.x, 0).r * 255.0);
+            // Same W/N/E/S requirements as RoadPath::ConnectionsAt. A slope
+            // can accept an end or straight, but not a turn or crossing.
+            uint needed = (OnRoadPath(tile + float2(-1, 0)) ? 1u : 0u) |
+                (OnRoadPath(tile + float2(0, -1)) ? 2u : 0u) |
+                (OnRoadPath(tile + float2(1, 0)) ? 4u : 0u) |
+                (OnRoadPath(tile + float2(0, 1)) ? 8u : 0u);
+            tint = allowed != 0 && (allowed & needed) == needed ? zonePreview.rgb : float3(1.0, 0.12, 0.10);
+        }
         float2 edge = min(frac(worldXZ), 1.0 - frac(worldXZ));
         color = lerp(color, tint, min(edge.x, edge.y) < 0.045 ? 0.95 : 0.5);
     }

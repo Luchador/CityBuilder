@@ -82,12 +82,16 @@ public:
     std::span<const Road> GetRoads() const { return roads; }
     const Road* GetRoadAt(int x, int z) const;
     std::uint64_t GetRoadRevision() const { return roadRevision; }
-    RoadPlacementStatus CheckRoadPlacement(int x, int z) const;
+    // 0 means a single click; dragged routes specify their needed directions.
+    // Sloped tiles require level corner pairs across both ends of the road.
+    RoadPlacementStatus CheckRoadPlacement(int x, int z, std::uint8_t requiredConnections = 0) const;
+    // 0 = blocked, otherwise the directions a road can use on this tile.
+    std::uint8_t GetRoadAllowedConnections(int x, int z) const;
     RoadEvaluation EvaluateRoads(const RoadPath& path) const;
     RoadPlacementResult PlaceRoads(const RoadPath& path);
     // Clears an empty zone, reserves occupancy and reconnects neighbors.
     // Existing roads are unchanged. No construction cost yet.
-    bool PlaceRoad(int x, int z);
+    bool PlaceRoad(int x, int z, std::uint8_t requiredConnections = 0);
 
 private:
     std::size_t TileIndex(int x, int z) const;
