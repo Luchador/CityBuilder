@@ -26,8 +26,7 @@ struct UiWindowSkin
 class UiWindow
 {
 public:
-    UiWindow(UiWindowId id, std::string_view title, UiRect bounds,
-             TextRenderer& renderer, const UiWindowSkin& skin);
+    UiWindow(UiWindowId id, std::string_view title, UiRect bounds, TextRenderer& renderer, const UiWindowSkin& skin);
     ~UiWindow();
     UiWindow(const UiWindow&) = delete;
     UiWindow& operator=(const UiWindow&) = delete;
@@ -50,13 +49,10 @@ public:
 
     TextLabel& AddLabel(UiControlId id, UiRect bounds, std::string_view text, TextStyle style = {});
     void AddImage(UiControlId id, UiRect bounds, const Texture& image);
-    void AddButton(UiControlId id, UiRect bounds, std::string_view text,
-                   std::function<void(UiWindow&)> onClick);
-    void AddFooterButton(UiControlId id, std::string_view text,
-                         std::function<void(UiWindow&)> onClick);
+    void AddButton(UiControlId id, UiRect bounds, std::string_view text, std::function<void(UiWindow&)> onClick);
+    void AddFooterButton(UiControlId id, std::string_view text, std::function<void(UiWindow&)> onClick);
     void AddTextBox(UiControlId id, UiRect bounds, std::string_view value = {}, std::size_t maxCharacters = 128);
-    void AddRadioButton(UiControlId id, std::uint32_t group, UiRect bounds,
-                        std::string_view text, bool checked = false);
+    void AddRadioButton(UiControlId id, std::uint32_t group, UiRect bounds, std::string_view text, bool checked = false);
     const std::string& GetText(UiControlId id) const;
     void SetText(UiControlId id, std::string_view text);
     void SetTooltip(UiControlId id, std::string_view text);
@@ -83,12 +79,11 @@ public:
     bool HandleKey(const SDL_Event& event);
     void Prepare(bool visible, float rasterScale);
     void AppendGeometry(std::vector<UiVertex>& mesh) const;
-    void DrawImages(UiImageRenderer& renderer, SDL_GPUCommandBuffer* commands,
-                    SDL_GPURenderPass* pass, float width, float height,
-                    Uint32 pixelWidth, Uint32 pixelHeight) const;
+    void DrawImages(UiImageRenderer& renderer, SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, float width, float height, Uint32 pixelWidth, Uint32 pixelHeight) const;
 
 private:
     enum class Kind { Label, Image, Button, TextBox, Radio };
+
     struct Control
     {
         UiControlId id = 0;
@@ -105,6 +100,7 @@ private:
         float scroll = 0, caretX = 0, selectionStart = 0, selectionEnd = 0;
         std::string composition;
     };
+
     Control& AddControl(UiControlId id, Kind kind, UiRect bounds);
     Control& Find(UiControlId id);
     const Control& Find(UiControlId id) const;
