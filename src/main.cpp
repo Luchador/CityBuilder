@@ -844,6 +844,7 @@ private:
                 // Upload only the edited region, before the next frame is acquired.
                 zoneOverlay.Update(*world, request->tiles);
                 ui.UpdateMinimapZones(*world, request->tiles);
+                placeZoneSound.Play();
             }
             else if (!placement.evaluation.valid || !placement.evaluation.affordable || placement.evaluation.blocked > 0)
             {
@@ -862,6 +863,7 @@ private:
                 // from both terrain and minimap. Roads have no minimap layer yet.
                 zoneOverlay.Update(*world, bounds);
                 ui.UpdateMinimapZones(*world, bounds);
+                buildRoadSound.Play();
             }
             else
             {
