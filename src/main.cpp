@@ -14,6 +14,7 @@
 #include "gpu_utils.hpp"
 #include "ui_manager.hpp"
 #include "city.hpp"
+#include "debug_commands.hpp"
 #include "simulation.hpp"
 #include "sound.hpp"
 #include "terrain.hpp"
@@ -193,6 +194,10 @@ public:
         // Until other tools are implemented, selecting one leaves zoning mode.
         uiActions.buttonClicked = [this](UiButtonId) { ClearWorldTool(); };
         uiActions.createCity = [this](const CityCreationOptions& options) { CreateCity(options); };
+        uiActions.executeDebugCommand = [this](std::string_view command)
+        {
+            return ExecuteDebugCommand(command, city ? &*city : nullptr);
+        };
         ui.Initialize(device, window, textures, std::move(uiActions));
 
         // Load sound effects.

@@ -252,6 +252,29 @@ void UiWindow::AddRadioButton(UiControlId controlId, std::uint32_t group, UiRect
     }
 }
 
+void UiWindow::SetTextBoxSubmitHandler(UiControlId controlId, std::function<void(UiWindow&)> onSubmit)
+{
+    auto& control = Find(controlId);
+    if (control.kind != Kind::TextBox)
+    {
+        throw std::invalid_argument("Submit handlers require a text box");
+    }
+    control.onSubmit = std::move(onSubmit);
+}
+
+void UiWindow::FocusControl(UiControlId controlId, bool selectAll)
+{
+    auto& control = Find(controlId);
+    if (control.kind != Kind::TextBox && control.kind != Kind::Button && control.kind != Kind::Radio)
+    {
+        throw std::invalid_argument("This control cannot receive keyboard focus");
+    }
+    if (focusedControl) focusedControl->composition.clear();
+    focusedControl = &control;
+    if (selectAll && control.kind == Kind::TextBox) control.input.SelectAll();
+    caretReset = SDL_GetTicks();
+}
+
 const std::string& UiWindow::GetText(UiControlId controlId) const
 {
     const auto& control = Find(controlId);
@@ -700,21 +723,29 @@ bool UiWindow::HandleKey(const SDL_Event& event)
         return true; 
     }
 
-    if (key == SDLK_RETURN && (!focusedControl || WantsTextInput()))
+    if ((key == SDLK_RETURN || key == SDLK_KP_ENTER) && (!focusedControl || WantsTextInput()))
     {
         if (!event.key.repeat)
         {
-            for (auto& control : controls) 
+            if (WantsTextInput() && focusedControl->onSubmit)
             {
-                if (control->footer) 
-                { 
-                    Activate(*control); 
-                    break; 
+                // Copy before calling: a handler may edit controls or close the window.
+                auto callback = focusedControl->onSubmit;
+                callback(*this);
+            }
+            else
+            {
+                for (auto& control : controls)
+                {
+                    if (control->footer)
+                    {
+                        Activate(*control);
+                        break;
+                    }
                 }
             }
-    
-        return true;
         }
+        return true; // Holding Enter never repeatedly submits or activates a footer.
     }
 
     if (WantsTextInput())

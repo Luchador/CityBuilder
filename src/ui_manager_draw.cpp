@@ -80,6 +80,7 @@ void UiManager::Release()
     CancelInteraction();
     initialized = false;
     buttons.Clear();
+    debugConsole.reset();
     windows.clear(); // Destroy their labels before the shared text renderer.
     tooltip.Release();
     windowRanges.clear();

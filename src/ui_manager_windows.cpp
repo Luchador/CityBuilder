@@ -69,6 +69,26 @@ void UiManager::OpenWindow(UiWindowId id)
     FocusWindow(panel);
 }
 
+void UiManager::OpenDebugConsole()
+{
+    // The required startup form keeps focus until a city exists.
+    if (!initialized || cityCreationPending || !(SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS)) return;
+    RefreshLayout();
+
+    if (!debugConsole)
+    {
+        auto& panel = AddWindow("Debug Console", {(layout.width - 560) * 0.5f, (layout.height - 196) * 0.5f, 560, 196});
+        debugConsole = std::make_unique<UiDebugConsole>(panel, actions.executeDebugCommand);
+    }
+    else
+    {
+        OpenWindow(debugConsole->GetWindowId());
+    }
+
+    debugConsole->FocusInput();
+    SyncTextInput(); // Start SDL text entry immediately, before the next frame.
+}
+
 UiWindow* UiManager::WindowAt(float x, float y) const
 {
     if (auto* required = RequiredWindow()) return required->HitTest(x, y) ? required : nullptr;

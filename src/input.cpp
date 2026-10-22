@@ -25,6 +25,15 @@ bool Input::PollInput()
 
     while (SDL_PollEvent(&event))
     {
+        // Global UI shortcut: process before a focused text box handles Ctrl+C.
+        if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_C &&
+            (event.key.mod & SDL_KMOD_CTRL) && (event.key.mod & SDL_KMOD_SHIFT) &&
+            !(event.key.mod & (SDL_KMOD_ALT | SDL_KMOD_GUI)))
+        {
+            if (!event.key.repeat) ui.OpenDebugConsole();
+            continue;
+        }
+
         // Termination must not depend on the UI declining this event.
         if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_WINDOW_MINIMIZED || event.type == SDL_EVENT_WINDOW_HIDDEN || event.type == SDL_EVENT_WINDOW_RESIZED || event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED || (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_RIGHT) || (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_TAB))
         {

@@ -52,6 +52,10 @@ public:
     void AddButton(UiControlId id, UiRect bounds, std::string_view text, std::function<void(UiWindow&)> onClick);
     void AddFooterButton(UiControlId id, std::string_view text, std::function<void(UiWindow&)> onClick);
     void AddTextBox(UiControlId id, UiRect bounds, std::string_view value = {}, std::size_t maxCharacters = 128);
+    // Overrides the footer's Enter action only while this text box has focus.
+    void SetTextBoxSubmitHandler(UiControlId id, std::function<void(UiWindow&)> onSubmit);
+    // Focus the window through UiManager first; then synchronize SDL text input.
+    void FocusControl(UiControlId id, bool selectAll = false);
     void AddRadioButton(UiControlId id, std::uint32_t group, UiRect bounds, std::string_view text, bool checked = false);
     const std::string& GetText(UiControlId id) const;
     void SetText(UiControlId id, std::string_view text);
@@ -94,6 +98,7 @@ private:
         std::unique_ptr<UiButton> button;
         const Texture* image = nullptr;
         std::function<void(UiWindow&)> onClick;
+        std::function<void(UiWindow&)> onSubmit;
         UiTextInput input;
         std::uint32_t radioGroup = 0;
         bool checked = false, footer = false;

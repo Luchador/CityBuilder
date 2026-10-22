@@ -7,6 +7,7 @@
 #include "ui_text.hpp"
 #include "ui_window.hpp"
 #include "ui_tooltip.hpp"
+#include "ui_debug_console.hpp"
 #include "world_zoning.hpp"
 
 #include <functional>
@@ -24,6 +25,7 @@ struct UiActions
     std::function<void(ZoneType)> selectZoneTool;
     std::function<void(int)> setSimulationSpeed;
     std::function<void()> resumeSimulation;
+    std::function<std::string(std::string_view)> executeDebugCommand;
     // Build the city/world synchronously. Throw on failure: the form reports
     // the error and stays open so the user can correct the input and retry.
     std::function<void(const CityCreationOptions&)> createCity;
@@ -61,6 +63,7 @@ public:
     UiWindow& AddWindow(std::string_view title, UiRect bounds);
     UiWindow* FindWindow(UiWindowId id);
     void OpenWindow(UiWindowId id);
+    void OpenDebugConsole();
     SDL_Rect GetWorldViewport(Uint32 pixelWidth, Uint32 pixelHeight);
 
     // Supply the actual simulation speed each frame: 0 = paused, 1..4 = running.
@@ -123,6 +126,7 @@ private:
     Uint64 pauseFlashStart = 0;
     bool tickerPaused = false;
     UiWindowSkin windowSkin;
+    std::unique_ptr<UiDebugConsole> debugConsole;
     std::vector<std::unique_ptr<UiWindow>> windows; // Back to front.
     UiWindow* focusedWindow = nullptr;
     UiWindow* capturedWindow = nullptr;

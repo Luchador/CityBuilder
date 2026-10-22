@@ -55,6 +55,19 @@ if(CITY_BUILD_RENDER_KIT)
     add_subdirectory(render_kit)
 endif()
 
+option(CITY_BUILD_DEBUG_CONSOLE_TESTS "Build debug console command and text submission checks" OFF)
+if(CITY_BUILD_DEBUG_CONSOLE_TESTS)
+    enable_testing()
+    add_executable(CityDebugConsoleTests tests/debug_console_tests.cpp
+        src/debug_commands.cpp src/ui_debug_console.cpp src/ui_window.cpp
+        src/ui_text_input.cpp src/ui_button.cpp src/ui_layout.cpp)
+    target_compile_features(CityDebugConsoleTests PRIVATE cxx_std_20)
+    target_include_directories(CityDebugConsoleTests PRIVATE src
+        $<TARGET_PROPERTY:SDL3_ttf::SDL3_ttf,INTERFACE_INCLUDE_DIRECTORIES>)
+    target_link_libraries(CityDebugConsoleTests PRIVATE SDL3::Headers)
+    add_test(NAME CityDebugConsoleTests COMMAND CityDebugConsoleTests)
+endif()
+
 option(CITY_BUILD_TOOLTIP_TESTS "Build tooltip formatting and wrapping checks" OFF)
 if(CITY_BUILD_TOOLTIP_TESTS)
     enable_testing()
