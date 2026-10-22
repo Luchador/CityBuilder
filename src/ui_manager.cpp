@@ -187,6 +187,10 @@ void UiManager::OnUiButtonClicked(UiButtonId id)
 {
     if (SelectZoneTool(id)) 
     {
+        if (actions.playToolSelectionSound)
+        {
+            actions.playToolSelectionSound();
+        }
         return;
     }
 
@@ -194,7 +198,10 @@ void UiManager::OnUiButtonClicked(UiButtonId id)
     {
         case UiButtonIds::RoadButton:
         {
-            SelectRoadTool();
+            if (SelectRoadTool() && actions.playToolSelectionSound)
+            {
+                actions.playToolSelectionSound();
+            }
             break;
         }
         case UiButtonIds::ZoomInButton:

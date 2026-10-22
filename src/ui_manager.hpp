@@ -25,6 +25,8 @@ struct UiActions
     std::function<void(ZoneType)> selectZoneTool;
     // False means asset loading failed; keep the previously selected tool.
     std::function<bool()> selectRoadTool;
+    // UI button feedback only; shared selection functions remain silent for hotkeys.
+    std::function<void()> playToolSelectionSound;
     std::function<void(int)> setSimulationSpeed;
     std::function<void()> resumeSimulation;
     std::function<std::string(std::string_view)> executeDebugCommand;

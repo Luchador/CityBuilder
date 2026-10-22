@@ -200,7 +200,6 @@ public:
             toolController->SetTool(std::make_unique<ZoneTool>(type));
             activeZoneType = type;
             roadToolActive = false;
-            buttonClick.Play();
         };
 
         uiActions.selectRoadTool = [this]() -> bool
@@ -230,11 +229,11 @@ public:
             toolController->SetTool(std::make_unique<RoadTool>());
             activeZoneType.reset();
             roadToolActive = true;
-            buttonClick.Play();
 
             return true;
         };
 
+        uiActions.playToolSelectionSound = [this] { buttonClick.Play(); };
         // Selecting an unimplemented tool leaves the current world tool.
         uiActions.buttonClicked = [this](UiButtonId) { ClearWorldTool(); };
         uiActions.createCity = [this](const CityCreationOptions& options) { CreateCity(options); };
