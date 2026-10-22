@@ -7,9 +7,7 @@
 #include <stdexcept>
 #include <utility>
 
-Input::Input(UiManager& uiManager, Camera& gameCamera,
-             std::optional<ToolController>& tools, InputActions callbacks)
-    : ui(uiManager), camera(gameCamera), toolController(tools), actions(std::move(callbacks))
+Input::Input(UiManager& uiManager, Camera& gameCamera, std::optional<ToolController>& tools, InputActions callbacks) : ui(uiManager), camera(gameCamera), toolController(tools), actions(std::move(callbacks))
 {
     if (!actions.hasCity || !actions.toggleFullscreen || !actions.toggleGrid ||
         !actions.rotateCamera || !actions.handlePanEvent || !actions.stopMousePan ||
@@ -28,11 +26,7 @@ bool Input::PollInput()
     while (SDL_PollEvent(&event))
     {
         // Termination must not depend on the UI declining this event.
-        if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_WINDOW_MINIMIZED ||
-            event.type == SDL_EVENT_WINDOW_HIDDEN || event.type == SDL_EVENT_WINDOW_RESIZED ||
-            event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED ||
-            (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_RIGHT) ||
-            (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_TAB))
+        if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST || event.type == SDL_EVENT_WINDOW_MINIMIZED || event.type == SDL_EVENT_WINDOW_HIDDEN || event.type == SDL_EVENT_WINDOW_RESIZED || event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED || (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN && event.button.button == SDL_BUTTON_RIGHT) || (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_TAB))
         {
             actions.cancelWorldTool();
         }
@@ -42,8 +36,15 @@ bool Input::PollInput()
 
         if (wasDragging && event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT)
         {
-            if (consumed) actions.cancelWorldTool();
-            else actions.endWorldTool(event.button.x, event.button.y);
+            if (consumed) 
+            {
+                actions.cancelWorldTool();
+            }
+            else 
+            {
+                actions.endWorldTool(event.button.x, event.button.y);
+            }
+            
             continue;
         }
 
@@ -58,8 +59,7 @@ bool Input::PollInput()
             continue;
         }
 
-        if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat &&
-            (event.key.key == SDLK_F11 || (event.key.key == SDLK_RETURN && (event.key.mod & SDL_KMOD_ALT))))
+        if (event.type == SDL_EVENT_KEY_DOWN && !event.key.repeat && (event.key.key == SDLK_F11 || (event.key.key == SDLK_RETURN && (event.key.mod & SDL_KMOD_ALT))))
         {
             actions.toggleFullscreen();
             continue;

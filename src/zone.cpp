@@ -13,7 +13,7 @@ namespace
         //              Name                       Category                   Color (R, G, B)           Cost
         ZoneDefinition{"None",                     ZoneCategory::None,        {0.00f, 0.00f, 0.00f},       0},
 
-        ZoneDefinition{"Light Residential",        ZoneCategory::Residential, {0.55f, 0.90f, 0.35f},       20},
+        ZoneDefinition{"Light Residential",        ZoneCategory::Residential, {0.36f, 0.60f, 0.33f},       20},
         ZoneDefinition{"Medium Residential",       ZoneCategory::Residential, {0.25f, 0.70f, 0.20f},       40},
         ZoneDefinition{"Dense Residential",        ZoneCategory::Residential, {0.08f, 0.45f, 0.12f},      100},
         ZoneDefinition{"Mixed-Use Residential",    ZoneCategory::Residential, {0.20f, 0.75f, 0.65f},       60},

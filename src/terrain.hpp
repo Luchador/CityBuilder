@@ -22,11 +22,12 @@ struct TerrainColorBand
 struct TerrainPalette
 {
     // Colors are fully reached at the previous row's upper elevation; the blend is at the top of each band.
-    std::array<TerrainColorBand, 6> bands{{
+    std::array<TerrainColorBand, 7> bands{{
         // Upper elevation                          // Transition width     // Color
-        {TerrainSeaLevel,                           1.0f,                   {0.06f, 0.28f, 0.52f}}, // Water
-        {0.5f,                                      0.25f,                  {0.28f, 0.44f, 0.22f}}, // Light green
-        {1.5f,                                      1.0f,                   {0.24f, 0.4f,  0.18f}}, // Medium green
+        {TerrainSeaLevel,                           0.5f,                   {0.70f, 0.70f, 0.66f}}, // Sand
+        {1.0f,                                      1.0f,                   {0.37f, 0.44f, 0.37f}}, // Pale green
+        {2.5f,                                      0.5f,                   {0.28f, 0.44f, 0.22f}}, // Light green
+        {3.5f,                                      0.5f,                   {0.24f, 0.4f,  0.18f}}, // Medium green
         {8.0f,                                      4.0f,                   {0.10f, 0.32f, 0.14f}}, // Dark green
         {224.0f,                                    32.0f,                  {0.42f, 0.51f, 0.22f}}, // Yellow-green
         {TerrainMaxElevation,                       0.0f,                   {1.00f, 1.00f, 1.00f}}  // Snow.
