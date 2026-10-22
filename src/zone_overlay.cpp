@@ -51,14 +51,14 @@ void ZoneOverlay::Update(const World& world, ToolTileRect bounds)
 
 void ZoneOverlay::PrepareRoadPreview(const World& world, const ToolPreview& preview)
 {
-    if (!preview.roadPath || !preview.roadPath->diagonal) return;
+    if (!preview.roadPath) return;
     const auto& path = *preview.roadPath;
     if (preparedWorld == &world && preparedRoadRevision == world.GetRoadRevision() && preparedRoadPath == path) return;
     // A failed partial upload must not leave the old preview marked as cached.
     preparedRoadPath.reset();
     const auto plan = world.PlanRoads(path);
-    // A long diagonal only uploads small blocks around its anchor tiles. The
-    // shader samples G only on this exact path, so old off-path values are ignored.
+    // Upload small blocks along either kind of route. G holds acceptance and B
+    // holds footprint sides. Off-path values are never sampled by the shader.
     for (std::size_t first = 0; first < plan.tiles.size(); first += 16)
     {
         const auto& a = plan.tiles[first];

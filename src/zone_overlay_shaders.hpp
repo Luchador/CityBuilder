@@ -28,21 +28,26 @@ bool OnRoadPath(float2 tile)
         (tile.x == roadPath.x || tile.y == roadPath.w);
 }
 
-// A diagonal module reserves its anchor and four side tiles. A shared tile is
-// red if either of its contributing modules fails the CPU footprint checks.
-bool DiagonalFootprint(float2 tile, out bool allowed)
+// One CPU plan supplies eligibility and footprint sides for every route.
+// A shared tile is red if any proposed module covering it is rejected.
+bool RoadPreviewFootprint(float2 tile, out bool allowed)
 {
     bool covered = false;
     allowed = true;
     const float2 offsets[5] = {float2(0, 0), float2(-1, 0), float2(0, -1), float2(1, 0), float2(0, 1)};
+    const uint sides[5] = {0u, 4u, 8u, 1u, 2u};
     [unroll] for (int i = 0; i < 5; ++i)
     {
         float2 anchor = tile + offsets[i];
         if (OnRoadPath(anchor))
         {
             float4 eligibility = roadMap.SampleLevel(roadSampler, (anchor + 0.5) / zoneSettings.x, 0);
-            allowed = allowed && eligibility.g > 0.5;
-            covered = true;
+            uint footprint = (uint)round(eligibility.b * 255.0);
+            if (i == 0 || (footprint & sides[i]) != 0)
+            {
+                allowed = allowed && eligibility.g > 0.5;
+                covered = true;
+            }
         }
     }
     return covered;
@@ -58,33 +63,13 @@ float3 ApplyZoneOverlay(float3 color, float2 worldXZ, bool showPlacedZones)
     if (showPlacedZones && type != 0) color = lerp(color, data.rgb, zoneSettings.y);
     if (zoneSettings.z > 0 && all(tile >= zoneBounds.xy) && all(tile <= zoneBounds.zw))
     {
-        bool diagonalAllowed = false;
-        if (zoneSettings.z == 3)
-        {
-            // Bounds limit both legs; these equalities keep the rectangle's
-            // interior unselected. Matches RoadPath::ForEachTile on the CPU.
-            if (zonePreview.w == 2)
-            {
-                if (!DiagonalFootprint(tile, diagonalAllowed)) return color;
-            }
-            else if (!OnRoadPath(tile)) return color;
-        }
+        bool roadAllowed = false;
+        if (zoneSettings.z == 3 && !RoadPreviewFootprint(tile, roadAllowed)) return color;
         bool unchanged = type == (uint)zonePreview.w;
         float3 tint = !eligible || (!unchanged && zoneSettings.w == 0) ? float3(1.0, 0.12, 0.10) :
             unchanged ? float3(0.65, 0.65, 0.65) : zonePreview.rgb;
         if (zoneSettings.z == 2) tint = zonePreview.rgb;
-        if (zoneSettings.z == 3)
-        {
-            uint allowed = (uint)round(roadMap.SampleLevel(roadSampler, (tile + 0.5) / zoneSettings.x, 0).r * 255.0);
-            // Same W/N/E/S requirements as RoadPath::ConnectionsAt. A slope
-            // can accept an end or straight, but not a turn or crossing.
-            uint needed = (OnRoadPath(tile + float2(-1, 0)) ? 1u : 0u) |
-                (OnRoadPath(tile + float2(0, -1)) ? 2u : 0u) |
-                (OnRoadPath(tile + float2(1, 0)) ? 4u : 0u) |
-                (OnRoadPath(tile + float2(0, 1)) ? 8u : 0u);
-            tint = allowed != 0 && (allowed & needed) == needed ? zonePreview.rgb : float3(1.0, 0.12, 0.10);
-            if (zonePreview.w == 2) tint = diagonalAllowed ? zonePreview.rgb : float3(1.0, 0.12, 0.10);
-        }
+        if (zoneSettings.z == 3) tint = roadAllowed ? zonePreview.rgb : float3(1.0, 0.12, 0.10);
         float2 edge = min(frac(worldXZ), 1.0 - frac(worldXZ));
         color = lerp(color, tint, min(edge.x, edge.y) < 0.045 ? 0.95 : 0.5);
     }

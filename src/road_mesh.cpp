@@ -8,9 +8,43 @@
 StaticMesh LoadRoadMesh(const std::filesystem::path& path, const RoadAsset& asset)
 {
     auto geometry = LoadStaticGlb(path, 1.0f / MetersPerTile);
+    if (asset.fitGridTransition)
+    {
+        // Both supplied exports start at world X=-8 m. Move their bend tile
+        // center (-16,0) to the origin after baking the GLB node transforms.
+        // The final straight tail was authored against an unstretched diagonal.
+        // Clip that tail to x +/- z = -1, the shared diagonal-cell boundary.
+        const float side = asset.connections & RoadSouthWest ? 1.0f : -1.0f;
+        for (auto& v : geometry.vertices) v.x += 1.0f;
+        const auto source = geometry.vertices;
+        for (auto& v : geometry.vertices)
+        {
+            const float along = -v.x + side * v.z;
+            if (along > 1.0f)
+            {
+                // Preserve the texture density on the shortened tail, using
+                // the previous vertex on the same side of the authored strip.
+                const StaticMeshVertex* previous = nullptr;
+                float previousAlong = -1.0f;
+                for (const auto& p : source)
+                {
+                    const float pa = -p.x + side * p.z;
+                    if (std::abs(p.u - v.u) < .00001f && pa <= 1.0f && pa > previousAlong)
+                    { previous = &p; previousAlong = pa; }
+                }
+                if (!previous) throw std::runtime_error(std::string(asset.model) + " has no transition-tail UV anchor");
+                v.v = std::lerp(previous->v, v.v, (1.0f - previousAlong) / (along - previousAlong));
+                const float trim = (along - 1.0f) * .5f;
+                v.x += trim;
+                v.z -= side * trim;
+            }
+            if (std::abs(v.x) + std::abs(v.z) > 1.0001f || v.x > .5001f || side * v.z < -.5001f)
+                throw std::runtime_error(std::string(asset.model) + " does not fit the grid-transition footprint");
+        }
+    }
     for (auto& v : geometry.vertices)
     {
-        if (std::abs(v.x) > .5001f || std::abs(v.z) > .5001f)
+        if (!asset.fitGridTransition && (std::abs(v.x) > .5001f || std::abs(v.z) > .5001f))
             throw std::runtime_error(std::string(asset.model) + " must fit a centered 16 x 16 meter source tile");
         v.u = v.u * asset.uScale + asset.uOffset;
         if (asset.extendDiagonalApproaches)

@@ -23,8 +23,8 @@ public:
     void Initialize(SDL_GPUDevice* gpu, TextureManager& textures, const World& world);
     // Also call after future occupancy/height edits to refresh eligibility.
     void Update(const World& world, ToolTileRect bounds);
-    // Upload a changed diagonal preview before acquiring the frame command buffer.
-    // Cardinal previews continue using the static eligibility channel.
+    // Upload a changed road plan before acquiring the frame command buffer.
+    // Both route kinds can contain endpoint transitions with wider footprints.
     void PrepareRoadPreview(const World& world, const ToolPreview& preview);
     // Binds zone data at samplerSlot and road eligibility at samplerSlot + 1.
     void Bind(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, const ToolPreview& preview,

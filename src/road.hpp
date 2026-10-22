@@ -37,7 +37,7 @@ constexpr bool SupportedDiagonalConnections(std::uint8_t connections)
         std::popcount(connections) >= 3);
 }
 
-enum class RoadShape : std::size_t { Straight, ThreeWay, FourWay, DeadEnd, Curve, DiagonalThreeWay, DiagonalFourWay, Count };
+enum class RoadShape : std::size_t { Straight, ThreeWay, FourWay, DeadEnd, Curve, DiagonalThreeWay, DiagonalFourWay, GridToDiagonalLeft, GridToDiagonalRight, Count };
 struct RoadVisual
 {
     RoadShape shape = RoadShape::DeadEnd;
@@ -56,6 +56,15 @@ constexpr std::uint8_t RotateRoadConnections(std::uint8_t mask, unsigned turns)
     return mask;
 }
 
+// Only a gentle 45-degree turn: the outward ports are 135 degrees apart.
+constexpr bool IsRoadTransition(std::uint8_t connections)
+{
+    for (unsigned turn = 0; turn < 4; ++turn)
+        if (connections == RotateRoadConnections(RoadEast | RoadSouthWest, turn) ||
+            connections == RotateRoadConnections(RoadEast | RoadNorthWest, turn)) return true;
+    return false;
+}
+
 struct RoadAsset
 {
     const char* model;
@@ -63,6 +72,7 @@ struct RoadAsset
     std::uint8_t connections; // Authored openings AFTER the GLB node transforms.
     float uScale = 1.0f, uOffset = 0.0f;
     bool extendDiagonalApproaches = false;
+    bool fitGridTransition = false;
 };
 
 inline constexpr char StraightRoadModelPath[] = "models/transportation/roads/road_straight.glb";
@@ -80,7 +90,11 @@ inline constexpr std::array<RoadAsset, static_cast<std::size_t>(RoadShape::Count
     {"models/transportation/roads/road_3way.glb", "models/transportation/roads/road_3way_basecolor.png",
         RoadNorthWest | RoadNorthEast | RoadSouthEast, 1, 0, true},
     {"models/transportation/roads/road_4way.glb", "models/transportation/roads/road_4way_basecolor.png",
-        RoadAllDiagonals, 1, 0, true}
+        RoadAllDiagonals, 1, 0, true},
+    {"models/transportation/roads/road_grid_to_diagonal_curve_left.glb", StraightRoadTexturePath,
+        RoadEast | RoadSouthWest, 1, 0, false, true},
+    {"models/transportation/roads/road_grid_to_diagonal_curve_right.glb", StraightRoadTexturePath,
+        RoadEast | RoadNorthWest, 1, 0, false, true}
 }};
 
 constexpr RoadVisual GetRoadVisual(std::uint8_t connections)
@@ -137,10 +151,19 @@ struct Road
     // Allowed corridor axes, including both axes at a junction. 0 keeps the
     // cardinal rules. A pair of adjacent diagonal ports is not a supported bend.
     std::uint8_t diagonalAxis = 0;
+    // A transition has exactly one cardinal and one diagonal port; no extra arms.
+    std::uint8_t transitionConnections = 0;
 };
+
+constexpr std::uint8_t RoadPorts(const Road& road)
+{
+    return road.transitionConnections ? road.transitionConnections :
+        road.diagonalAxis ? road.diagonalAxis : road.surface.AllowedConnections();
+}
 
 constexpr RoadVisual GetRoadVisual(const Road& road)
 {
+    if (road.transitionConnections) return GetRoadVisual(road.transitionConnections);
     if (road.connections) return GetRoadVisual(road.connections);
     if (road.diagonalAxis)
         return GetRoadVisual(road.diagonalAxis == RoadDiagonalNWSE ? RoadNorthWest : RoadNorthEast);
@@ -213,6 +236,15 @@ struct RoadPath
             (Contains(x, z + 1) ? RoadSouth : 0));
     }
 
+    // Constant-time lookup into ForEachTile order, including both legs of an L.
+    std::size_t IndexOf(int x, int z) const
+    {
+        if (diagonal) return static_cast<std::size_t>(std::abs(x - startX));
+        return static_cast<std::size_t>(xFirst ?
+            (z == startZ ? std::abs(x - startX) : std::abs(endX - startX) + std::abs(z - startZ)) :
+            (x == startX ? std::abs(z - startZ) : std::abs(endZ - startZ) + std::abs(x - startX)));
+    }
+
     template<class Visitor> void ForEachTile(Visitor visit) const
     {
         int x = startX, z = startZ;
@@ -256,6 +288,7 @@ struct PlannedRoadTile
     int x = 0, z = 0;
     RoadPlacementStatus status = RoadPlacementStatus::OutsideMap;
     std::uint8_t diagonalAxis = 0;
+    std::uint8_t transitionConnections = 0;
 };
 
 // One plan drives evaluation, preview and commit. In particular, a junction

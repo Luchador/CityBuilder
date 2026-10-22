@@ -7,6 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <span>
+#include <optional>
 #include <vector>
 
 // Allowed elevation increments
@@ -84,7 +85,8 @@ public:
     std::uint64_t GetRoadRevision() const { return roadRevision; }
     // 0 means a single click; dragged routes specify their needed directions.
     // Sloped cardinal roads require level pairs; diagonal roads require their
-    // entire five-tile footprint to be flat, dry and at the same elevation.
+    // entire footprint to be flat, dry and at the same elevation (five tiles
+    // for diagonals, three for grid/diagonal bends).
     RoadPlacementStatus CheckRoadPlacement(int x, int z, std::uint8_t requiredConnections = 0) const;
     // 0 = blocked, otherwise the directions a road can use on this tile.
     std::uint8_t GetRoadAllowedConnections(int x, int z) const;
@@ -99,10 +101,13 @@ public:
 private:
     std::size_t TileIndex(int x, int z) const;
     void ReconnectRoad(int x, int z);
-    RoadPlacementStatus CheckDiagonalFootprint(int x, int z) const;
-    std::uint8_t DiagonalConnectionsAt(int x, int z, std::uint8_t axes,
-        const RoadPath* path = nullptr, const RoadPlan* plan = nullptr) const;
-    void InsertRoad(int x, int z, std::uint8_t diagonalAxis);
+    RoadPlan PlanRoadsInternal(const RoadPath& path, std::uint8_t singleConnections) const;
+    RoadPlacementResult CommitRoadPlan(const RoadPlan& plan);
+    std::optional<Road> PlannedRoadAt(int x, int z, const RoadPath* path = nullptr, const RoadPlan* plan = nullptr) const;
+    RoadPlacementStatus CheckRoadFootprint(const Road& road, const RoadPath& path, const RoadPlan& plan) const;
+    std::uint8_t RoadConnectionsAt(const Road& road, const RoadPath* path = nullptr, const RoadPlan* plan = nullptr) const;
+    void InsertRoad(const PlannedRoadTile& tile);
+    void RefreshRoadReservations(int x, int z);
     void ReconnectRoadNeighborhood(int x, int z);
 
     TerrainSettings terrainSettings;
@@ -112,10 +117,9 @@ private:
     // 0 = no road, otherwise index + 1. Constant-time neighbor lookup, even
     // on giant maps; infrastructure IDs remain independent of vector indices.
     std::vector<std::uint32_t> roadAtTile;
-    // First road whose footprint reserves a tile (index + 1). Diagonal anchors
-    // on the same checkerboard parity can share reservations; their meshes fit
-    // non-overlapping rotated cells. Separate from roadAtTile (anchors only).
-    // Future removal must transfer a shared reservation to a surviving owner.
+    // One owner of each reserved terrain tile (index + 1). Several non-overlapping
+    // road cells can share that tile. RefreshRoadReservations transfers ownership
+    // when a transition shrinks an existing diagonal footprint.
     std::vector<std::uint32_t> roadFootprintAtTile;
     std::uint64_t roadRevision = 0;
     InfrastructureId nextInfrastructureId = 1;

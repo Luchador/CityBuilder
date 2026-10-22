@@ -74,9 +74,9 @@ void RoadTool::BuildPreview(ToolPreview& preview) const
     if (path)
     {
         preview.tiles = ToolTileRect::FromCorners({path->startX, path->startZ}, {path->endX, path->endZ});
-        if (path->diagonal)
         {
-            // The shader selects the cross-shaped footprints inside these bounds.
+            // A cardinal drag can also upgrade an endpoint to a transition.
+            // The shader selects each planned module's actual footprint.
             --preview.tiles->minX; --preview.tiles->minZ;
             ++preview.tiles->maxX; ++preview.tiles->maxZ;
         }

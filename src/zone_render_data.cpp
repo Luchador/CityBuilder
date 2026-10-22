@@ -1,6 +1,7 @@
 #include "zone_render_data.hpp"
 #include "world_zoning.hpp"
 #include "world.hpp"
+#include "road_footprint.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -65,6 +66,7 @@ std::vector<std::uint8_t> BuildPlannedRoadPreviewPixels(const World& world, cons
         if (tile.x < r.minX || tile.x > r.maxX || tile.z < r.minZ || tile.z > r.maxZ) continue;
         const auto offset = (static_cast<std::size_t>(tile.z - r.minZ) * (r.maxX - r.minX + 1) + tile.x - r.minX) * 4;
         pixels[offset + 1] = RoadPlacementAccepted(tile.status) ? 255 : 0;
+        pixels[offset + 2] = RoadFootprintSides(tile.diagonalAxis, tile.transitionConnections);
     }
     return pixels;
 }
