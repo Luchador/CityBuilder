@@ -233,12 +233,14 @@ public:
 
                 const bool wasDragging = toolController && toolController->IsInteracting();
                 const bool consumed = ui.HandleEvent(event);
+
                 if (wasDragging && event.type == SDL_EVENT_MOUSE_BUTTON_UP && event.button.button == SDL_BUTTON_LEFT)
                 {
                     if (consumed) CancelWorldTool();
                     else EndWorldTool(event.button.x, event.button.y);
                     continue;
                 }
+
                 if (consumed)
                 {
                     continue;
@@ -278,8 +280,15 @@ public:
                     {
                         if (toolController && toolController->HasTool())
                         {
-                            if (toolController->IsInteracting()) CancelWorldTool();
-                            else ClearWorldTool();
+                            if (toolController->IsInteracting()) 
+                            {
+                                CancelWorldTool();
+                            }
+                            else 
+                            {
+                                ClearWorldTool();
+                            }
+
                             continue;
                         }
                         running = false;
