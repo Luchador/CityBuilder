@@ -22,9 +22,9 @@ namespace
         ZoneDefinition{"Medium Commercial",        ZoneCategory::Commercial,  {0.13f, 0.20f, 0.90f},       40},
         ZoneDefinition{"Dense Commercial",         ZoneCategory::Commercial,  {0.08f, 0.10f, 0.75f},      100},
 
-        ZoneDefinition{"Farm",                     ZoneCategory::Industrial,  {0.85f, 0.75f, 0.35f},       20},
-        ZoneDefinition{"Medium Industrial",        ZoneCategory::Industrial,  {1.00f, 0.85f, 0.15f},       40},
-        ZoneDefinition{"Dense Industrial",         ZoneCategory::Industrial,  {0.90f, 0.55f, 0.08f},      100},
+        ZoneDefinition{"Farm",                     ZoneCategory::Industrial,  {0.85f, 0.95f, 0.35f},       20},
+        ZoneDefinition{"Medium Industrial",        ZoneCategory::Industrial,  {1.00f, 1.00f, 0.15f},       40},
+        ZoneDefinition{"Dense Industrial",         ZoneCategory::Industrial,  {0.90f, 0.55f, 0.12f},      100},
 
         ZoneDefinition{"Landfill",                 ZoneCategory::Other,       {0.50f, 0.35f, 0.20f},       100},
 
