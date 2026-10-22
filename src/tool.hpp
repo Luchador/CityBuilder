@@ -94,7 +94,7 @@ struct ToolPreview
     // Non-zone tools supply their own rule check; zoning uses ZoneEvaluation
     // and per-tile eligibility instead. This flag never authorizes an edit.
     bool placementAllowed = false;
-    // Road previews use a one-tile-wide route inside tiles' bounding rectangle.
+    // Road previews select their route/footprint inside tiles' bounding rectangle.
     std::optional<RoadPath> roadPath;
 };
 

@@ -11,6 +11,7 @@ inline constexpr float ZoneOverlayOpacity = 0.65f;
 // This is a data texture, NOT an alpha-premultiplied UI image.
 std::vector<std::uint8_t> BuildZonePixels(const World& world, ToolTileRect bounds);
 // Separate from zoning: a slope may accept a road but never a zone. Red stores
-// allowed connection bits (0 = blocked); the remaining channels are reserved.
+// allowed connection bits (0 = blocked). G/B store full-footprint NW/SE and
+// NE/SW diagonal eligibility (0 or 255); A=255.
 std::vector<std::uint8_t> BuildRoadPreviewPixels(const World& world, ToolTileRect bounds);
 MinimapImage BuildZoneMinimapPatch(const MinimapImage& base, const World& world, ToolTileRect bounds);

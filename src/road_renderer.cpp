@@ -22,7 +22,7 @@ namespace
     struct RoadInstance
     {
         float x, y, z, quarterTurns;
-        float slopeX, slopeZ, padding0 = 0.0f, padding1 = 0.0f;
+        float slopeX, slopeZ, lengthScale = 1.0f, repeatAlongRoad = 0.0f;
     };
     static_assert(sizeof(RoadInstance) == 32);
     [[noreturn]] void Fail(const char* message)
@@ -110,7 +110,7 @@ void RoadRenderer::Initialize(SDL_GPUDevice* gpu, TextureManager& textures, SDL_
             {1, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT3, offsetof(StaticMeshVertex, nx)},
             {2, 0, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, offsetof(StaticMeshVertex, u)},
             {3, 1, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, offsetof(RoadInstance, x)},
-            {4, 1, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2, offsetof(RoadInstance, slopeX)}
+            {4, 1, SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4, offsetof(RoadInstance, slopeX)}
         };
     
         SDL_GPUColorTargetDescription color{};
@@ -169,7 +169,8 @@ void RoadRenderer::Prepare(const World& world)
 
         groups[static_cast<std::size_t>(visual.shape)].push_back({static_cast<float>(road.tileX) + 0.5f,
             road.surface.elevation + RoadSurfaceLift, static_cast<float>(road.tileZ) + 0.5f,
-            static_cast<float>(visual.quarterTurns), road.surface.slopeX, road.surface.slopeZ});
+            visual.quarterTurns, road.surface.slopeX, road.surface.slopeZ, visual.lengthScale,
+            visual.shape == RoadShape::Straight ? 1.0f : 0.0f});
     }
 
     std::vector<RoadInstance> positions;

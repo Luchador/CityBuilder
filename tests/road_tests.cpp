@@ -328,6 +328,155 @@ namespace
         std::cout << "PASS: five real GLBs, authored transforms, matching edge widths/openings and backface-culling winding\n";
     }
 
+    void CheckDiagonals()
+    {
+        const int dx[] = {-1, 1, 1, -1}, dz[] = {-1, -1, 1, 1};
+        for (int d = 0; d < 4; ++d)
+        {
+            auto world = FlatWorld();
+            ToolController controller(world);
+            controller.SetTool(std::make_unique<RoadTool>());
+            Check(controller.Begin(At(7, 7)), "Diagonal drag begin failed");
+            const int ex = 7 + 4 * dx[d], ez = 7 + 4 * dz[d];
+            controller.Update(At(ex, ez), .016f);
+            const auto preview = controller.BuildPreview();
+            const auto path = std::get<RoadRequest>(controller.End(At(ex, ez))).path;
+            Check(path.diagonal && preview.roadPath == path && preview.placementAllowed,
+                  "Diagonal preview/release mismatch");
+            Check(preview.tiles->minX == std::min(7, ex) - 1 && preview.tiles->maxZ == std::max(7, ez) + 1,
+                  "Preview omitted the diagonal footprint");
+            Check(world.PlaceRoads(path).changed == 5, "Diagonal route left holes");
+            const auto forward = static_cast<std::uint8_t>(16 << d);
+            const auto backward = RotateRoadConnections(forward, 2);
+            const auto axis = static_cast<std::uint8_t>(forward | backward);
+            Check(RotateRoadConnections(forward, 1) == (16 << ((d + 1) % 4)), "Diagonal bit rotation failed");
+            for (int step = 0; step <= 4; ++step)
+            {
+                const int x = 7 + step * dx[d], z = 7 + step * dz[d];
+                const auto* road = world.GetRoadAt(x, z);
+                const auto mask = step == 0 ? forward : step == 4 ? backward : axis;
+                Check(road && road->diagonalAxis == axis && road->connections == mask,
+                      "Diagonal topology or endpoint orientation wrong");
+                const auto visual = GetRoadVisual(*road);
+                Check(visual.lengthScale == RoadDiagonalLength &&
+                      visual.shape == (step == 0 || step == 4 ? RoadShape::DeadEnd : RoadShape::Straight),
+                      "Diagonal did not reuse stretched straight/end meshes");
+                const float angle = visual.quarterTurns * 1.57079632679f;
+                if (step == 0 || step == 4)
+                {
+                    const int facing = step == 0 ? 1 : -1;
+                    Check(Near(-std::cos(angle) * RoadDiagonalLength, static_cast<float>(facing * dx[d])) &&
+                          Near(-std::sin(angle) * RoadDiagonalLength, static_cast<float>(facing * dz[d])),
+                          "Diagonal dead end faces away from its neighbor");
+                }
+                for (const auto p : {ToolTile{x, z}, {x - 1, z}, {x + 1, z}, {x, z - 1}, {x, z + 1}})
+                    Check(world.GetTile(p.x, p.z).IsOccupied() && !CanZoneTile(world, p.x, p.z),
+                          "Pavement footprint allowed zoning/building occupancy");
+            }
+            const auto revision = world.GetRoadRevision();
+            const RoadPath reverse{ex, ez, 7, 7, true, true};
+            const auto reused = world.PlaceRoads(reverse);
+            Check(!reused.changed && reused.evaluation.unchanged == 5 && !reused.evaluation.blocked &&
+                  revision == world.GetRoadRevision(), "Reverse drag duplicated a diagonal road");
+            Check(world.PlaceRoads({ex, ez, ex + dx[d], ez + dz[d], true, true}).changed == 1 &&
+                  world.GetRoadAt(ex, ez)->connections == axis, "Extending a diagonal did not replace the old end");
+            Check(world.CheckRoadPlacement(7, 7, RoadWest) == RoadPlacementStatus::UnsupportedConnection &&
+                  world.CheckRoadPlacement(7, 7, RoadNorthWest | RoadNorthEast) == RoadPlacementStatus::UnsupportedConnection,
+                  "Unsupported diagonal/cardinal turn accepted");
+        }
+
+        Check(RoadPath::FromDrag(3, 3, 8, 7) == RoadPath{3, 3, 7, 7, true, true},
+              "Near-diagonal drag did not snap inside its rectangle");
+        Check(!RoadPath::FromDrag(3, 3, 9, 6).diagonal, "A 2:1 drag lost its existing L route");
+        auto world = FlatWorld();
+        for (int z = 0; z < 16; ++z) for (int x = 0; x < 16; ++x)
+            world.GetTile(x, z).zoneType = ZoneType::ResidentialLight;
+        const RoadPath diagonal{3, 3, 10, 10, true, true};
+        // A building beside the centerline blocks both modules that would overlap it.
+        world.GetTile(6, 5).buildingId = 1;
+        auto result = world.PlaceRoads(diagonal);
+        Check(result.changed == 6 && result.evaluation.blocked == 2 &&
+              !world.GetRoadAt(5, 5) && !world.GetRoadAt(6, 6), "Diagonal footprint collision/partial placement failed");
+        Check(world.GetRoadAt(4, 4)->connections == RoadNorthWest &&
+              world.GetRoadAt(7, 7)->connections == RoadSouthEast, "Diagonal connected across a blocked gap");
+        Check(world.GetTile(6, 5).buildingId == 1 && world.GetTile(6, 5).zoneType == ZoneType::ResidentialLight &&
+              world.GetTile(4, 3).zoneType == ZoneType::None && world.GetTile(2, 2).zoneType == ZoneType::ResidentialLight,
+              "Placement cleared an unrelated zone or retained a zone under its footprint");
+        world.GetTile(6, 5).buildingId = NoBuilding;
+        Check(world.PlaceRoads(diagonal).changed == 2 && world.GetRoadAt(4, 4)->connections == RoadDiagonalNWSE &&
+              world.GetRoadAt(7, 7)->connections == RoadDiagonalNWSE, "Filling a gap did not join diagonal stretches");
+        Check(!world.PlaceRoad(4, 3), "Cardinal road overwrote a diagonal shoulder reservation");
+        Check(!world.PlaceRoads({2, 2, 4, 5, true, true}).evaluation.valid &&
+              !world.PlaceRoads({2, 2, 2, 2, true, true}).evaluation.valid, "Malformed diagonal path accepted");
+
+        auto edge = FlatWorld();
+        result = edge.PlaceRoads({0, 0, 15, 15, true, true});
+        Check(result.changed == 14 && result.evaluation.blocked == 2 && !edge.GetRoadAt(0, 0) && !edge.GetRoadAt(15, 15),
+              "Diagonal pavement escaped the map edge");
+        auto parallel = FlatWorld();
+        Check(parallel.PlaceRoads({2, 2, 9, 9, true, true}).changed == 8 &&
+              parallel.PlaceRoads({2, 6, 9, 13, true, true}).changed == 8, "Separate parallel diagonals rejected");
+        Check(parallel.GetRoadAt(6, 6)->connections == RoadDiagonalNWSE &&
+              parallel.GetRoadAt(6, 10)->connections == RoadDiagonalNWSE, "Parallel roads gained unwanted connections");
+
+        for (float height : {-TerrainHeightStep, TerrainBaseElevation + TerrainHeightStep})
+        {
+            auto terrainWorld = FlatWorld();
+            auto& t = const_cast<TerrainHeightmap&>(terrainWorld.GetTerrain());
+            // This corner is outside the anchor tile but within its west shoulder.
+            t.heights[6 * t.dimensions.CornerStride() + 5] = height;
+            Check(terrainWorld.CheckRoadPlacement(6, 6, RoadDiagonalNWSE) != RoadPlacementStatus::Allowed,
+                  "Diagonal ignored water/uneven ground under its shoulder");
+        }
+        auto slope = RampWorld(true, false);
+        Check(slope.CheckRoadPlacement(6, 6, RoadDiagonalNWSE) == RoadPlacementStatus::NotFlat,
+              "Diagonal was allowed on a slope");
+        auto single = FlatWorld();
+        Check(single.PlaceRoad(6, 6, RoadNorthWest) && single.GetRoadAt(6, 6)->connections == 0 &&
+              GetRoadVisual(*single.GetRoadAt(6, 6)).quarterTurns == .5f,
+              "Isolated diagonal lost its axis");
+        std::cout << "PASS: diagonal dragging/topology, both axes and endpoint directions, footprint collisions, zones, gap joining, map edges and flat-only rules\n";
+    }
+
+    void CheckDiagonalGeometry(const std::filesystem::path& directory)
+    {
+        // Use the supplied GLBs, not just ideal rectangles: their authored ends
+        // and openings must fit the reserved footprint and meet their neighbors.
+        const auto transform = [](float x, float z, float turns)
+        {
+            const float angle = turns * 1.57079632679f;
+            x *= RoadDiagonalLength;
+            return std::pair{x * std::cos(angle) - z * std::sin(angle),
+                             x * std::sin(angle) + z * std::cos(angle)};
+        };
+        for (auto shape : {RoadShape::Straight, RoadShape::DeadEnd})
+        {
+            const auto& asset = RoadAssets[static_cast<std::size_t>(shape)];
+            const auto mesh = LoadStaticGlb(directory / std::filesystem::path(asset.model).filename(), 1.0f / MetersPerTile);
+            for (float turns : {.5f, 1.5f, 2.5f, 3.5f})
+            {
+                for (const auto& v : mesh.vertices)
+                {
+                    const auto [x, z] = transform(v.x, v.z, turns);
+                    // These linear bounds also hold throughout every triangle,
+                    // excluding all four diagonal-neighbor tiles from the mesh.
+                    Check(std::abs(x + z) <= 1.00001f && std::abs(x - z) <= 1.00001f &&
+                          std::abs(x) < 1 && std::abs(z) < 1, "Diagonal mesh escaped its five-tile footprint");
+                }
+                const auto a = transform(-.5f, -.25f, turns), b = transform(-.5f, .25f, turns);
+                Check(Near(std::hypot(b.first - a.first, b.second - a.second), .5f),
+                      "Diagonal stretched road width");
+                const auto offset = transform(-1, 0, turns);
+                // A neighbor's opposite opening, translated one diagonal step.
+                const auto na = transform(.5f, -.25f, turns), nb = transform(.5f, .25f, turns);
+                Check(Near(a.first, offset.first + na.first) && Near(a.second, offset.second + na.second) &&
+                      Near(b.first, offset.first + nb.first) && Near(b.second, offset.second + nb.second),
+                      "Diagonal mesh openings left a gap or overlap");
+            }
+        }
+        std::cout << "PASS: supplied straight/end geometry fits diagonal reservations, preserves width and joins without gaps\n";
+    }
+
     // Standalone transformed GLB fixture; no JSON library or GPU needed.
     void WriteFixture(const std::filesystem::path& path, bool badIndex = false, bool missingUv = false)
     {
@@ -414,8 +563,10 @@ int main(int argc, char** argv)
         CheckWorldAndTool();
         CheckConnectionsAndRoutes();
         CheckSlopes();
+        CheckDiagonals();
         CheckImporter(argv[1], argv[2]);
         CheckModularAssets(std::filesystem::path(argv[1]).parent_path());
+        CheckDiagonalGeometry(std::filesystem::path(argv[1]).parent_path());
         return 0;
     }
     catch (const std::exception& error)

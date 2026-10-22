@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <iostream>
 #include <limits>
+#include <set>
 #include <stdexcept>
 
 namespace
@@ -207,11 +208,59 @@ namespace
         }
         std::cout << "PASS: overlay/minimap data, dezone restoration, and all four map sizes\n";
     }
+
+    void CheckDiagonalPreview()
+    {
+        auto world = FlatWorld(16);
+        world.GetTile(6, 5).buildingId = 1;
+        world.GetTile(10, 10).infrastructureId = 99;
+        Check(world.PlaceRoads({2, 2, 4, 4, true, true}).changed == 3, "Diagonal preview fixture failed");
+        const RoadPath paths[] = {{1, 1, 13, 13, true, true}, {13, 13, 1, 1, true, true},
+            {2, 12, 12, 2, true, true}, {12, 2, 2, 12, true, true}, {0, 0, 15, 15, true, true}};
+        for (const auto& path : paths)
+        {
+            const auto pixels = BuildRoadPreviewPixels(world, {0, 0, 15, 15});
+            const auto zonePixels = BuildZonePixels(world, {0, 0, 15, 15});
+            unsigned accepted = 0, blocked = 0;
+            const int channel = (path.endX - path.startX) * (path.endZ - path.startZ) > 0 ? 1 : 2;
+            std::set<std::pair<int, int>> footprint;
+            path.ForEachTile([&](int x, int z)
+            {
+                if (pixels[(z * 16 + x) * 4 + channel]) ++accepted;
+                else ++blocked;
+                footprint.emplace(x, z); footprint.emplace(x - 1, z); footprint.emplace(x + 1, z);
+                footprint.emplace(x, z - 1); footprint.emplace(x, z + 1);
+            });
+            const auto evaluation = world.EvaluateRoads(path);
+            Check(evaluation.changes + evaluation.unchanged == accepted && evaluation.blocked == blocked,
+                  "Diagonal preview disagrees with placement");
+            for (int z = 0; z < 16; ++z) for (int x = 0; x < 16; ++x)
+            {
+                // Independent shader membership check for the full pavement footprint.
+                const auto onPath = [&](int px, int pz)
+                {
+                    return px >= std::min(path.startX, path.endX) && px <= std::max(path.startX, path.endX) &&
+                        pz >= std::min(path.startZ, path.endZ) && pz <= std::max(path.startZ, path.endZ) &&
+                        std::abs(px - path.startX) == std::abs(pz - path.startZ);
+                };
+                Check(footprint.contains({x, z}) == (onPath(x, z) || onPath(x - 1, z) || onPath(x + 1, z) ||
+                      onPath(x, z - 1) || onPath(x, z + 1)), "Shader selected the wrong diagonal footprint");
+                if (world.GetTile(x, z).IsOccupied())
+                    Check(!(zonePixels[(z * 16 + x) * 4 + 3] & 1), "Diagonal shoulder remained zone eligible");
+            }
+        }
+        // The R channel distinguishes diagonal anchors from unbuildable shoulders,
+        // so a single click can reuse an anchor but a cardinal route cannot cross it.
+        const auto pixels = BuildRoadPreviewPixels(world, {3, 3, 4, 3});
+        Check(pixels[0] == RoadDiagonalNWSE && pixels[1] == 255 && pixels[2] == 0 && pixels[4] == 0,
+              "Diagonal eligibility metadata lost axis or shoulder occupancy");
+        std::cout << "PASS: diagonal footprint preview, partial/blocked/reused placement, and zone exclusion\n";
+    }
 }
 
 int main()
 {
-    try { CheckPlacement(); CheckTerrainRules(); CheckRenderingData(); CheckRoadSlopePreview(); }
+    try { CheckPlacement(); CheckTerrainRules(); CheckRenderingData(); CheckRoadSlopePreview(); CheckDiagonalPreview(); }
     catch (const std::exception& error) { std::cerr << "FAIL: " << error.what() << '\n'; return 1; }
     return 0;
 }

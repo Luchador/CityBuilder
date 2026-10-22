@@ -867,17 +867,27 @@ private:
             if (placement.changed)
             {
                 const auto& path = road->path;
-                const ToolTile start{path.startX, path.startZ}, end{path.endX, path.endZ};
-                const ToolTile bend = path.xFirst ? ToolTile{end.x, start.z} : ToolTile{start.x, end.z};
-                const auto refresh = [&](ToolTile first, ToolTile last)
+                const int last = static_cast<int>(world->GetDimensions().TileCount()) - 1;
+                ToolTileRect region{};
+                int count = 0;
+                const auto refresh = [&]
                 {
-                    const auto bounds = ToolTileRect::FromCorners(first, last);
-                    // Upload the thin legs, not the potentially huge bounding box.
+                    // Refresh the footprint and anchors whose eligibility depends
+                    // on it, in small batches rather than a huge diagonal rectangle.
+                    const ToolTileRect bounds{std::max(0, region.minX - 2), std::max(0, region.minZ - 2),
+                        std::min(last, region.maxX + 2), std::min(last, region.maxZ + 2)};
                     zoneOverlay.Update(*world, bounds);
                     ui.UpdateMinimapZones(*world, bounds);
+                    count = 0;
                 };
-                refresh(start, bend);
-                if (bend != end) refresh(bend, end);
+                path.ForEachTile([&](int x, int z)
+                {
+                    if (!count) region = {x, z, x, z};
+                    region.minX = std::min(region.minX, x); region.maxX = std::max(region.maxX, x);
+                    region.minZ = std::min(region.minZ, z); region.maxZ = std::max(region.maxZ, z);
+                    if (++count == 16) refresh();
+                });
+                if (count) refresh();
                 outcome = placement.evaluation.blocked ? ToolOutcome::PartialSuccess : ToolOutcome::Success;
             }
             else if (!placement.evaluation.valid || placement.evaluation.blocked)

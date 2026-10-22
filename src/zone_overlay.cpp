@@ -85,8 +85,8 @@ void ZoneOverlay::Bind(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, 
             uniforms.previewEnabled = 3;
             uniforms.startX = static_cast<float>(path.startX); uniforms.startZ = static_cast<float>(path.startZ);
             uniforms.endX = static_cast<float>(path.endX); uniforms.endZ = static_cast<float>(path.endZ);
-            // In road mode this field chooses the L's bend, not a zone type.
-            uniforms.zoneType = path.xFirst ? 1.0f : 0.0f;
+            // Road route: 0=Z-first L, 1=X-first L, 2=straight diagonal.
+            uniforms.zoneType = path.diagonal ? 2.0f : path.xFirst ? 1.0f : 0.0f;
             uniforms.red = ValidToolPreviewColor.r;
             uniforms.green = ValidToolPreviewColor.g;
             uniforms.blue = ValidToolPreviewColor.b;

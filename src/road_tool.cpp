@@ -18,9 +18,8 @@ void RoadTool::UpdateHover(const ToolContext& context, const ToolPointer& pointe
         hovered = pointer.hit->tile;
         const auto start = anchor.value_or(*hovered);
 
-        // Longest leg first, with X winning ties. This is a preview from the
-        // anchor, so skipped mouse-motion events cannot create gaps.
-        path = RoadPath{start.x, start.z, hovered->x, hovered->z, std::abs(hovered->x - start.x) >= std::abs(hovered->z - start.z)};
+        // Rebuild from the anchor so skipped mouse-motion events cannot leave gaps.
+        path = RoadPath::FromDrag(start.x, start.z, hovered->x, hovered->z);
         const auto evaluation = context.world.EvaluateRoads(*path);
         allowed = evaluation.valid && evaluation.blocked == 0;
     }
@@ -75,6 +74,12 @@ void RoadTool::BuildPreview(ToolPreview& preview) const
     if (path)
     {
         preview.tiles = ToolTileRect::FromCorners({path->startX, path->startZ}, {path->endX, path->endZ});
+        if (path->diagonal)
+        {
+            // The shader selects the cross-shaped footprints inside these bounds.
+            --preview.tiles->minX; --preview.tiles->minZ;
+            ++preview.tiles->maxX; ++preview.tiles->maxZ;
+        }
         preview.placementAllowed = allowed;
         preview.roadPath = path;
     }

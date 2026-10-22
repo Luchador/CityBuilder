@@ -83,19 +83,21 @@ public:
     const Road* GetRoadAt(int x, int z) const;
     std::uint64_t GetRoadRevision() const { return roadRevision; }
     // 0 means a single click; dragged routes specify their needed directions.
-    // Sloped tiles require level corner pairs across both ends of the road.
+    // Sloped cardinal roads require level pairs; diagonal roads require their
+    // entire five-tile footprint to be flat, dry and at the same elevation.
     RoadPlacementStatus CheckRoadPlacement(int x, int z, std::uint8_t requiredConnections = 0) const;
     // 0 = blocked, otherwise the directions a road can use on this tile.
     std::uint8_t GetRoadAllowedConnections(int x, int z) const;
     RoadEvaluation EvaluateRoads(const RoadPath& path) const;
     RoadPlacementResult PlaceRoads(const RoadPath& path);
-    // Clears an empty zone, reserves occupancy and reconnects neighbors.
+    // Clears zones in the footprint, reserves occupancy and reconnects neighbors.
     // Existing roads are unchanged. No construction cost yet.
     bool PlaceRoad(int x, int z, std::uint8_t requiredConnections = 0);
 
 private:
     std::size_t TileIndex(int x, int z) const;
     void ReconnectRoad(int x, int z);
+    RoadPlacementStatus CheckDiagonalRoad(int x, int z, std::uint8_t axis) const;
 
     TerrainSettings terrainSettings;
     TerrainHeightmap terrain;
@@ -104,6 +106,10 @@ private:
     // 0 = no road, otherwise index + 1. Constant-time neighbor lookup, even
     // on giant maps; infrastructure IDs remain independent of vector indices.
     std::vector<std::uint32_t> roadAtTile;
+    // First road whose footprint reserves a tile (index + 1). Collinear pieces
+    // may share reservations. Separate from roadAtTile, which only holds anchors.
+    // Future removal must transfer a shared reservation to a surviving owner.
+    std::vector<std::uint32_t> roadFootprintAtTile;
     std::uint64_t roadRevision = 0;
     InfrastructureId nextInfrastructureId = 1;
 };

@@ -6,25 +6,44 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
 
 // World-space directions; independent of camera rotation. One quarter-turn
 // maps (x,z) to (-z,x), so West -> North -> East -> South.
 enum RoadConnection : std::uint8_t
 {
-    RoadWest = 1, RoadNorth = 2, RoadEast = 4, RoadSouth = 8
+    RoadWest = 1, RoadNorth = 2, RoadEast = 4, RoadSouth = 8,
+    RoadNorthWest = 16, RoadNorthEast = 32, RoadSouthEast = 64, RoadSouthWest = 128
 };
+
+inline constexpr std::uint8_t RoadDiagonalNWSE = RoadNorthWest | RoadSouthEast;
+inline constexpr std::uint8_t RoadDiagonalNESW = RoadNorthEast | RoadSouthWest;
+inline constexpr float RoadDiagonalLength = 1.41421356237f;
+
+// Only opposite ports are supported on a diagonal, until bend/junction meshes exist.
+constexpr std::uint8_t DiagonalRoadAxis(std::uint8_t connections)
+{
+    if (connections && !(connections & ~RoadDiagonalNWSE)) return RoadDiagonalNWSE;
+    if (connections && !(connections & ~RoadDiagonalNESW)) return RoadDiagonalNESW;
+    return 0;
+}
 
 enum class RoadShape : std::size_t { Straight, ThreeWay, FourWay, DeadEnd, Curve, Count };
 struct RoadVisual
 {
     RoadShape shape = RoadShape::DeadEnd;
-    std::uint8_t quarterTurns = 0;
+    float quarterTurns = 0; // Half a quarter-turn is a 45-degree diagonal.
+    float lengthScale = 1;
 };
 
 constexpr std::uint8_t RotateRoadConnections(std::uint8_t mask, unsigned turns)
 {
     for (unsigned i = 0; i < turns % 4; ++i)
-        mask = static_cast<std::uint8_t>(((mask << 1) | (mask >> 3)) & 15);
+    {
+        const unsigned low = mask & 15, high = mask >> 4;
+        mask = static_cast<std::uint8_t>((((low << 1) | (low >> 3)) & 15) |
+            ((((high << 1) | (high >> 3)) & 15) << 4));
+    }
     return mask;
 }
 
@@ -50,13 +69,21 @@ inline constexpr std::array<RoadAsset, static_cast<std::size_t>(RoadShape::Count
 
 constexpr RoadVisual GetRoadVisual(std::uint8_t connections)
 {
+    if (const auto axis = DiagonalRoadAxis(connections))
+    {
+        if (connections == axis)
+            return {RoadShape::Straight, axis == RoadDiagonalNWSE ? 0.5f : 1.5f, RoadDiagonalLength};
+        const float turns = connections == RoadNorthWest ? 0.5f : connections == RoadNorthEast ? 1.5f :
+            connections == RoadSouthEast ? 2.5f : 3.5f;
+        return {RoadShape::DeadEnd, turns, RoadDiagonalLength};
+    }
     for (std::size_t shape = 0; shape < RoadAssets.size(); ++shape)
     {
         for (unsigned turns = 0; turns < 4; ++turns)
         {
             if (RotateRoadConnections(RoadAssets[shape].connections, turns) == connections)
             {
-                return {static_cast<RoadShape>(shape), static_cast<std::uint8_t>(turns)};
+                return {static_cast<RoadShape>(shape), static_cast<float>(turns)};
             }
         }
     }
@@ -90,11 +117,16 @@ struct Road
     int tileZ = 0;
     RoadSurface surface;
     std::uint8_t connections = 0;
+    // Persistent corridor orientation; also aligns an isolated diagonal end.
+    // 0 keeps the existing four-direction road rules.
+    std::uint8_t diagonalAxis = 0;
 };
 
 constexpr RoadVisual GetRoadVisual(const Road& road)
 {
     if (road.connections) return GetRoadVisual(road.connections);
+    if (road.diagonalAxis)
+        return GetRoadVisual(road.diagonalAxis == RoadDiagonalNWSE ? RoadNorthWest : RoadNorthEast);
     // An isolated end must still align with its slope. Aim its opening downhill.
     const auto& s = road.surface;
     if (s.slopeX != 0) return GetRoadVisual(s.slopeX > 0 ? RoadWest : RoadEast);
@@ -102,20 +134,45 @@ constexpr RoadVisual GetRoadVisual(const Road& road)
     return GetRoadVisual(0);
 }
 
-enum class RoadPlacementStatus { Allowed, ExistingRoad, OutsideMap, NotFlat, Underwater, Occupied, WrongSlopeDirection };
+enum class RoadPlacementStatus { Allowed, ExistingRoad, OutsideMap, NotFlat, Underwater, Occupied, WrongSlopeDirection, UnsupportedConnection };
 
-// A one-tile-wide orthogonal route with at most one bend. World validates the
-// endpoints before traversal; never traverse arbitrary/unvalidated coordinates.
+// An orthogonal route with at most one bend, or one straight diagonal.
+// World validates endpoints and shape before traversal; never traverse
+// arbitrary/unvalidated coordinates.
 struct RoadPath
 {
     int startX = 0, startZ = 0, endX = 0, endZ = 0;
     bool xFirst = true;
+    bool diagonal = false;
     bool operator==(const RoadPath&) const = default;
+
+    // Near 45 degrees, snap to a straight diagonal inside the drag rectangle.
+    // Else preserve the existing L route. Equal 2:1 drags remain orthogonal.
+    static RoadPath FromDrag(int x, int z, int targetX, int targetZ)
+    {
+        const int dx = std::abs(targetX - x), dz = std::abs(targetZ - z);
+        RoadPath result{x, z, targetX, targetZ, dx >= dz};
+        if (std::min(dx, dz) * 2 > std::max(dx, dz))
+        {
+            const int steps = std::min(dx, dz);
+            result.endX = x + (targetX > x ? steps : -steps);
+            result.endZ = z + (targetZ > z ? steps : -steps);
+            result.diagonal = true;
+        }
+        return result;
+    }
+
+    bool HasValidShape() const
+    {
+        // World checks bounds before calling this (subtraction cannot overflow).
+        return !diagonal || (startX != endX && std::abs(endX - startX) == std::abs(endZ - startZ));
+    }
 
     bool Contains(int x, int z) const
     {
         if (x < std::min(startX, endX) || x > std::max(startX, endX) ||
             z < std::min(startZ, endZ) || z > std::max(startZ, endZ)) return false;
+        if (diagonal) return std::abs(x - startX) == std::abs(z - startZ);
         return xFirst ? (z == startZ || x == endX) : (x == startX || z == endZ);
     }
 
@@ -124,6 +181,10 @@ struct RoadPath
     std::uint8_t ConnectionsAt(int x, int z) const
     {
         if (!Contains(x, z)) return 0;
+        if (diagonal)
+            return static_cast<std::uint8_t>((Contains(x - 1, z - 1) ? RoadNorthWest : 0) |
+                (Contains(x + 1, z - 1) ? RoadNorthEast : 0) | (Contains(x + 1, z + 1) ? RoadSouthEast : 0) |
+                (Contains(x - 1, z + 1) ? RoadSouthWest : 0));
         return static_cast<std::uint8_t>((Contains(x - 1, z) ? RoadWest : 0) |
             (Contains(x, z - 1) ? RoadNorth : 0) | (Contains(x + 1, z) ? RoadEast : 0) |
             (Contains(x, z + 1) ? RoadSouth : 0));
@@ -134,6 +195,16 @@ struct RoadPath
         int x = startX, z = startZ;
 
         visit(x, z);
+        if (diagonal)
+        {
+            while (x != endX)
+            {
+                x += endX > x ? 1 : -1;
+                z += endZ > z ? 1 : -1;
+                visit(x, z);
+            }
+            return;
+        }
         const auto moveX = [&] { while (x != endX) { x += endX > x ? 1 : -1; visit(x, z); } };
         const auto moveZ = [&] { while (z != endZ) { z += endZ > z ? 1 : -1; visit(x, z); } };
 

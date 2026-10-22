@@ -102,7 +102,7 @@ SDL_GPUGraphicsPipeline* SDL_CreateGPUGraphicsPipeline(SDL_GPUDevice*, const SDL
           input.vertex_buffer_descriptions[1].instance_step_rate == 0 && input.vertex_attributes[3].buffer_slot == 1 &&
           input.vertex_attributes[3].format == SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4 &&
           input.vertex_attributes[4].buffer_slot == 1 && input.vertex_attributes[4].offset == 16 &&
-          input.vertex_attributes[4].format == SDL_GPU_VERTEXELEMENTFORMAT_FLOAT2,
+          input.vertex_attributes[4].format == SDL_GPU_VERTEXELEMENTFORMAT_FLOAT4,
           "Incorrect instanced vertex layout");
     if (failPipeline) return nullptr;
     ++pipelines;
@@ -141,7 +141,7 @@ void SDL_DrawGPUIndexedPrimitives(SDL_GPURenderPass*, Uint32 indices, Uint32 ins
     {
         float values[4];
         std::memcpy(values, boundInstances->bytes.data() + instanceOffset + i * 32, sizeof(values));
-        Check(values[3] >= 0 && values[3] <= 3 && std::floor(values[3]) == values[3], "Invalid rotation in instance");
+        Check(values[3] >= 0 && values[3] <= 3.5f && std::floor(values[3] * 2) == values[3] * 2, "Invalid rotation in instance");
         instanceTurns.push_back(values[3]);
     }
     ++draws; drawnInstances += instances;
@@ -226,6 +226,25 @@ int main(int argc, char** argv)
                   std::abs(values[1] - road->surface.elevation - .001f) < .00001f &&
                   values[3] == GetRoadVisual(*road).quarterTurns,
                   "Slope, center elevation or orientation was lost in the GPU instance stream");
+        }
+        World diagonal(settings);
+        Check(diagonal.PlaceRoads({2, 2, 5, 5, true, true}).changed == 4 &&
+              diagonal.PlaceRoads({10, 3, 7, 6, true, true}).changed == 4, "Diagonal renderer fixture failed");
+        drawnInstances = 0; draws = 0; shapeInstances = {};
+        renderer.Prepare(diagonal); renderer.Draw(&pass);
+        Check(drawnInstances == 8 && draws == 2 && buffers == 11 &&
+              shapeInstances[static_cast<std::size_t>(RoadShape::Straight)] == 4 &&
+              shapeInstances[static_cast<std::size_t>(RoadShape::DeadEnd)] == 4,
+              "Diagonals did not share the existing mesh batches");
+        for (unsigned i = 0; i < 8; ++i)
+        {
+            float values[8];
+            std::memcpy(values, boundInstances->bytes.data() + i * 32, sizeof(values));
+            const auto* road = diagonal.GetRoadAt(static_cast<int>(values[0]), static_cast<int>(values[2]));
+            Check(road && values[4] == 0 && values[5] == 0 && values[6] == RoadDiagonalLength &&
+                  values[3] == GetRoadVisual(*road).quarterTurns &&
+                  values[7] == (GetRoadVisual(*road).shape == RoadShape::Straight ? 1.0f : 0.0f),
+                  "Diagonal orientation/scale/UV mode lost in instance stream");
         }
         World empty(settings);
         renderer.Prepare(empty);
