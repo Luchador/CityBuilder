@@ -60,7 +60,17 @@ void RoadRenderer::Initialize(SDL_GPUDevice* gpu, TextureManager& textures, SDL_
             auto geometry = LoadRoadMesh(path, asset);
             auto& mesh = meshes[i];
     
-            mesh.baseColor = &textures.Load(asset.texture, {TextureContent::Color, true});
+            if (asset.mixedJunction && (!geometry.hasTexcoords ||
+                !std::filesystem::exists(std::filesystem::path(unicodeBase) / "assets" / asset.texture)))
+            {
+                if (!untexturedAsphalt)
+                {
+                    constexpr std::array<Uint8, 4> asphalt{70, 72, 74, 255};
+                    untexturedAsphalt = textures.CreateRgba(1, 1, asphalt, {TextureContent::Color, false});
+                }
+                mesh.baseColor = untexturedAsphalt.get();
+            }
+            else mesh.baseColor = &textures.Load(asset.texture, {TextureContent::Color, true});
             maxMipLevels = std::max(maxMipLevels, mesh.baseColor->MipLevels());
             mesh.vertices = UploadBuffer(device, geometry.vertices.data(), static_cast<Uint32>(geometry.vertices.size() * sizeof(StaticMeshVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
             mesh.indices = UploadBuffer(device, geometry.indices.data(), static_cast<Uint32>(geometry.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
@@ -244,6 +254,7 @@ void RoadRenderer::Release() noexcept
         }
         mesh = {};
     }
+    untexturedAsphalt.reset();
     if (pipeline) SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
     if (fragmentShader) SDL_ReleaseGPUShader(device, fragmentShader);
     if (vertexShader) SDL_ReleaseGPUShader(device, vertexShader);

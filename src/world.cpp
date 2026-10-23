@@ -116,7 +116,7 @@ std::optional<Road> World::PlannedRoadAt(int x, int z, const RoadPath* path, con
             if (existing) road = *existing;
             else { road.tileX = x; road.tileZ = z; ReadRoadSurface(terrain, x, z, road.surface); }
             road.diagonalAxis = tile.diagonalAxis;
-            road.transitionConnections = tile.transitionConnections;
+            road.mixedConnections = tile.mixedConnections;
             return road;
         }
     }
@@ -143,7 +143,7 @@ std::uint8_t World::RoadConnectionsAt(const Road& road, const RoadPath* path, co
 RoadPlacementStatus World::CheckRoadFootprint(const Road& road, const RoadPath& path, const RoadPlan& plan) const
 {
     const int x = road.tileX, z = road.tileZ;
-    const bool flatOnly = road.diagonalAxis || road.transitionConnections;
+    const bool flatOnly = road.diagonalAxis || road.mixedConnections;
     for (int pz = z - 1; pz <= z + 1; ++pz) for (int px = x - 1; px <= x + 1; ++px)
     {
         if (!RoadReservesTile(road, px, pz)) continue;
@@ -167,8 +167,9 @@ RoadPlacementStatus World::CheckRoadFootprint(const Road& road, const RoadPath& 
     for (int nz = z - 2; nz <= z + 2; ++nz) for (int nx = x - 2; nx <= x + 2; ++nx)
     {
         if (nx == x && nz == z) continue;
-        const auto other = PlannedRoadAt(nx, nz, &path, &plan);
-        if (other && RoadCellsOverlap(road, *other)) return RoadPlacementStatus::Occupied;
+        auto other = PlannedRoadAt(nx, nz, &path, &plan);
+        if (other) other->connections = RoadConnectionsAt(*other, &path, &plan);
+        if (other && RoadMeshesOverlap(road, *other)) return RoadPlacementStatus::Occupied;
     }
     return GetRoadAt(x, z) ? RoadPlacementStatus::ExistingRoad : RoadPlacementStatus::Allowed;
 }
@@ -187,12 +188,10 @@ RoadPlan World::PlanRoadsInternal(const RoadPath& path, std::uint8_t singleConne
         const auto* existing = GetRoadAt(x, z);
         PlannedRoadTile tile{x, z, existing ? RoadPlacementStatus::ExistingRoad : RoadPlacementStatus::Allowed,
             static_cast<std::uint8_t>((existing ? existing->diagonalAxis : 0) | DiagonalRoadAxis(required)),
-            existing ? existing->transitionConnections : std::uint8_t{0}};
+            existing ? existing->mixedConnections : std::uint8_t{0}};
         RoadSurface surface;
         const auto status = ReadRoadSurface(terrain, x, z, surface);
         if (status != RoadPlacementStatus::Allowed) tile.status = status;
-        else if (tile.transitionConnections && (required & ~tile.transitionConnections))
-            tile.status = RoadPlacementStatus::UnsupportedConnection;
         else if ((required & 240) && !DiagonalRoadAxis(required))
             tile.status = RoadPlacementStatus::UnsupportedConnection;
         else if (!(required & 240) && (required & surface.AllowedConnections()) != required)
@@ -201,27 +200,44 @@ RoadPlan World::PlanRoadsInternal(const RoadPath& path, std::uint8_t singleConne
     });
 
     // Discover end conversions against the complete proposed path. A temporary
-    // all-port probe also finds missing-center diagonal junctions. Assign all
+    // all-port probe also finds missing-center junctions. Assign all
     // discoveries together so reversing the drag has identical results.
     auto discovered = plan.tiles;
     for (std::size_t i = 0; i < plan.tiles.size(); ++i)
     {
         const auto& tile = plan.tiles[i];
-        if (!RoadPlacementAccepted(tile.status) || tile.transitionConnections) continue;
+        if (!RoadPlacementAccepted(tile.status)) continue;
         auto road = *PlannedRoadAt(tile.x, tile.z, &path, &plan);
-        road.diagonalAxis = 255; // probe only; never stored in the world
-        auto connections = RoadConnectionsAt(road, &path, &plan);
         const auto required = requiredAt(tile.x, tile.z);
         const auto* existing = GetRoadAt(tile.x, tile.z);
+        // A reused diagonal/mixed road must not acquire incidental side arms.
+        // Only a route requesting new ports may upgrade an existing module.
+        road.diagonalAxis = existing ? static_cast<std::uint8_t>(RoadPorts(*existing) | required) : 255;
+        road.mixedConnections = 0; // probe only; never stored in the world
+        auto connections = RoadConnectionsAt(road, &path, &plan);
+        if (!existing && (required & 240))
+        {
+            // A nearby grid road running across this port is not an approach.
+            // Only discover grid arms that point toward the new diagonal tile.
+            constexpr int dx[]{-1, 0, 1, 0}, dz[]{0, -1, 0, 1};
+            for (int d = 0; d < 4; ++d) if (connections & (1 << d))
+            {
+                const auto neighbor = PlannedRoadAt(tile.x + dx[d], tile.z + dz[d], &path, &plan);
+                if (!neighbor || neighbor->mixedConnections) continue;
+                const auto along = RoadConnectionsAt(*neighbor, &path, &plan);
+                const auto axes = along | RotateRoadConnections(along, 2);
+                if (axes && !(axes & (1 << d))) connections &= static_cast<std::uint8_t>(~(1 << d));
+            }
+        }
         // A disconnected requested arm must still constrain the intended shape.
         connections |= required;
         if (existing) connections |= existing->connections;
         auto& proposed = discovered[i];
         if ((connections & 15) && (connections & 240))
         {
-            if (IsRoadTransition(connections))
+            if (SupportedMixedConnections(connections))
             {
-                proposed.transitionConnections = connections;
+                proposed.mixedConnections = connections;
                 proposed.diagonalAxis = 0;
             }
             else proposed.status = RoadPlacementStatus::UnsupportedConnection;
@@ -246,15 +262,16 @@ RoadPlan World::PlanRoadsInternal(const RoadPath& path, std::uint8_t singleConne
         {
             const auto& tile = plan.tiles[i];
             if (!RoadPlacementAccepted(tile.status)) continue;
-            const auto road = *PlannedRoadAt(tile.x, tile.z, &path, &plan);
+            auto road = *PlannedRoadAt(tile.x, tile.z, &path, &plan);
+            road.connections = RoadConnectionsAt(road, &path, &plan);
             auto& proposed = checked[i];
             proposed.status = CheckRoadFootprint(road, path, plan);
             if (!RoadPlacementAccepted(proposed.status)) { changed = true; continue; }
-            const auto connections = RoadConnectionsAt(road, &path, &plan);
+            const auto connections = road.connections;
             const auto* existing = GetRoadAt(tile.x, tile.z);
             const bool layoutChanged = existing && (tile.diagonalAxis != existing->diagonalAxis ||
-                tile.transitionConnections != existing->transitionConnections);
-            if ((tile.transitionConnections && connections != tile.transitionConnections) ||
+                tile.mixedConnections != existing->mixedConnections);
+            if ((tile.mixedConnections && connections != tile.mixedConnections) ||
                 (tile.diagonalAxis && !SupportedDiagonalConnections(connections)) ||
                 (layoutChanged && connections == existing->connections))
             {
@@ -265,6 +282,26 @@ RoadPlan World::PlanRoadsInternal(const RoadPath& path, std::uint8_t singleConne
             {
                 if (const auto axis = DiagonalRoadAxis(connections ? connections : requiredAt(tile.x, tile.z)))
                 { proposed.diagonalAxis = axis; changed = true; }
+            }
+            // Connecting a neighbor can widen its mesh even if it is not being
+            // placed/upgraded by this path. Check that resulting shape as well.
+            if (RoadPlacementAccepted(proposed.status))
+            {
+                for (int nz = tile.z - 1; nz <= tile.z + 1; ++nz)
+                    for (int nx = tile.x - 1; nx <= tile.x + 1; ++nx)
+                    {
+                        if (path.Contains(nx, nz) && RoadPlacementAccepted(plan.tiles[path.IndexOf(nx, nz)].status)) continue;
+                        const auto* old = GetRoadAt(nx, nz);
+                        if (!old) continue;
+                        auto neighbor = *old;
+                        neighbor.connections = RoadConnectionsAt(neighbor, &path, &plan);
+                        if (neighbor.connections == old->connections) continue;
+                        const auto status = (neighbor.diagonalAxis && !SupportedDiagonalConnections(neighbor.connections)) ||
+                            (neighbor.mixedConnections && neighbor.connections != neighbor.mixedConnections) ?
+                            RoadPlacementStatus::UnsupportedConnection : CheckRoadFootprint(neighbor, path, plan);
+                        if (!RoadPlacementAccepted(status))
+                        { proposed.status = status; changed = true; }
+                    }
             }
         }
         plan.tiles = std::move(checked);
@@ -278,7 +315,7 @@ RoadPlan World::PlanRoadsInternal(const RoadPath& path, std::uint8_t singleConne
             {
                 const auto road = *PlannedRoadAt(tile.x, tile.z, &path, &plan);
                 const auto connections = RoadConnectionsAt(road, &path, &plan);
-                if (tile.diagonalAxis != existing->diagonalAxis || tile.transitionConnections != existing->transitionConnections ||
+                if (tile.diagonalAxis != existing->diagonalAxis || tile.mixedConnections != existing->mixedConnections ||
                     (tile.diagonalAxis && connections != existing->connections && std::popcount(connections) >= 3))
                     tile.status = RoadPlacementStatus::UpgradeRoad;
             }
@@ -305,7 +342,7 @@ void World::InsertRoad(const PlannedRoadTile& tile)
 {
     RoadSurface surface;
     ReadRoadSurface(terrain, tile.x, tile.z, surface);
-    roads.push_back({nextInfrastructureId++, tile.x, tile.z, surface, 0, tile.diagonalAxis, tile.transitionConnections});
+    roads.push_back({nextInfrastructureId++, tile.x, tile.z, surface, 0, tile.diagonalAxis, tile.mixedConnections});
     const auto index = TileIndex(tile.x, tile.z);
     roadAtTile[index] = static_cast<std::uint32_t>(roads.size());
     tiles[index].infrastructureId = roads.back().id;
@@ -368,7 +405,7 @@ RoadPlacementResult World::CommitRoadPlan(const RoadPlan& plan)
         {
             auto& road = roads[roadAtTile[TileIndex(tile.x, tile.z)] - 1];
             road.diagonalAxis = tile.diagonalAxis;
-            road.transitionConnections = tile.transitionConnections;
+            road.mixedConnections = tile.mixedConnections;
             ++roadRevision; ++result.changed;
         }
     }

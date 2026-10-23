@@ -251,9 +251,9 @@ namespace
             }
         }
         // The R channel distinguishes diagonal anchors from unbuildable shoulders,
-        // so a single click can reuse an anchor but a cardinal route cannot cross it.
+        // so an anchor can be reused while shoulders remain unavailable to zoning.
         const auto pixels = BuildPlannedRoadPreviewPixels(world, world.PlanRoads({2, 2, 4, 4, true, true}), {3, 3, 4, 3});
-        Check(pixels[0] == RoadDiagonalNWSE && pixels[1] == 255 && pixels[2] == 0 && pixels[4] == 0,
+        Check(pixels[0] == RoadDiagonalNWSE && pixels[1] == 255 && pixels[2] == 15 && pixels[4] == 0,
               "Diagonal eligibility metadata lost axis or shoulder occupancy");
         std::cout << "PASS: diagonal footprint preview, partial/blocked/reused placement, and zone exclusion\n";
     }

@@ -7,7 +7,7 @@
 
 StaticMesh LoadRoadMesh(const std::filesystem::path& path, const RoadAsset& asset)
 {
-    auto geometry = LoadStaticGlb(path, 1.0f / MetersPerTile);
+    auto geometry = LoadStaticGlb(path, 1.0f / MetersPerTile, asset.mixedJunction);
     if (asset.fitGridTransition)
     {
         // Both supplied exports start at world X=-8 m. Move their bend tile
@@ -44,7 +44,9 @@ StaticMesh LoadRoadMesh(const std::filesystem::path& path, const RoadAsset& asse
     }
     for (auto& v : geometry.vertices)
     {
-        if (!asset.fitGridTransition && (std::abs(v.x) > .5001f || std::abs(v.z) > .5001f))
+        if (asset.mixedJunction && std::abs(v.x) + std::abs(v.z) > 1.0001f)
+            throw std::runtime_error(std::string(asset.model) + " must fit the mixed-junction diamond footprint");
+        if (!asset.fitGridTransition && !asset.mixedJunction && (std::abs(v.x) > .5001f || std::abs(v.z) > .5001f))
             throw std::runtime_error(std::string(asset.model) + " must fit a centered 16 x 16 meter source tile");
         v.u = v.u * asset.uScale + asset.uOffset;
         if (asset.extendDiagonalApproaches)

@@ -18,9 +18,11 @@ struct StaticMesh
 {
     std::vector<StaticMeshVertex> vertices;
     std::vector<std::uint32_t> indices;
+    bool hasTexcoords = true;
 };
 
 // Static, uncompressed GLB triangles with normals and TEXCOORD_0. Bakes scene
 // node transforms, including the normal inverse transpose and mirrored winding.
+// Missing UVs are allowed only by explicit opt-in (filled with zero).
 // Keeps the authored axes, pivot and UVs. unitsPerMeter applies to all axes.
-StaticMesh LoadStaticGlb(const std::filesystem::path& path, float unitsPerMeter = 1.0f);
+StaticMesh LoadStaticGlb(const std::filesystem::path& path, float unitsPerMeter = 1.0f, bool allowMissingTexcoords = false);

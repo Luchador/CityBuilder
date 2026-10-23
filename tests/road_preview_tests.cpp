@@ -1,5 +1,6 @@
 #include "zone_overlay.hpp"
 #include "world.hpp"
+#include "road_footprint.hpp"
 
 #include <algorithm>
 #include <cstring>
@@ -26,8 +27,12 @@ namespace
     {
         const auto plan = world.PlanRoads(*preview.roadPath);
         for (const auto& tile : plan.tiles)
+        {
             Check(roadImage->pixels[(tile.z * roadImage->width + tile.x) * 4 + 1] ==
                   (RoadPlacementAccepted(tile.status) ? 255 : 0), "Uploaded preview disagrees with the placement plan");
+            Check(roadImage->pixels[(tile.z * roadImage->width + tile.x) * 4 + 2] ==
+                RoadFootprintSides(tile.diagonalAxis, tile.mixedConnections), "Wrong planned shoulder mask");
+        }
     }
 }
 
@@ -127,6 +132,27 @@ int main()
         CheckPreview(world, longPreview);
         Check(updates - beforeLong == 8 && largestPatch <= 16 * 16,
               "Long diagonal uploaded a map-sized preview rectangle");
+        world.PlaceRoads({30, 30, 40, 30});
+        ToolPreview mixed;
+        mixed.roadPath = RoadPath{35, 30, 39, 26, true, true};
+        overlay.PrepareRoadPreview(world, mixed);
+        CheckPreview(world, mixed);
+        auto center = (30 * 128 + 35) * 4;
+        Check(roadImage->pixels[center + 1] == 255 && roadImage->pixels[center + 2] == (RoadNorth | RoadEast),
+              "Mixed T preview did not reserve the correct shoulders");
+        world.GetTile(36, 29).buildingId = 22;
+        overlay.Update(world, {36, 29, 36, 29});
+        overlay.PrepareRoadPreview(world, mixed);
+        CheckPreview(world, mixed);
+        Check(roadImage->pixels[center + 1] == 0, "Mixed T preview ignored blocked approach");
+        world.GetTile(36, 29).buildingId = NoBuilding;
+        overlay.Update(world, {36, 29, 36, 29});
+        Check(world.PlaceRoads(*mixed.roadPath).evaluation.upgrades == 1, "Mixed T commit failed");
+        mixed.roadPath = RoadPath{35, 30, 31, 34, true, true};
+        overlay.PrepareRoadPreview(world, mixed);
+        CheckPreview(world, mixed);
+        Check(roadImage->pixels[center + 1] == 255 && roadImage->pixels[center + 2] == 15,
+              "Mixed cross preview did not reserve all shoulders");
         overlay.Release(); overlay.Release();
         Check(!texturesAlive && !samplersAlive, "Preview resources leaked");
         std::cout << "PASS: uploaded junction preview, obstacle/revision invalidation, cache, bounded batches, failed-upload retry and cleanup\n";

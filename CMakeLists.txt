@@ -75,6 +75,15 @@ if(CITY_BUILD_ROAD_TESTS)
     add_test(NAME CityRoadTests COMMAND CityRoadTests
         "${CMAKE_CURRENT_SOURCE_DIR}/assets/models/transportation/roads/road_straight.glb"
         "${CMAKE_CURRENT_BINARY_DIR}")
+    add_executable(CityMixedRoadTests tests/mixed_road_tests.cpp src/world.cpp src/terrain.cpp src/static_mesh.cpp src/road_mesh.cpp)
+    target_compile_features(CityMixedRoadTests PRIVATE cxx_std_20)
+    target_include_directories(CityMixedRoadTests PRIVATE src)
+    target_include_directories(CityMixedRoadTests SYSTEM PRIVATE "${renderkit_cgltf_SOURCE_DIR}")
+    add_test(NAME CityMixedRoadTests COMMAND CityMixedRoadTests "${CMAKE_CURRENT_SOURCE_DIR}/assets")
+    add_executable(CityGenerateRoadCollision EXCLUDE_FROM_ALL tools/generate_road_collision.cpp src/static_mesh.cpp src/road_mesh.cpp)
+    target_compile_features(CityGenerateRoadCollision PRIVATE cxx_std_20)
+    target_include_directories(CityGenerateRoadCollision PRIVATE src)
+    target_include_directories(CityGenerateRoadCollision SYSTEM PRIVATE "${renderkit_cgltf_SOURCE_DIR}")
     add_executable(CityRoadRendererTests tests/road_renderer_tests.cpp src/road_renderer.cpp
         src/static_mesh.cpp src/road_mesh.cpp src/world.cpp src/terrain.cpp)
     target_compile_features(CityRoadRendererTests PRIVATE cxx_std_20)

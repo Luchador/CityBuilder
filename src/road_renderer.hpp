@@ -6,7 +6,7 @@
 class World;
 
 // Owns shared geometry for each shape; borrows cached base-color textures.
-// One instance buffer groups roads into at most seven draw calls.
+// One instance buffer groups roads into one draw per occupied mesh shape.
 class RoadRenderer
 {
 public:
@@ -29,6 +29,7 @@ private:
     SDL_GPUShader* fragmentShader = nullptr;
     SDL_GPUGraphicsPipeline* pipeline = nullptr;
     SDL_GPUSampler* sampler = nullptr;
+    std::unique_ptr<Texture> untexturedAsphalt;
     struct Mesh
     {
         const Texture* baseColor = nullptr;

@@ -26,7 +26,7 @@ namespace
     }
 }
 
-StaticMesh LoadStaticGlb(const std::filesystem::path& path, float unitsPerMeter)
+StaticMesh LoadStaticGlb(const std::filesystem::path& path, float unitsPerMeter, bool allowMissingTexcoords)
 {
     if (!std::isfinite(unitsPerMeter) || unitsPerMeter <= 0)
         throw std::invalid_argument("Model scale must be finite and positive");
@@ -94,10 +94,11 @@ StaticMesh LoadStaticGlb(const std::filesystem::path& path, float unitsPerMeter)
                 const auto* positions = cgltf_find_accessor(&primitive, cgltf_attribute_type_position, 0);
                 const auto* normals = cgltf_find_accessor(&primitive, cgltf_attribute_type_normal, 0);
                 const auto* uvs = cgltf_find_accessor(&primitive, cgltf_attribute_type_texcoord, 0);
-                if (!positions || !normals || !uvs || positions->type != cgltf_type_vec3 ||
-                    normals->type != cgltf_type_vec3 || uvs->type != cgltf_type_vec2 ||
-                    !positions->count || positions->count != normals->count || positions->count != uvs->count)
+                if (!positions || !normals || (!uvs && !allowMissingTexcoords) || positions->type != cgltf_type_vec3 ||
+                    normals->type != cgltf_type_vec3 || (uvs && uvs->type != cgltf_type_vec2) ||
+                    !positions->count || positions->count != normals->count || (uvs && positions->count != uvs->count))
                     throw std::runtime_error("GLB requires matching positions, normals and TEXCOORD_0");
+                if (!uvs) mesh.hasTexcoords = false;
                 const auto count = primitive.indices ? primitive.indices->count : positions->count;
                 if (!count || count % 3 || positions->count > MaxVertices - mesh.vertices.size() ||
                     count > MaxIndices - mesh.indices.size())
@@ -111,10 +112,10 @@ StaticMesh LoadStaticGlb(const std::filesystem::path& path, float unitsPerMeter)
                 const auto base = static_cast<std::uint32_t>(mesh.vertices.size());
                 for (cgltf_size i = 0; i < positions->count; ++i)
                 {
-                    float pos[3], normal[3], uv[2];
+                    float pos[3], normal[3], uv[2]{};
                     if (!cgltf_accessor_read_float(positions, i, pos, 3) ||
                         !cgltf_accessor_read_float(normals, i, normal, 3) ||
-                        !cgltf_accessor_read_float(uvs, i, uv, 2))
+                        (uvs && !cgltf_accessor_read_float(uvs, i, uv, 2)))
                         throw std::runtime_error("Cannot read GLB vertex data");
                     const Vec3 position{
                         (m[0] * pos[0] + m[4] * pos[1] + m[8] * pos[2] + m[12]) * unitsPerMeter,

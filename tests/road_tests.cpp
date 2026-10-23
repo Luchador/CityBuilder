@@ -1,6 +1,7 @@
 #include "road_tool.hpp"
 #include "static_mesh.hpp"
 #include "road_mesh.hpp"
+#include "road_footprint.hpp"
 #include "toolcontroller.hpp"
 #include "world.hpp"
 #include "world_zoning.hpp"
@@ -50,7 +51,7 @@ namespace
         controller.SetTool(std::make_unique<RoadTool>());
         Check(Empty(controller.Update(At(2, 3), .016f)) && Empty(controller.End(At(2, 3))),
               "Hover or flyout release placed a road");
-        Check(controller.BuildPreview().tiles == ToolTileRect{2, 3, 2, 3} &&
+        Check(controller.BuildPreview().tiles == ToolTileRect{1, 2, 3, 4} &&
               !controller.BuildPreview().zoneType && controller.BuildPreview().placementAllowed,
               "Valid road preview missing");
         world.GetTile(2, 3).zoneType = ZoneType::ResidentialLight;
@@ -158,8 +159,8 @@ namespace
             // Independent shader membership check: only the L, never its interior.
             for (int z = 0; z < 16; ++z) for (int x = 0; x < 16; ++x)
             {
-                const bool inBounds = x >= preview.tiles->minX && x <= preview.tiles->maxX &&
-                                      z >= preview.tiles->minZ && z <= preview.tiles->maxZ;
+                const bool inBounds = x >= std::min(7, end.x) && x <= std::max(7, end.x) &&
+                                      z >= std::min(7, end.z) && z <= std::max(7, end.z);
                 const bool onLeg = request.path.xFirst ? (z == 7 || x == end.x) : (x == 7 || z == end.z);
                 Check(selected.contains({x, z}) == (inBounds && onLeg), "Preview route membership mismatch");
             }
@@ -295,7 +296,7 @@ namespace
     {
         for (const auto& asset : RoadAssets)
         {
-            if (asset.extendDiagonalApproaches) continue;
+            if (asset.extendDiagonalApproaches || asset.fitGridTransition || asset.mixedJunction) continue;
             const auto mesh = LoadStaticGlb(directory / std::filesystem::path(asset.model).filename(), 1.0f / MetersPerTile);
             std::uint8_t openings = 0;
             for (unsigned d = 0; d < 4; ++d)
@@ -568,8 +569,8 @@ namespace
         auto cardinal = FlatWorld();
         cardinal.PlaceRoads({2, 7, 12, 7});
         const auto mixed = cardinal.PlaceRoads({3, 3, 11, 11, true, true});
-        Check(mixed.evaluation.blocked > 0 && !cardinal.GetRoadAt(7, 7)->diagonalAxis,
-              "Mixed cardinal/diagonal junction accepted");
+        Check(mixed.evaluation.blocked == 0 && cardinal.GetRoadAt(7, 7)->mixedConnections ==
+              (RoadWest | RoadEast | RoadNorthWest | RoadSouthEast), "Mixed intersection failed");
         std::cout << "PASS: all diagonal T orientations, cross/extension/gap upgrades, stable IDs, reuse, partial approaches and rejected bends/half-tile crossings\n";
     }
 
@@ -651,13 +652,17 @@ namespace
                 {
                     const auto* a = world.GetRoadAt(px, pz); const auto* b = backward.GetRoadAt(px, pz);
                     Check((a != nullptr) == (b != nullptr) && (!a ||
-                          (a->connections == b->connections && a->diagonalAxis == b->diagonalAxis)),
+                          (a->connections == b->connections && a->diagonalAxis == b->diagonalAxis && a->mixedConnections == b->mixedConnections)),
                           "Reversing a drag changed the road topology");
                 }
                 for (const auto& road : world.GetRoads())
                 {
                     if (road.diagonalAxis) Check(SupportedDiagonalConnections(road.connections),
                         "A neighboring network edit created an unsupported diagonal bend");
+                    if (road.mixedConnections) Check(SupportedMixedConnections(road.connections) &&
+                        road.connections == road.mixedConnections, "Mixed junction lost an approach");
+                    for (const auto& other : world.GetRoads()) if (road.id < other.id)
+                        Check(!RoadMeshesOverlap(road, other), "Network edit created overlapping pavement");
                     constexpr int nx[] = {-1, 0, 1, 0, -1, 1, 1, -1}, nz[] = {0, -1, 0, 1, -1, -1, 1, 1};
                     for (int i = 0; i < 8; ++i) if (road.connections & (1 << i))
                     {

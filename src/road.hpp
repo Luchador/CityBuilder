@@ -37,7 +37,13 @@ constexpr bool SupportedDiagonalConnections(std::uint8_t connections)
         std::popcount(connections) >= 3);
 }
 
-enum class RoadShape : std::size_t { Straight, ThreeWay, FourWay, DeadEnd, Curve, DiagonalThreeWay, DiagonalFourWay, GridToDiagonalLeft, GridToDiagonalRight, Count };
+enum class RoadShape : std::size_t
+{
+    Straight, ThreeWay, FourWay, DeadEnd, Curve,
+    DiagonalThreeWay, DiagonalFourWay, GridToDiagonalLeft, GridToDiagonalRight,
+    MixedThreeWayGridNE, MixedThreeWayGridNW, MixedThreeWayDiagonalE, MixedThreeWayDiagonalN,
+    MixedFourWayNESW, MixedFourWayNWSE, Count
+};
 struct RoadVisual
 {
     RoadShape shape = RoadShape::DeadEnd;
@@ -73,6 +79,7 @@ struct RoadAsset
     float uScale = 1.0f, uOffset = 0.0f;
     bool extendDiagonalApproaches = false;
     bool fitGridTransition = false;
+    bool mixedJunction = false; // Authored diagonally, with optional UVs/texture.
 };
 
 inline constexpr char StraightRoadModelPath[] = "models/transportation/roads/road_straight.glb";
@@ -94,8 +101,34 @@ inline constexpr std::array<RoadAsset, static_cast<std::size_t>(RoadShape::Count
     {"models/transportation/roads/road_grid_to_diagonal_curve_left.glb", StraightRoadTexturePath,
         RoadEast | RoadSouthWest, 1, 0, false, true},
     {"models/transportation/roads/road_grid_to_diagonal_curve_right.glb", StraightRoadTexturePath,
-        RoadEast | RoadNorthWest, 1, 0, false, true}
+        RoadEast | RoadNorthWest, 1, 0, false, true},
+    {"models/transportation/roads/road_mixed_3way_grid_ne.glb", "models/transportation/roads/road_mixed_3way_grid_ne_basecolor.png",
+        RoadWest | RoadEast | RoadNorthEast, 1, 0, false, false, true},
+    {"models/transportation/roads/road_mixed_3way_grid_nw.glb", "models/transportation/roads/road_mixed_3way_grid_nw_basecolor.png",
+        RoadWest | RoadEast | RoadNorthWest, 1, 0, false, false, true},
+    {"models/transportation/roads/road_mixed_3way_diagonal_e.glb", "models/transportation/roads/road_mixed_3way_diagonal_e_basecolor.png",
+        RoadNorthWest | RoadSouthEast | RoadEast, 1, 0, false, false, true},
+    {"models/transportation/roads/road_mixed_3way_diagonal_n.glb", "models/transportation/roads/road_mixed_3way_diagonal_n_basecolor.png",
+        RoadNorthWest | RoadSouthEast | RoadNorth, 1, 0, false, false, true},
+    {"models/transportation/roads/road_mixed_4way_ne_sw.glb", "models/transportation/roads/road_mixed_4way_ne_sw_basecolor.png",
+        RoadWest | RoadEast | RoadNorthEast | RoadSouthWest, 1, 0, false, false, true},
+    {"models/transportation/roads/road_mixed_4way_nw_se.glb", "models/transportation/roads/road_mixed_4way_nw_se_basecolor.png",
+        RoadWest | RoadEast | RoadNorthWest | RoadSouthEast, 1, 0, false, false, true}
 }};
+
+constexpr bool IsMixedRoadJunction(std::uint8_t connections)
+{
+    for (const auto& asset : RoadAssets)
+        if (asset.mixedJunction)
+            for (unsigned turn = 0; turn < 4; ++turn)
+                if (RotateRoadConnections(asset.connections, turn) == connections) return true;
+    return false;
+}
+
+constexpr bool SupportedMixedConnections(std::uint8_t connections)
+{
+    return IsRoadTransition(connections) || IsMixedRoadJunction(connections);
+}
 
 constexpr RoadVisual GetRoadVisual(std::uint8_t connections)
 {
@@ -151,19 +184,20 @@ struct Road
     // Allowed corridor axes, including both axes at a junction. 0 keeps the
     // cardinal rules. A pair of adjacent diagonal ports is not a supported bend.
     std::uint8_t diagonalAxis = 0;
-    // A transition has exactly one cardinal and one diagonal port; no extra arms.
-    std::uint8_t transitionConnections = 0;
+    // Exact ports of a grid/diagonal bend or junction. Zero uses the axis rules.
+    // The planner upgrades this mask only when a matching mesh is available.
+    std::uint8_t mixedConnections = 0;
 };
 
 constexpr std::uint8_t RoadPorts(const Road& road)
 {
-    return road.transitionConnections ? road.transitionConnections :
+    return road.mixedConnections ? road.mixedConnections :
         road.diagonalAxis ? road.diagonalAxis : road.surface.AllowedConnections();
 }
 
 constexpr RoadVisual GetRoadVisual(const Road& road)
 {
-    if (road.transitionConnections) return GetRoadVisual(road.transitionConnections);
+    if (road.mixedConnections) return GetRoadVisual(road.mixedConnections);
     if (road.connections) return GetRoadVisual(road.connections);
     if (road.diagonalAxis)
         return GetRoadVisual(road.diagonalAxis == RoadDiagonalNWSE ? RoadNorthWest : RoadNorthEast);
@@ -288,7 +322,7 @@ struct PlannedRoadTile
     int x = 0, z = 0;
     RoadPlacementStatus status = RoadPlacementStatus::OutsideMap;
     std::uint8_t diagonalAxis = 0;
-    std::uint8_t transitionConnections = 0;
+    std::uint8_t mixedConnections = 0;
 };
 
 // One plan drives evaluation, preview and commit. In particular, a junction
