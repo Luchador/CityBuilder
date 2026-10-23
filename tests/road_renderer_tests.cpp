@@ -314,9 +314,12 @@ int main(int argc, char** argv)
                 { through = d; break; }
             if (through >= 0)
                 mixed.PlaceRoads({7 - 3 * dx[through], 7 - 3 * dz[through], 7 + 3 * dx[through], 7 + 3 * dz[through], true, through >= 4});
-            else // Form the diagonal corner before attaching its inside/outside branch.
-                for (int d = 4; d < 8; ++d) if (mask & (1 << d))
-                    mixed.PlaceRoads({7, 7, 7 + 3 * dx[d], 7 + 3 * dz[d], true, true});
+            else // Form the grid/diagonal corner before attaching its branch.
+            {
+                const int first=std::popcount(static_cast<unsigned>(mask & 15)) == 2 ? 0 : 4;
+                for (int d=first;d<first+4;++d) if (mask & (1 << d))
+                    mixed.PlaceRoads({7,7,7+3*dx[d],7+3*dz[d],true,d>=4});
+            }
             for (int d = 0; d < 8; ++d) if (mask & (1 << d))
                 mixed.PlaceRoads({7, 7, 7 + 3 * dx[d], 7 + 3 * dz[d], true, d >= 4});
             Check(mixed.GetRoadAt(7, 7)->mixedConnections == mask, "Mixed renderer fixture failed");

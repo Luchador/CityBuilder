@@ -68,7 +68,7 @@ namespace
                     for (int d = 0; d < 8; ++d)
                         if ((mask & (1 << d)) && (mask & RotateRoadConnections(static_cast<std::uint8_t>(1 << d), 2)))
                         { through = d; break; }
-                    // Adjacent-diagonal corner Ts have no through route;
+                    // Three-way corner junctions have no through route;
                     // their build sequences are covered by the corner tests.
                     if (through < 0) continue;
                     const auto throughMask = static_cast<std::uint8_t>((1 << through) |
@@ -314,6 +314,80 @@ namespace
         std::cout << "PASS: multi-tile ownership, single model instances, reuse, protected approaches and far-shoulder obstacles\n";
     }
 
+    void CheckGridCurveJunctions()
+    {
+        for (const auto shape : {RoadShape::GridCurveInnerThreeWay, RoadShape::GridCurveOuterThreeWay})
+            for (unsigned turn=0;turn<4;++turn)
+                for (bool branchFirst : {false,true}) for (bool reverse : {false,true})
+                {
+                    auto world=FlatWorld();
+                    const auto direction=[&](int d)
+                    { return std::countr_zero(static_cast<unsigned>(RotateRoadConnections(static_cast<std::uint8_t>(1 << d),turn))); };
+                    const int w=direction(0),n=direction(1);
+                    const int branch=direction(shape==RoadShape::GridCurveInnerThreeWay ? 4 : 6);
+                    RoadPath curve{Center+4*DX[w],Center+4*DZ[w],Center+4*DX[n],Center+4*DZ[n],DX[w]!=0};
+                    const auto add=[&](RoadPath path)
+                    {
+                        if (reverse)
+                        {
+                            std::swap(path.startX,path.endX);std::swap(path.startZ,path.endZ);
+                            // Reversing an L also swaps its first axis, keeping the same bend.
+                            if (!path.diagonal) path.xFirst=!path.xFirst;
+                        }
+                        const auto plan=world.PlanRoads(path);
+                        Check(plan.evaluation.valid && !plan.evaluation.blocked,"Grid curve approach was rejected");
+                        Check(world.PlaceRoads(path).changed==plan.evaluation.changes,"Grid curve plan/commit mismatch");
+                        CheckNetwork(world);
+                    };
+                    add(branchFirst ? Arm(branch) : curve);
+                    const auto id=world.GetRoadAt(Center,Center)->id;
+                    add(branchFirst ? curve : Arm(branch));
+                    const auto mask=RotateRoadConnections(RoadAssets[static_cast<std::size_t>(shape)].connections,turn);
+                    const auto* center=world.GetRoadAt(Center,Center);
+                    Check(center->id==id && center->connections==mask && center->mixedConnections==mask &&
+                          GetRoadVisual(*center).shape==shape,"Wrong grid curve junction or changed identity");
+                    const auto revision=world.GetRoadRevision();
+                    add(Arm(branch));add(curve);
+                    Check(world.GetRoadRevision()==revision,"Reused grid curve junction charged/changed");
+                    std::vector<Road> children;
+                    ForEachRoadModuleCell(mask,[&](auto cell)
+                    { children.push_back(*world.GetRoadAt(Center+cell.x,Center+cell.z)); });
+                    add(Arm((branch-4+2)%4+4));
+                    center=world.GetRoadAt(Center,Center);
+                    Check(center->id==id && GetRoadVisual(*center).shape==RoadShape::MixedFourWayArrow,
+                          "Grid curve junction did not upgrade to the arrow");
+                    for (const auto& child : children)
+                        Check(world.GetRoadAt(child.tileX,child.tileZ)->id==child.id &&
+                              world.GetRoadModuleAt(child.tileX,child.tileZ)->id==id,
+                              "Arrow upgrade lost existing covered-tile identity/ownership");
+                }
+        for (int branch : {4,6}) for (unsigned turn=0;turn<4;++turn) for (int kind=0;kind<4;++kind)
+        {
+            auto world=FlatWorld();
+            const auto direction=[&](int d)
+            { return std::countr_zero(static_cast<unsigned>(RotateRoadConnections(static_cast<std::uint8_t>(1 << d),turn))); };
+            const int w=direction(0),n=direction(1),d=direction(branch);
+            Check(!world.PlaceRoads(Arm(w)).evaluation.blocked && !world.PlaceRoads(Arm(n)).evaluation.blocked,
+                  "Blocked grid curve fixture failed");
+            const auto before=*world.GetRoadAt(Center,Center);
+            const int x=Center+DX[d],z=Center+DZ[d];
+            if (kind==0) world.GetTile(x,z).buildingId=123;
+            if (kind==1) world.GetTile(x,z).infrastructureId=123456;
+            if (kind>=2)
+            {
+                // Alter the far corner so the original grid bend stays level.
+                auto& terrain=const_cast<TerrainHeightmap&>(world.GetTerrain());
+                terrain.heights[(z+(DZ[d]>0))*terrain.dimensions.CornerStride()+x+(DX[d]>0)]=kind==2 ? -1.f : 2.f;
+            }
+            Check(world.PlaceRoads(Arm(d)).evaluation.blocked>0,"Obstructed grid curve junction accepted");
+            const auto* center=world.GetRoadAt(Center,Center);
+            Check(center->id==before.id && center->connections==before.connections && !center->mixedConnections,
+                  "Rejected grid curve upgrade damaged the original bend");
+            CheckNetwork(world);
+        }
+        std::cout << "PASS: inner/outer grid curve junctions, all rotations and build/drag orders, reuse, arrow upgrades and blocked-upgrade fallback\n";
+    }
+
     void CheckArrowUpgrades()
     {
         const auto& asset=RoadAssets[static_cast<std::size_t>(RoadShape::MixedFourWayArrow)];
@@ -376,7 +450,7 @@ int main(int argc, char** argv)
     try
     {
         if (argc != 2) throw std::runtime_error("Usage: CityMixedRoadTests assets-directory");
-        CheckGeometry(argv[1]); CheckAllJunctions(); CheckBendUpgrades(); CheckMissingCenters(); CheckObstacles(); CheckSlipModules(); CheckArrowUpgrades();
+        CheckGeometry(argv[1]); CheckAllJunctions(); CheckBendUpgrades(); CheckMissingCenters(); CheckObstacles(); CheckSlipModules(); CheckArrowUpgrades(); CheckGridCurveJunctions();
         return 0;
     }
     catch (const std::exception& e) { std::cerr << "FAIL: " << e.what() << '\n'; return 1; }

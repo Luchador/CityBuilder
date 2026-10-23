@@ -182,6 +182,37 @@ int main()
         Check(world.PlaceRoads(*arrow.roadPath).evaluation.upgrades==1 &&
               GetRoadVisual(*world.GetRoadAt(55,55)).shape==RoadShape::MixedFourWayArrow,
               "Arrow preview/commit mismatch");
+        // Add the inward or outward diagonal to an existing grid-aligned bend.
+        for (bool inner : {true,false})
+        {
+            const int x=100,z=inner ? 30 : 50,sign=inner ? -1 : 1;
+            Check(!world.PlaceRoads({x-4,z,x,z-4,true}).evaluation.blocked,"Grid curve preview fixture failed");
+            ToolPreview junction;
+            junction.roadPath=RoadPath{x,z,x+4*sign,z+4*sign,true,true};
+            overlay.PrepareRoadPreview(world,junction);
+            CheckPreview(world,junction);
+            const int root=(z*128+x)*4;
+            Check(roadImage->pixels[root+1]==255 && roadImage->pixels[root+2]==(inner ? 0x23 : 0x0f) &&
+                  roadImage->pixels[root]==(inner ? 6 : 0) && roadImage->pixels[root+3]==0,
+                  "Grid curve preview omitted an owned tile or shoulder");
+            world.GetTile(x+sign,z+sign).buildingId=123;
+            overlay.Update(world,{x+sign,z+sign,x+sign,z+sign});
+            overlay.PrepareRoadPreview(world,junction);
+            CheckPreview(world,junction);
+            Check(roadImage->pixels[root+1]==0,"Grid curve preview ignored a blocked diagonal");
+            world.GetTile(x+sign,z+sign).buildingId=NoBuilding;
+            overlay.Update(world,{x+sign,z+sign,x+sign,z+sign});
+            Check(world.PlaceRoads(*junction.roadPath).evaluation.upgrades==1 &&
+                  GetRoadVisual(*world.GetRoadAt(x,z)).shape==
+                    (inner ? RoadShape::GridCurveInnerThreeWay : RoadShape::GridCurveOuterThreeWay),
+                  "Grid curve preview/commit mismatch");
+            junction.roadPath=RoadPath{x,z,x-4*sign,z-4*sign,true,true};
+            overlay.PrepareRoadPreview(world,junction);
+            CheckPreview(world,junction);
+            Check(roadImage->pixels[root+1]==255 && roadImage->pixels[root+2]==0x2f &&
+                  roadImage->pixels[root]==6 && roadImage->pixels[root+3]==0,
+                  "Grid curve to arrow preview has the wrong footprint");
+        }
         world.PlaceRoads({80, 80, 84, 76, true, true});
         ToolPreview curve;
         curve.roadPath = RoadPath{80, 80, 84, 84, true, true};

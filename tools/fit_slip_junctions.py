@@ -40,12 +40,21 @@ def read_template(path, node_name='road_mixed_3way_grid_nw'):
         stride = v.get('byteStride',struct.calcsize(fmt))
         return [struct.unpack_from(fmt,blob,offset+i*stride) for i in range(a['count'])]
     primitives = doc['meshes'][node['mesh']]['primitives']
-    if len(primitives) != 1 or primitives[0].get('mode',4) != 4:
-        raise ValueError('Expected one indexed triangle primitive')
-    primitive = primitives[0]; ids = [row[0] for row in accessor(primitive['indices'])]
-    return {'vertices':accessor(primitive['attributes']['POSITION']),
-            'uv':accessor(primitive['attributes']['TEXCOORD_0']),
-            'indices':[ids[i:i+3] for i in range(0,len(ids),3)]}
+    if not primitives or any(p.get('mode',4) != 4 or 'indices' not in p for p in primitives):
+        raise ValueError('Expected indexed triangle primitives')
+    # Blender separates material slots into primitives. Fit all their geometry
+    # together; runtime road assets use one optional per-model base-color map.
+    result = {'vertices':[], 'uv':[], 'indices':[]}
+    for primitive in primitives:
+        positions = accessor(primitive['attributes']['POSITION'])
+        uvs = accessor(primitive['attributes']['TEXCOORD_0'])
+        ids = [row[0] for row in accessor(primitive['indices'])]
+        if len(positions) != len(uvs) or len(ids)%3 or any(i >= len(positions) for i in ids):
+            raise ValueError('Invalid triangle/UV accessor sizes')
+        offset = len(result['vertices'])
+        result['vertices'].extend(positions); result['uv'].extend(uvs)
+        result['indices'].extend([[offset+j for j in ids[i:i+3]] for i in range(0,len(ids),3)])
+    return result
 
 def clip(poly, distance):
     result = []

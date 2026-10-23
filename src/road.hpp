@@ -59,7 +59,7 @@ enum class RoadShape : std::size_t
     MixedThreeWayGridNE, MixedThreeWayGridNW, MixedThreeWayDiagonalE, MixedThreeWayDiagonalN,
     MixedFourWayNESW, MixedFourWayNWSE, DiagonalCurve,
     DiagonalCurveAcuteIntersection, DiagonalCurveReflexIntersection, DiagonalCurveDoubleIntersection,
-    MixedFourWayArrow, Count
+    MixedFourWayArrow, GridCurveInnerThreeWay, GridCurveOuterThreeWay, Count
 };
 struct RoadVisual
 {
@@ -114,6 +114,8 @@ inline constexpr std::array<RoadModuleCell, 4> NeSwSlipCells{{
     {-1, 0, RoadWest | RoadEast}, {-1, 1, RoadDiagonalNESW}}};
 inline constexpr std::array<RoadModuleCell, 3> ArrowSlipCells{{
     {-1, 0, RoadWest | RoadEast}, {0, -1, RoadNorth | RoadSouth}, {-1, -1, RoadDiagonalNWSE}}};
+inline constexpr std::array<RoadModuleCell, 2> GridCornerCells{{
+    {-1, 0, RoadWest | RoadEast}, {0, -1, RoadNorth | RoadSouth}}};
 inline constexpr int RoadFootprintRadius = 2;
 
 
@@ -185,7 +187,16 @@ inline constexpr std::array<RoadAsset, static_cast<std::size_t>(RoadShape::Count
     // adjoining straight cells; its source's 45-degree turn is already baked.
     {"models/transportation/roads/road_mixed_4way_arrow.glb",
         "models/transportation/roads/road_mixed_4way_arrow_basecolor.png",
-        RoadNorthWest | RoadSouthEast | RoadWest | RoadNorth, 1, 0, false, false, true, .5f, 0, ArrowSlipCells}
+        RoadNorthWest | RoadSouthEast | RoadWest | RoadNorth, 1, 0, false, false, true, .5f, 0, ArrowSlipCells},
+    // A W/N grid corner with a diagonal approaching from inside (NW) or
+    // outside (SE). Both include the cardinal approach cells. The inner
+    // model also includes NW, matching the four-way arrow's ownership.
+    {"models/transportation/roads/road_grid_curve_inner_3way.glb",
+        "models/transportation/roads/road_grid_curve_inner_3way_basecolor.png",
+        RoadWest | RoadNorth | RoadNorthWest, 1, 0, false, false, true, .5f, 0, ArrowSlipCells},
+    {"models/transportation/roads/road_grid_curve_outer_3way.glb",
+        "models/transportation/roads/road_grid_curve_outer_3way_basecolor.png",
+        RoadWest | RoadNorth | RoadSouthEast, 1, 0, false, false, true, .5f, 0, GridCornerCells}
 }};
 
 template<class Visitor> constexpr void ForEachRoadModuleCell(std::uint8_t mask, Visitor visit)
