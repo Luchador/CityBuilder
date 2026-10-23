@@ -312,8 +312,11 @@ int main(int argc, char** argv)
             for (int d = 0; d < 8; ++d)
                 if ((mask & (1 << d)) && (mask & RotateRoadConnections(static_cast<std::uint8_t>(1 << d), 2)))
                 { through = d; break; }
-            Check(through >= 0, "Mixed fixture needs through route");
-            mixed.PlaceRoads({7 - 3 * dx[through], 7 - 3 * dz[through], 7 + 3 * dx[through], 7 + 3 * dz[through], true, through >= 4});
+            if (through >= 0)
+                mixed.PlaceRoads({7 - 3 * dx[through], 7 - 3 * dz[through], 7 + 3 * dx[through], 7 + 3 * dz[through], true, through >= 4});
+            else // Form the diagonal corner before attaching its inside/outside branch.
+                for (int d = 4; d < 8; ++d) if (mask & (1 << d))
+                    mixed.PlaceRoads({7, 7, 7 + 3 * dx[d], 7 + 3 * dz[d], true, true});
             for (int d = 0; d < 8; ++d) if (mask & (1 << d))
                 mixed.PlaceRoads({7, 7, 7 + 3 * dx[d], 7 + 3 * dz[d], true, d >= 4});
             Check(mixed.GetRoadAt(7, 7)->mixedConnections == mask, "Mixed renderer fixture failed");
@@ -372,7 +375,7 @@ int main(int argc, char** argv)
         Check(drawnInstances == 0 && buffers == MeshBuffers, "Switching worlds retained stale road instances");
         renderer.Release(); renderer.Release();
         CheckReleased();
-        std::cout << "PASS: sixteen shared mesh batches, diagonal curves and all mixed junction rotations, diagonal junction upgrades, instance layout, upload cache, failure recovery and cleanup\n";
+        std::cout << "PASS: nineteen shared mesh batches, diagonal curves and all mixed junction rotations, diagonal junction upgrades, instance layout, upload cache, failure recovery and cleanup\n";
         return 0;
     }
     catch (const std::exception& error)

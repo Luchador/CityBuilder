@@ -171,6 +171,28 @@ int main()
         Check(world.PlaceRoads(*curve.roadPath).evaluation.upgrades == 1, "Curve preview did not match commit");
         overlay.PrepareRoadPreview(world, curve);
         CheckPreview(world, curve);
+        // Reuse the corner above: inside T, then through-road intersection.
+        curve.roadPath = RoadPath{80, 80, 84, 80};
+        overlay.PrepareRoadPreview(world, curve);
+        CheckPreview(world, curve);
+        Check(roadImage->pixels[center + 1] == 255 &&
+              roadImage->pixels[center + 2] == (RoadNorth | RoadEast | RoadSouth),
+              "Inside corner junction preview has the wrong footprint");
+        world.GetTile(81, 80).buildingId = 44;
+        overlay.Update(world, {81, 80, 81, 80});
+        overlay.PrepareRoadPreview(world, curve);
+        CheckPreview(world, curve);
+        Check(roadImage->pixels[center + 1] == 0, "Inside corner junction preview ignored obstruction");
+        world.GetTile(81, 80).buildingId = NoBuilding;
+        overlay.Update(world, {81, 80, 81, 80});
+        Check(world.PlaceRoads(*curve.roadPath).evaluation.upgrades == 1, "Inside junction preview/commit mismatch");
+        curve.roadPath = RoadPath{80, 80, 76, 80};
+        overlay.PrepareRoadPreview(world, curve);
+        CheckPreview(world, curve);
+        Check(roadImage->pixels[center + 1] == 255 &&
+              roadImage->pixels[center + 2] == (RoadNorth | RoadEast | RoadSouth),
+              "Double corner junction preview has the wrong footprint");
+        Check(world.PlaceRoads(*curve.roadPath).evaluation.upgrades == 1, "Double junction preview/commit mismatch");
         overlay.Release(); overlay.Release();
         Check(!texturesAlive && !samplersAlive, "Preview resources leaked");
         std::cout << "PASS: uploaded junction preview, obstacle/revision invalidation, cache, bounded batches, failed-upload retry and cleanup\n";

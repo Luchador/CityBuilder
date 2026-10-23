@@ -56,7 +56,8 @@ enum class RoadShape : std::size_t
     Straight, ThreeWay, FourWay, DeadEnd, Curve,
     DiagonalThreeWay, DiagonalFourWay, GridToDiagonalLeft, GridToDiagonalRight,
     MixedThreeWayGridNE, MixedThreeWayGridNW, MixedThreeWayDiagonalE, MixedThreeWayDiagonalN,
-    MixedFourWayNESW, MixedFourWayNWSE, DiagonalCurve, Count
+    MixedFourWayNESW, MixedFourWayNWSE, DiagonalCurve,
+    DiagonalCurveAcuteIntersection, DiagonalCurveReflexIntersection, DiagonalCurveDoubleIntersection, Count
 };
 struct RoadVisual
 {
@@ -133,7 +134,19 @@ inline constexpr std::array<RoadAsset, static_cast<std::size_t>(RoadShape::Count
     // Authored with full-length E/N openings. Rotate 45 degrees to SE/NE;
     // preserve the wider radius and UVs, without stretching the geometry.
     {"models/transportation/roads/road_diagonal_curve.glb", StraightRoadTexturePath,
-        RoadNorthEast | RoadSouthEast, 0.5f, 0.25f, false, false, false, RoadDiagonalLength * 0.5f, 0.5f}
+        RoadNorthEast | RoadSouthEast, 0.5f, 0.25f, false, false, false, RoadDiagonalLength * 0.5f, 0.5f},
+    // The fitted corner junctions already face NE/SE. Their cardinal mouths
+    // meet the adjacent straight at +/-8 m; no extra diagonal rotation/stretch.
+    // Optional dedicated textures use the existing plain-asphalt fallback.
+    {"models/transportation/roads/road_diagonal_curve_acute_intersection.glb",
+        "models/transportation/roads/road_diagonal_curve_acute_intersection_basecolor.png",
+        RoadNorthEast | RoadSouthEast | RoadEast, 1, 0, false, false, true},
+    {"models/transportation/roads/road_diagonal_curve_reflex_intersection.glb",
+        "models/transportation/roads/road_diagonal_curve_reflex_intersection_basecolor.png",
+        RoadNorthEast | RoadSouthEast | RoadWest, 1, 0, false, false, true},
+    {"models/transportation/roads/road_diagonal_curve_double_intersection.glb",
+        "models/transportation/roads/road_diagonal_curve_double_intersection_basecolor.png",
+        RoadNorthEast | RoadSouthEast | RoadWest | RoadEast, 1, 0, false, false, true}
 }};
 
 constexpr bool IsMixedRoadJunction(std::uint8_t connections)
