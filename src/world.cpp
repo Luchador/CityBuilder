@@ -321,7 +321,7 @@ RoadPlan World::PlanRoadsInternal(const RoadPath& path, std::uint8_t singleConne
 
     // Discover end conversions against the complete proposed path. A temporary
     // all-port probe also finds missing-center junctions. Assign all
-    // discoveries together so reversing the drag has identical results.
+    // discoveries together before choosing the section nearest the drag start.
     auto discovered = plan.tiles;
     for (std::size_t i = 0; i < plan.tiles.size(); ++i)
     {
@@ -426,6 +426,30 @@ RoadPlan World::PlanRoadsInternal(const RoadPath& path, std::uint8_t singleConne
             }
         }
         plan.tiles = std::move(checked);
+        if (!changed)
+        {
+            // ForEachTile stores tiles in drag order, including both legs of
+            // an L. Skip leading obstacles, retain the first accepted run,
+            // and invalidate every later run. Existing roads count as usable
+            // parts of the run, even when they need no changes themselves.
+            bool foundSection = false, sectionEnded = false;
+            for (auto& tile : plan.tiles)
+            {
+                if (!RoadPlacementAccepted(tile.status))
+                {
+                    if (foundSection) sectionEnded = true;
+                }
+                else if (sectionEnded)
+                {
+                    tile.status = RoadPlacementStatus::DisconnectedSegment;
+                    changed = true;
+                }
+                else foundSection = true;
+            }
+            // Trimming can remove a junction approach or expose a wider end
+            // cap. Run validation again against the reduced future network
+            // before finalizing previews, upgrade counts and commit decisions.
+        }
     } while (changed);
 
     for (auto& tile : plan.tiles)

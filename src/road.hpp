@@ -337,7 +337,12 @@ constexpr RoadVisual GetRoadVisual(const Road& road)
     return GetRoadVisual(0);
 }
 
-enum class RoadPlacementStatus { Allowed, ExistingRoad, OutsideMap, NotFlat, Underwater, Occupied, WrongSlopeDirection, UnsupportedConnection, UpgradeRoad };
+enum class RoadPlacementStatus
+{
+    Allowed, ExistingRoad, OutsideMap, NotFlat, Underwater, Occupied,
+    WrongSlopeDirection, UnsupportedConnection, UpgradeRoad,
+    DisconnectedSegment // Otherwise usable, but beyond the first valid drag section.
+};
 
 constexpr bool RoadPlacementAccepted(RoadPlacementStatus status)
 {
@@ -455,8 +460,9 @@ struct PlannedRoadTile
     std::uint8_t suppressedConnections = 0;
 };
 
-// One plan drives evaluation, preview and commit. In particular, a junction
-// must use the neighbors that can actually be built after obstacles are skipped.
+// One plan drives evaluation, preview and commit. Only the first continuous
+// accepted section in drag order survives; leading blocked tiles are skipped.
+// Junctions must use neighbors that actually survive validation and trimming.
 struct RoadPlan
 {
     RoadEvaluation evaluation;

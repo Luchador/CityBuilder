@@ -281,6 +281,28 @@ int main()
             Check(world.GetRoadAt(x,100)->connections==(x==40 ? RoadEast : x==50 ? RoadWest : RoadWest|RoadEast) &&
                   world.GetRoadAt(x,101)->connections==world.GetRoadAt(x,100)->connections,
                   "Connector preview/commit reconnected neighboring parallel tiles");
+        // A blocked middle tile invalidates otherwise usable later tiles.
+        // Reversing the drag selects the opposite section and refreshes the map.
+        world.GetTile(35,115).buildingId=123;
+        ToolPreview partial;
+        partial.roadPath=RoadPath{30,115,40,115};
+        overlay.Update(world,{35,115,35,115});
+        overlay.PrepareRoadPreview(world,partial);
+        CheckPreview(world,partial);
+        for (int x=30;x<=40;++x)
+            Check(roadImage->pixels[(115*128+x)*4+1]==(x<35 ? 255 : 0),
+                  "Preview kept a later disconnected section green");
+        partial.roadPath=RoadPath{40,115,30,115};
+        overlay.PrepareRoadPreview(world,partial);
+        CheckPreview(world,partial);
+        for (int x=30;x<=40;++x)
+            Check(roadImage->pixels[(115*128+x)*4+1]==(x>35 ? 255 : 0),
+                  "Reverse preview did not select the nearest section");
+        partial.roadPath=RoadPath{30,115,40,115};
+        overlay.PrepareRoadPreview(world,partial);
+        Check(world.PlaceRoads(*partial.roadPath).changed==5,"Partial preview disagreed with commit");
+        for (int x=30;x<=40;++x)
+            Check((world.GetRoadAt(x,115)!=nullptr)==(x<35),"Previewed discarded section was built");
         overlay.Release(); overlay.Release();
         Check(!texturesAlive && !samplersAlive, "Preview resources leaked");
         std::cout << "PASS: uploaded junction preview, obstacle/revision invalidation, cache, bounded batches, failed-upload retry and cleanup\n";

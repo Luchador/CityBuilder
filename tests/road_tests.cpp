@@ -173,10 +173,10 @@ namespace
         world.GetTile(2, 6).zoneType = ZoneType::CommercialDense;
         const RoadPath line{1, 6, 8, 6};
         const auto partial = world.PlaceRoads(line);
-        Check(partial.changed == 6 && partial.evaluation.blocked == 2 &&
+        Check(partial.changed == 3 && partial.evaluation.blocked == 5 &&
               world.GetTile(2, 6).zoneType == ZoneType::None, "Partial route failed");
-        Check(world.GetRoadAt(3, 6)->connections == RoadWest && world.GetRoadAt(6, 6)->connections == RoadEast,
-              "Road connected across blocked gap");
+        Check(world.GetRoadAt(3, 6)->connections == RoadWest && !world.GetRoadAt(6, 6),
+              "Road continued beyond its first blocked gap");
         const auto rejected = world.PlaceRoads({4, 6, 5, 6});
         Check(!rejected.changed && rejected.evaluation.blocked == 2, "Fully blocked route accepted");
         Check(!world.PlaceRoads({-1, 0, 15, 0}).evaluation.valid &&
@@ -188,6 +188,122 @@ namespace
               edge.PlaceRoads({15, 0, 15, 15}).changed == 15, "Edge route incorrect");
         Check(edge.GetRoadAt(15, 0)->connections == (RoadWest | RoadSouth), "Map-edge curve incorrect");
         std::cout << "PASS: all 16 connection masks, insertion order, all drag directions, exact L previews, partial/reused/blocked routes and map edges\n";
+    }
+
+    void CheckFirstRoadSection()
+    {
+        const RoadPath paths[]{
+            {2,6,12,6}, {6,2,6,12},
+            {2,2,12,12,true,true}, {2,12,12,2,true,true},
+            {2,2,12,8,true}, {2,2,8,12,false}
+        };
+        for (const auto& original : paths) for (bool reverse : {false,true})
+            for (bool startBlocked : {false,true}) for (bool infrastructure : {false,true})
+        {
+            auto world=FlatWorld();
+            auto path=original;
+            if (reverse)
+            {
+                std::swap(path.startX,path.endX);std::swap(path.startZ,path.endZ);
+                if (!path.diagonal) path.xFirst=!path.xFirst;
+            }
+            std::vector<ToolTile> ordered;
+            path.ForEachTile([&](int x,int z)
+            { ordered.push_back({x,z});world.GetTile(x,z).zoneType=ZoneType::CommercialLight; });
+            const auto block=[&](std::size_t index)
+            {
+                auto& tile=world.GetTile(ordered[index].x,ordered[index].z);
+                if (infrastructure) tile.infrastructureId=999;
+                else tile.buildingId=999;
+            };
+            block(3);block(7);
+            if (startBlocked) block(0);
+            const auto plan=world.PlanRoads(path);
+            const auto expected=static_cast<std::uint32_t>(startBlocked ? 2 : 3);
+            Check(plan.evaluation.changes==expected && plan.evaluation.blocked==ordered.size()-expected,
+                  "Partial drag did not choose the first valid section");
+            for (std::size_t i=0;i<ordered.size();++i)
+                Check(RoadPlacementAccepted(plan.tiles[i].status)==(i<3 && (!startBlocked || i>0)),
+                      "Plan retained a tile outside the first valid section");
+            Check(plan.tiles[4].status==RoadPlacementStatus::DisconnectedSegment,
+                  "Otherwise valid later section was not explicitly invalidated");
+            const auto placed=world.PlaceRoads(path);
+            Check(placed.changed==expected && placed.evaluation.blocked==plan.evaluation.blocked,
+                  "Partial drag plan/commit mismatch");
+            for (std::size_t i=0;i<ordered.size();++i)
+            {
+                const auto [x,z]=ordered[i];
+                const bool kept=i<3 && (!startBlocked || i>0);
+                Check((world.GetRoadAt(x,z)!=nullptr)==kept,"An excluded section created a road");
+                Check(world.GetTile(x,z).zoneType==(kept ? ZoneType::None : ZoneType::CommercialLight),
+                      "Excluded section cleared an existing zone");
+            }
+            const auto revision=world.GetRoadRevision();
+            Check(!world.PlaceRoads(path).changed && world.GetRoadRevision()==revision,
+                  "Repeating a blocked drag advanced into a later section");
+        }
+
+        for (float height : {-TerrainHeightStep,TerrainBaseElevation+TerrainHeightStep})
+        {
+            auto world=FlatWorld();
+            auto& terrain=const_cast<TerrainHeightmap&>(world.GetTerrain());
+            terrain.heights[6*terrain.dimensions.CornerStride()+6]=height;
+            Check(world.PlaceRoads({2,6,12,6}).changed==3 && !world.GetRoadAt(7,6),
+                  "Water/uneven terrain did not cut off a later valid section");
+        }
+        auto bend=FlatWorld();
+        bend.GetTile(6,7).buildingId=123;
+        Check(bend.PlaceRoads({2,2,6,12,true}).changed==9 &&
+              GetRoadVisual(*bend.GetRoadAt(6,2)).shape==RoadShape::Curve && !bend.GetRoadAt(6,8),
+              "First section failed to follow an L around its bend");
+        auto blocked=FlatWorld();
+        for (int x=2;x<=12;++x) blocked.GetTile(x,6).buildingId=123;
+        Check(!blocked.PlaceRoads({2,6,12,6}).changed && blocked.GetRoads().empty(),
+              "Entirely blocked drag created a road");
+
+        auto toolWorld=FlatWorld();
+        toolWorld.GetTile(6,6).buildingId=123;
+        ToolController controller(toolWorld);
+        controller.SetTool(std::make_unique<RoadTool>());
+        Check(controller.Begin(At(2,6)),"Partial tool drag failed to begin");
+        controller.Update(At(12,6),.016f);
+        const auto request=std::get<RoadRequest>(controller.End(At(12,6)));
+        Check(!controller.BuildPreview().roadPath && toolWorld.PlaceRoads(request.path).changed==4,
+              "Releasing a partial drag retained its preview or built extra sections");
+
+        // Reused roads are traversable parts of the first section. Later
+        // existing roads must stay intact, without upgrades or new neighbors.
+        auto reused=FlatWorld();
+        reused.PlaceRoads({2,6,4,6});reused.PlaceRoads({10,6,12,6});
+        reused.GetTile(6,6).buildingId=123;
+        const auto far=*reused.GetRoadAt(10,6);
+        const auto result=reused.PlaceRoads({2,6,12,6});
+        Check(result.changed==1 && result.evaluation.unchanged==3 && reused.GetRoadAt(5,6) &&
+              !reused.GetRoadAt(7,6) && !reused.GetRoadAt(8,6) && !reused.GetRoadAt(9,6) &&
+              reused.GetRoadAt(10,6)->id==far.id && reused.GetRoadAt(10,6)->connections==far.connections,
+              "Trimming skipped reused roads or modified an excluded existing road");
+
+        // Do not reopen a parallel-road edge in a discarded upgrade section.
+        auto parallel=FlatWorld();
+        parallel.PlaceRoads({2,10,12,10});parallel.PlaceRoads({2,11,12,11});
+        parallel.GetTile(7,6).buildingId=456;
+        const auto lower=*parallel.GetRoadAt(7,11);
+        Check(parallel.PlaceRoads({7,2,7,11}).changed==4 &&
+              parallel.GetRoadAt(7,10)->connections==(RoadWest|RoadEast) &&
+              parallel.GetRoadAt(7,11)->connections==lower.connections &&
+              parallel.GetRoadAt(7,11)->suppressedConnections==lower.suppressedConnections,
+              "Discarded connector reopened an existing parallel edge");
+
+        // A later diagonal junction upgrade is likewise excluded.
+        auto diagonal=FlatWorld();
+        diagonal.PlaceRoads({3,3,11,11,true,true});
+        diagonal.GetTile(4,10).buildingId=789;
+        const auto center=*diagonal.GetRoadAt(7,7);
+        Check(diagonal.PlaceRoads({2,12,12,2,true,true}).changed==2 &&
+              diagonal.GetRoadAt(7,7)->id==center.id && diagonal.GetRoadAt(7,7)->connections==center.connections &&
+              diagonal.GetRoadAt(7,7)->diagonalAxis==center.diagonalAxis,
+              "Discarded diagonal section upgraded an existing junction");
+        std::cout << "PASS: nearest continuous section, leading obstacles, both drag directions, cardinal/diagonal/L paths, reused roads and excluded upgrades/zones\n";
     }
 
     void CheckParallelRoads()
@@ -471,15 +587,15 @@ namespace
         // A building beside the centerline blocks both modules that would overlap it.
         world.GetTile(6, 5).buildingId = 1;
         auto result = world.PlaceRoads(diagonal);
-        Check(result.changed == 6 && result.evaluation.blocked == 2 &&
+        Check(result.changed == 2 && result.evaluation.blocked == 6 &&
               !world.GetRoadAt(5, 5) && !world.GetRoadAt(6, 6), "Diagonal footprint collision/partial placement failed");
         Check(world.GetRoadAt(4, 4)->connections == RoadNorthWest &&
-              world.GetRoadAt(7, 7)->connections == RoadSouthEast, "Diagonal connected across a blocked gap");
+              !world.GetRoadAt(7, 7), "Diagonal continued beyond a blocked gap");
         Check(world.GetTile(6, 5).buildingId == 1 && world.GetTile(6, 5).zoneType == ZoneType::ResidentialLight &&
               world.GetTile(4, 3).zoneType == ZoneType::None && world.GetTile(2, 2).zoneType == ZoneType::ResidentialLight,
               "Placement cleared an unrelated zone or retained a zone under its footprint");
         world.GetTile(6, 5).buildingId = NoBuilding;
-        Check(world.PlaceRoads(diagonal).changed == 2 && world.GetRoadAt(4, 4)->connections == RoadDiagonalNWSE &&
+        Check(world.PlaceRoads(diagonal).changed == 6 && world.GetRoadAt(4, 4)->connections == RoadDiagonalNWSE &&
               world.GetRoadAt(7, 7)->connections == RoadDiagonalNWSE, "Filling a gap did not join diagonal stretches");
         Check(!world.PlaceRoad(4, 3), "Cardinal road overwrote a diagonal shoulder reservation");
         Check(!world.PlaceRoads({2, 2, 4, 5, true, true}).evaluation.valid &&
@@ -718,9 +834,21 @@ namespace
                 auto reverse = path;
                 std::swap(reverse.startX, reverse.endX); std::swap(reverse.startZ, reverse.endZ);
                 const auto plan = world.PlanRoads(path);
+                const auto reversePlan = backward.PlanRoads(reverse);
                 const auto placed = world.PlaceRoads(path), reversed = backward.PlaceRoads(reverse);
-                Check(placed.changed == plan.evaluation.changes && placed.changed == reversed.changed,
-                      "Network plan/commit or reverse drag counts disagree");
+                Check(placed.changed == plan.evaluation.changes && reversed.changed == reversePlan.evaluation.changes,
+                      "Network plan/commit counts disagree");
+                for (const auto* p : {&plan,&reversePlan})
+                {
+                    int sections=0;
+                    for (std::size_t i=0;i<p->tiles.size();++i)
+                        if (RoadPlacementAccepted(p->tiles[i].status) &&
+                            (i==0 || !RoadPlacementAccepted(p->tiles[i-1].status))) ++sections;
+                    Check(sections<=1,"Network plan retained multiple valid sections");
+                }
+                // Fully usable paths remain symmetric. With obstacles, reversing
+                // intentionally selects a different section nearest the new start.
+                if (!plan.evaluation.blocked && !reversePlan.evaluation.blocked)
                 for (int pz = 0; pz < 16; ++pz) for (int px = 0; px < 16; ++px)
                 {
                     const auto* a = world.GetRoadAt(px, pz); const auto* b = backward.GetRoadAt(px, pz);
@@ -729,25 +857,25 @@ namespace
                            a->mixedConnections == b->mixedConnections && a->suppressedConnections == b->suppressedConnections)),
                           "Reversing a drag changed the road topology");
                 }
-                for (const auto& road : world.GetRoads())
+                for (const auto* state : {&world,&backward}) for (const auto& road : state->GetRoads())
                 {
                     if (road.diagonalAxis) Check(SupportedDiagonalConnections(road.connections),
                         "A neighboring network edit created an unsupported diagonal bend");
                     if (road.mixedConnections) Check(SupportedMixedConnections(road.connections) &&
                         road.connections == road.mixedConnections, "Mixed junction lost an approach");
-                    for (const auto& other : world.GetRoads()) if (road.id < other.id)
+                    for (const auto& other : state->GetRoads()) if (road.id < other.id)
                         Check(!RoadMeshesOverlap(road, other), "Network edit created overlapping pavement");
                     constexpr int nx[] = {-1, 0, 1, 0, -1, 1, 1, -1}, nz[] = {0, -1, 0, 1, -1, -1, 1, 1};
                     for (int i = 0; i < 8; ++i) if (road.connections & (1 << i))
                     {
-                        const auto* neighbor = world.GetRoadAt(road.tileX + nx[i], road.tileZ + nz[i]);
+                        const auto* neighbor = state->GetRoadAt(road.tileX + nx[i], road.tileZ + nz[i]);
                         Check(neighbor && (neighbor->connections & RotateRoadConnections(static_cast<std::uint8_t>(1 << i), 2)),
                               "A road connection is not reciprocal");
                     }
                 }
             }
         }
-        std::cout << "PASS: mixed-network plans match commits, reverse drags agree, and every connection remains reciprocal/supported\n";
+        std::cout << "PASS: mixed-network plans match commits, partial drags keep one section, and both drag directions preserve reciprocal/supported connections\n";
     }
 
     // Standalone transformed GLB fixture; no JSON library or GPU needed.
@@ -835,6 +963,7 @@ int main(int argc, char** argv)
         if (argc != 3) throw std::runtime_error("Usage: CityRoadTests road_straight.glb scratch-directory");
         CheckWorldAndTool();
         CheckConnectionsAndRoutes();
+        CheckFirstRoadSection();
         CheckParallelRoads();
         CheckSlopes();
         CheckDiagonals();
