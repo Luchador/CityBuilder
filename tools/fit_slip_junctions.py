@@ -11,7 +11,7 @@ import math
 import struct
 from pathlib import Path
 
-def read_template(path):
+def read_template(path, node_name='road_mixed_3way_grid_nw'):
     data = path.read_bytes()
     magic, version, total = struct.unpack_from('<III', data)
     if magic != 0x46546C67 or version != 2 or total != len(data):
@@ -23,9 +23,9 @@ def read_template(path):
         chunks[kind] = data[offset+8:offset+8+length]
         offset += 8 + length
     doc = json.loads(chunks[0x4E4F534A]); blob = chunks[0x004E4942]
-    nodes = [n for n in doc['nodes'] if n.get('name') == 'road_mixed_3way_grid_nw']
+    nodes = [n for n in doc['nodes'] if n.get('name') == node_name]
     if len(nodes) != 1:
-        raise ValueError('Expected exactly one node named road_mixed_3way_grid_nw')
+        raise ValueError(f'Expected exactly one node named {node_name}')
     node = nodes[0]
     if node.get('translation', [0,0,0]) != [0,0,0] or node.get('scale', [1,1,1]) != [1,1,1] or \
        node.get('rotation', [0,0,0,1]) != [0,0,0,1] or 'matrix' in node:

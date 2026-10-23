@@ -58,7 +58,8 @@ enum class RoadShape : std::size_t
     DiagonalThreeWay, DiagonalFourWay, GridToDiagonalLeft, GridToDiagonalRight,
     MixedThreeWayGridNE, MixedThreeWayGridNW, MixedThreeWayDiagonalE, MixedThreeWayDiagonalN,
     MixedFourWayNESW, MixedFourWayNWSE, DiagonalCurve,
-    DiagonalCurveAcuteIntersection, DiagonalCurveReflexIntersection, DiagonalCurveDoubleIntersection, Count
+    DiagonalCurveAcuteIntersection, DiagonalCurveReflexIntersection, DiagonalCurveDoubleIntersection,
+    MixedFourWayArrow, Count
 };
 struct RoadVisual
 {
@@ -111,6 +112,8 @@ inline constexpr std::array<RoadModuleCell, 4> NwSeSlipCells{{
 inline constexpr std::array<RoadModuleCell, 4> NeSwSlipCells{{
     {1, 0, RoadWest | RoadEast}, {1, -1, RoadDiagonalNESW},
     {-1, 0, RoadWest | RoadEast}, {-1, 1, RoadDiagonalNESW}}};
+inline constexpr std::array<RoadModuleCell, 3> ArrowSlipCells{{
+    {-1, 0, RoadWest | RoadEast}, {0, -1, RoadNorth | RoadSouth}, {-1, -1, RoadDiagonalNWSE}}};
 inline constexpr int RoadFootprintRadius = 2;
 
 
@@ -176,7 +179,13 @@ inline constexpr std::array<RoadAsset, static_cast<std::size_t>(RoadShape::Count
         RoadNorthEast | RoadSouthEast | RoadWest, 1, 0, false, false, true},
     {"models/transportation/roads/road_diagonal_curve_double_intersection.glb",
         "models/transportation/roads/road_diagonal_curve_double_intersection_basecolor.png",
-        RoadNorthEast | RoadSouthEast | RoadWest | RoadEast, 1, 0, false, false, true, .5f, 0, InsideStraightCell}
+        RoadNorthEast | RoadSouthEast | RoadWest | RoadEast, 1, 0, false, false, true, .5f, 0, InsideStraightCell},
+    // Diagonal through route with two perpendicular grid approaches on its
+    // NW side. The fitted mesh includes both turning lanes and all three
+    // adjoining straight cells; its source's 45-degree turn is already baked.
+    {"models/transportation/roads/road_mixed_4way_arrow.glb",
+        "models/transportation/roads/road_mixed_4way_arrow_basecolor.png",
+        RoadNorthWest | RoadSouthEast | RoadWest | RoadNorth, 1, 0, false, false, true, .5f, 0, ArrowSlipCells}
 }};
 
 template<class Visitor> constexpr void ForEachRoadModuleCell(std::uint8_t mask, Visitor visit)

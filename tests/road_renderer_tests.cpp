@@ -378,7 +378,7 @@ int main(int argc, char** argv)
         Check(drawnInstances == 0 && buffers == MeshBuffers, "Switching worlds retained stale road instances");
         renderer.Release(); renderer.Release();
         CheckReleased();
-        std::cout << "PASS: nineteen shared mesh batches, diagonal curves and all mixed junction rotations, diagonal junction upgrades, instance layout, upload cache, failure recovery and cleanup\n";
+        std::cout << "PASS: " << RoadAssets.size() << " shared mesh batches, diagonal curves and all mixed junction rotations, diagonal junction upgrades, instance layout, upload cache, failure recovery and cleanup\n";
         return 0;
     }
     catch (const std::exception& error)

@@ -161,6 +161,27 @@ int main()
         Check(roadImage->pixels[center + 1] == 255 && (roadImage->pixels[center + 2] & 15) == 15,
               "Mixed cross preview did not reserve all shoulders");
         Check(roadImage->pixels[center+3] != 0, "Five-tile preview lost the high footprint byte");
+        // A diagonal through route gains two perpendicular grid approaches.
+        Check(!world.PlaceRoads({51,51,59,59,true,true}).evaluation.blocked &&
+              !world.PlaceRoads({55,55,51,55}).evaluation.blocked,"Arrow preview fixture failed");
+        ToolPreview arrow;
+        arrow.roadPath=RoadPath{55,55,55,51};
+        overlay.PrepareRoadPreview(world,arrow);
+        CheckPreview(world,arrow);
+        const int arrowCenter=(55*128+55)*4;
+        Check(roadImage->pixels[arrowCenter+1]==255 && roadImage->pixels[arrowCenter+2]==0x2f &&
+              roadImage->pixels[arrowCenter]==6 && roadImage->pixels[arrowCenter+3]==0,
+              "Arrow preview omitted an owned cell or shoulder");
+        world.GetTile(55,54).buildingId=123;
+        overlay.Update(world,{55,54,55,54});
+        overlay.PrepareRoadPreview(world,arrow);
+        CheckPreview(world,arrow);
+        Check(roadImage->pixels[arrowCenter+1]==0,"Arrow preview ignored a blocked approach");
+        world.GetTile(55,54).buildingId=NoBuilding;
+        overlay.Update(world,{55,54,55,54});
+        Check(world.PlaceRoads(*arrow.roadPath).evaluation.upgrades==1 &&
+              GetRoadVisual(*world.GetRoadAt(55,55)).shape==RoadShape::MixedFourWayArrow,
+              "Arrow preview/commit mismatch");
         world.PlaceRoads({80, 80, 84, 76, true, true});
         ToolPreview curve;
         curve.roadPath = RoadPath{80, 80, 84, 84, true, true};

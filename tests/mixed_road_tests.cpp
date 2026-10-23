@@ -215,6 +215,28 @@ namespace
                         right |= std::abs(across-.25f)<.00001f;
                     }
                     Check(left && right,"Slip approach is not eight meters wide at its far tile seam");
+                    // Endpoint checks alone miss a gap in the middle of an
+                    // extended mouth. Its boundary must cover the full width.
+                    std::vector<std::pair<float,float>> intervals;
+                    for (std::size_t i=0;i<mesh.indices.size();i+=3)
+                        for (std::size_t edge=0;edge<3;++edge)
+                        {
+                            const auto& a=mesh.vertices[mesh.indices[i+edge]];
+                            const auto& b=mesh.vertices[mesh.indices[i+(edge+1)%3]];
+                            const float ap=(a.x*DX[d]+a.z*DZ[d])/length, bp=(b.x*DX[d]+b.z*DZ[d])/length;
+                            if (std::abs(ap-reach)>.00001f || std::abs(bp-reach)>.00001f) continue;
+                            const float aq=(-a.x*DZ[d]+a.z*DX[d])/length, bq=(-b.x*DZ[d]+b.z*DX[d])/length;
+                            const float low=std::max(-.25f,std::min(aq,bq)), high=std::min(.25f,std::max(aq,bq));
+                            if (high>low) intervals.emplace_back(low,high);
+                        }
+                    std::sort(intervals.begin(),intervals.end());
+                    float end=-.25f;
+                    for (const auto& [low,high] : intervals)
+                    {
+                        Check(low<=end+.00001f,"Gap within a road mouth");
+                        end=std::max(end,high);
+                    }
+                    Check(end>=.24999f,"Incomplete road mouth");
                 }
             for (const auto& v : mesh.vertices)
                 Check((std::abs(v.x) + std::abs(v.z) <= 1.00001f ||
@@ -289,7 +311,63 @@ namespace
                 "Rejected slip upgrade damaged the original road");
             CheckNetwork(world);
         }
-        std::cout << "PASS: three/five-tile ownership, single model instances, reuse, protected approaches and far-shoulder obstacles\n";
+        std::cout << "PASS: multi-tile ownership, single model instances, reuse, protected approaches and far-shoulder obstacles\n";
+    }
+
+    void CheckArrowUpgrades()
+    {
+        const auto& asset=RoadAssets[static_cast<std::size_t>(RoadShape::MixedFourWayArrow)];
+        for (unsigned turn=0;turn<4;++turn) for (int first : {0,1}) for (bool reverse : {false,true})
+        {
+            auto world=FlatWorld();
+            const auto direction=[&](int d)
+            { return std::countr_zero(static_cast<unsigned>(RotateRoadConnections(static_cast<std::uint8_t>(1 << d),turn))); };
+            const auto add=[&](RoadPath path)
+            {
+                if (reverse) { std::swap(path.startX,path.endX);std::swap(path.startZ,path.endZ); }
+                const auto plan=world.PlanRoads(path);
+                Check(!plan.evaluation.blocked,"Arrow approach was rejected");
+                Check(world.PlaceRoads(path).changed==plan.evaluation.changes,"Arrow plan/commit mismatch");
+                CheckNetwork(world);
+            };
+            add(Arm(direction(4),-4,4));
+            const auto id=world.GetRoadAt(Center,Center)->id;
+            add(Arm(direction(first)));
+            Check(std::popcount(world.GetRoadAt(Center,Center)->mixedConnections)==3,"Missing intermediate T");
+            add(Arm(direction(1-first)));
+            const auto* arrow=world.GetRoadAt(Center,Center);
+            const auto mask=RotateRoadConnections(asset.connections,turn);
+            Check(arrow->id==id && arrow->connections==mask && arrow->mixedConnections==mask &&
+                  GetRoadVisual(*arrow).shape==RoadShape::MixedFourWayArrow,"Wrong T-to-arrow upgrade");
+            const auto before=*arrow;
+            Check(world.PlaceRoads(Arm(direction(2))).evaluation.blocked>0,"Unsupported fifth arrow arm accepted");
+            Check(world.GetRoadAt(Center,Center)->connections==before.connections &&
+                  world.GetRoadAt(Center,Center)->id==id,"Fifth arm damaged the arrow");
+            CheckNetwork(world);
+        }
+        for (unsigned turn=0;turn<4;++turn) for (int kind=0;kind<4;++kind)
+        {
+            auto world=FlatWorld();
+            const auto direction=[&](int d)
+            { return std::countr_zero(static_cast<unsigned>(RotateRoadConnections(static_cast<std::uint8_t>(1 << d),turn))); };
+            Check(!world.PlaceRoads(Arm(direction(4),-4,4)).evaluation.blocked,"Arrow obstacle fixture failed");
+            Check(!world.PlaceRoads(Arm(direction(0))).evaluation.blocked,"Arrow obstacle T failed");
+            const auto before=*world.GetRoadAt(Center,Center);
+            const int north=direction(1),x=Center+DX[north],z=Center+DZ[north];
+            if (kind==0) world.GetTile(x,z).buildingId=123;
+            if (kind==1) world.GetTile(x,z).infrastructureId=123456;
+            if (kind>=2)
+            {
+                auto& terrain=const_cast<TerrainHeightmap&>(world.GetTerrain());
+                terrain.heights[z*terrain.dimensions.CornerStride()+x]=kind==2 ? -1.f : 2.f;
+            }
+            Check(world.PlaceRoads(Arm(north)).evaluation.blocked>0,"Blocked arrow upgrade accepted");
+            const auto* center=world.GetRoadAt(Center,Center);
+            Check(center->id==before.id && center->mixedConnections==before.mixedConnections &&
+                  center->connections==before.connections,"Blocked arrow upgrade changed the existing T");
+            CheckNetwork(world);
+        }
+        std::cout << "PASS: both T-to-arrow upgrades, all rotations/drag directions, fifth-arm rejection and blocked-upgrade fallback\n";
     }
 }
 
@@ -298,7 +376,7 @@ int main(int argc, char** argv)
     try
     {
         if (argc != 2) throw std::runtime_error("Usage: CityMixedRoadTests assets-directory");
-        CheckGeometry(argv[1]); CheckAllJunctions(); CheckBendUpgrades(); CheckMissingCenters(); CheckObstacles(); CheckSlipModules();
+        CheckGeometry(argv[1]); CheckAllJunctions(); CheckBendUpgrades(); CheckMissingCenters(); CheckObstacles(); CheckSlipModules(); CheckArrowUpgrades();
         return 0;
     }
     catch (const std::exception& e) { std::cerr << "FAIL: " << e.what() << '\n'; return 1; }
