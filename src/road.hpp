@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdlib>
 #include <bit>
+#include <span>
 #include <vector>
 
 // World-space directions; independent of camera rotation. One quarter-turn
@@ -86,6 +87,33 @@ constexpr bool IsRoadTransition(std::uint8_t connections)
     return false;
 }
 
+// Additional logical road cells drawn by the anchor's single model. Offsets
+// and allowed ports are authored in the same orientation as asset.connections.
+// Adjacent cardinal and diagonal cells are supported. Shoulder reservations
+// remain separate from model ownership (diagonal pavement crosses tile edges).
+struct RoadModuleCell
+{
+    int x, z;
+    std::uint8_t ports;
+};
+inline constexpr std::array<RoadModuleCell, 1> InsideStraightCell{{{1, 0, RoadWest | RoadEast}}};
+inline constexpr std::array<RoadModuleCell, 2> GridNwSlipCells{{
+    {-1, 0, RoadWest | RoadEast}, {-1, -1, RoadDiagonalNWSE}}};
+inline constexpr std::array<RoadModuleCell, 2> GridNeSlipCells{{
+    {1, 0, RoadWest | RoadEast}, {1, -1, RoadDiagonalNESW}}};
+inline constexpr std::array<RoadModuleCell, 2> DiagonalNSlipCells{{
+    {0, -1, RoadNorth | RoadSouth}, {-1, -1, RoadDiagonalNWSE}}};
+inline constexpr std::array<RoadModuleCell, 2> DiagonalESlipCells{{
+    {1, 0, RoadWest | RoadEast}, {1, 1, RoadDiagonalNWSE}}};
+inline constexpr std::array<RoadModuleCell, 4> NwSeSlipCells{{
+    {-1, 0, RoadWest | RoadEast}, {-1, -1, RoadDiagonalNWSE},
+    {1, 0, RoadWest | RoadEast}, {1, 1, RoadDiagonalNWSE}}};
+inline constexpr std::array<RoadModuleCell, 4> NeSwSlipCells{{
+    {1, 0, RoadWest | RoadEast}, {1, -1, RoadDiagonalNESW},
+    {-1, 0, RoadWest | RoadEast}, {-1, 1, RoadDiagonalNESW}}};
+inline constexpr int RoadFootprintRadius = 2;
+
+
 struct RoadAsset
 {
     const char* model;
@@ -97,6 +125,7 @@ struct RoadAsset
     bool mixedJunction = false; // Authored diagonally, with optional UVs/texture.
     float sourceHalfExtent = 0.5f; // Tile units, after GLB node transforms.
     float rotationOffset = 0.0f; // Quarter-turns, added to the instance rotation.
+    std::span<const RoadModuleCell> moduleCells{};
 };
 
 inline constexpr char StraightRoadModelPath[] = "models/transportation/roads/road_straight.glb";
@@ -120,34 +149,71 @@ inline constexpr std::array<RoadAsset, static_cast<std::size_t>(RoadShape::Count
     {"models/transportation/roads/road_grid_to_diagonal_curve_right.glb", StraightRoadTexturePath,
         RoadEast | RoadNorthWest, 1, 0, false, true},
     {"models/transportation/roads/road_mixed_3way_grid_ne.glb", "models/transportation/roads/road_mixed_3way_grid_ne_basecolor.png",
-        RoadWest | RoadEast | RoadNorthEast, 1, 0, false, false, true},
+        RoadWest | RoadEast | RoadNorthEast, 1, 0, false, false, true, .5f, 0, GridNeSlipCells},
     {"models/transportation/roads/road_mixed_3way_grid_nw.glb", "models/transportation/roads/road_mixed_3way_grid_nw_basecolor.png",
-        RoadWest | RoadEast | RoadNorthWest, 1, 0, false, false, true},
+        RoadWest | RoadEast | RoadNorthWest, 1, 0, false, false, true, .5f, 0, GridNwSlipCells},
     {"models/transportation/roads/road_mixed_3way_diagonal_e.glb", "models/transportation/roads/road_mixed_3way_diagonal_e_basecolor.png",
-        RoadNorthWest | RoadSouthEast | RoadEast, 1, 0, false, false, true},
+        RoadNorthWest | RoadSouthEast | RoadEast, 1, 0, false, false, true, .5f, 0, DiagonalESlipCells},
     {"models/transportation/roads/road_mixed_3way_diagonal_n.glb", "models/transportation/roads/road_mixed_3way_diagonal_n_basecolor.png",
-        RoadNorthWest | RoadSouthEast | RoadNorth, 1, 0, false, false, true},
+        RoadNorthWest | RoadSouthEast | RoadNorth, 1, 0, false, false, true, .5f, 0, DiagonalNSlipCells},
     {"models/transportation/roads/road_mixed_4way_ne_sw.glb", "models/transportation/roads/road_mixed_4way_ne_sw_basecolor.png",
-        RoadWest | RoadEast | RoadNorthEast | RoadSouthWest, 1, 0, false, false, true},
+        RoadWest | RoadEast | RoadNorthEast | RoadSouthWest, 1, 0, false, false, true, .5f, 0, NeSwSlipCells},
     {"models/transportation/roads/road_mixed_4way_nw_se.glb", "models/transportation/roads/road_mixed_4way_nw_se_basecolor.png",
-        RoadWest | RoadEast | RoadNorthWest | RoadSouthEast, 1, 0, false, false, true},
+        RoadWest | RoadEast | RoadNorthWest | RoadSouthEast, 1, 0, false, false, true, .5f, 0, NwSeSlipCells},
     // Authored with full-length E/N openings. Rotate 45 degrees to SE/NE;
     // preserve the wider radius and UVs, without stretching the geometry.
     {"models/transportation/roads/road_diagonal_curve.glb", StraightRoadTexturePath,
         RoadNorthEast | RoadSouthEast, 0.5f, 0.25f, false, false, false, RoadDiagonalLength * 0.5f, 0.5f},
-    // The fitted corner junctions already face NE/SE. Their cardinal mouths
-    // meet the adjacent straight at +/-8 m; no extra diagonal rotation/stretch.
+    // The fitted corner junctions already face NE/SE. The acute/double models
+    // own the inside straight cell, ending at X=24 m. The reflex
+    // junction stays one module cell. No extra diagonal rotation/stretch.
     // Optional dedicated textures use the existing plain-asphalt fallback.
     {"models/transportation/roads/road_diagonal_curve_acute_intersection.glb",
         "models/transportation/roads/road_diagonal_curve_acute_intersection_basecolor.png",
-        RoadNorthEast | RoadSouthEast | RoadEast, 1, 0, false, false, true},
+        RoadNorthEast | RoadSouthEast | RoadEast, 1, 0, false, false, true, .5f, 0, InsideStraightCell},
     {"models/transportation/roads/road_diagonal_curve_reflex_intersection.glb",
         "models/transportation/roads/road_diagonal_curve_reflex_intersection_basecolor.png",
         RoadNorthEast | RoadSouthEast | RoadWest, 1, 0, false, false, true},
     {"models/transportation/roads/road_diagonal_curve_double_intersection.glb",
         "models/transportation/roads/road_diagonal_curve_double_intersection_basecolor.png",
-        RoadNorthEast | RoadSouthEast | RoadWest | RoadEast, 1, 0, false, false, true}
+        RoadNorthEast | RoadSouthEast | RoadWest | RoadEast, 1, 0, false, false, true, .5f, 0, InsideStraightCell}
 }};
+
+template<class Visitor> constexpr void ForEachRoadModuleCell(std::uint8_t mask, Visitor visit)
+{
+    if (!mask) return;
+    for (const auto& asset : RoadAssets) if (!asset.moduleCells.empty())
+        for (unsigned turn = 0; turn < 4; ++turn)
+            if (RotateRoadConnections(asset.connections, turn) == mask)
+            {
+                for (auto cell : asset.moduleCells)
+                {
+                    for (unsigned i = 0; i < turn; ++i) { const int x = cell.x; cell.x = -cell.z; cell.z = x; }
+                    cell.ports = RotateRoadConnections(cell.ports, turn);
+                    visit(cell);
+                }
+                return;
+            }
+}
+
+constexpr std::uint8_t RoadModulePortsAt(std::uint8_t mask, int dx, int dz)
+{
+    std::uint8_t ports = 0;
+    ForEachRoadModuleCell(mask, [&](auto cell) { if (cell.x == dx && cell.z == dz) ports = cell.ports; });
+    return ports;
+}
+
+// Owned cells must be adjacent, straight and aligned with their root opening.
+// A diagonal cell plus its shoulders needs the two-tile reservation radius.
+static_assert([]
+{
+    for (const auto& asset : RoadAssets) for (auto cell : asset.moduleCells)
+        if (std::max(cell.x < 0 ? -cell.x : cell.x, cell.z < 0 ? -cell.z : cell.z) != 1 ||
+            (cell.ports != (RoadWest | RoadEast) && cell.ports != (RoadNorth | RoadSouth) &&
+             cell.ports != RoadDiagonalNWSE && cell.ports != RoadDiagonalNESW) || asset.rotationOffset != 0 || !asset.mixedJunction)
+            return false;
+    return true;
+}());
 
 constexpr bool IsMixedRoadJunction(std::uint8_t connections)
 {
@@ -220,11 +286,18 @@ struct Road
     // Exact ports of a grid/diagonal bend or junction. Zero uses the axis rules.
     // The planner upgrades this mask only when a matching mesh is available.
     std::uint8_t mixedConnections = 0;
+    // Derived module membership: this logical cell still participates in the
+    // road graph/occupancy, but its geometry belongs to the neighboring anchor.
+    // Zero ports means this road owns its own model.
+    std::uint8_t modulePorts = 0;
+    int modelOwnerOffsetX = 0, modelOwnerOffsetZ = 0;
 };
+
+constexpr bool HasRoadModel(const Road& road) { return road.modulePorts == 0; }
 
 constexpr std::uint8_t RoadPorts(const Road& road)
 {
-    return road.mixedConnections ? road.mixedConnections :
+    return road.modulePorts ? road.modulePorts : road.mixedConnections ? road.mixedConnections :
         road.diagonalAxis ? road.diagonalAxis : road.surface.AllowedConnections();
 }
 

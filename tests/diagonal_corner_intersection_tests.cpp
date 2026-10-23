@@ -34,6 +34,13 @@ namespace
     {
         for (const auto& a : world.GetRoads())
         {
+            if (!HasRoadModel(a))
+            {
+                const auto* owner = world.GetRoadModuleAt(a.tileX,a.tileZ);
+                Check(owner && HasRoadModel(*owner) &&
+                      RoadModulePortsAt(owner->mixedConnections,a.tileX-owner->tileX,a.tileZ-owner->tileZ) == a.modulePorts &&
+                      (a.connections & ~a.modulePorts) == 0, "Invalid module membership");
+            }
             Check(!a.mixedConnections || (a.connections == a.mixedConnections && SupportedMixedConnections(a.connections)),
                   "Incomplete mixed junction");
             for (int d=0; d<8; ++d) if (a.connections & (1 << d))
@@ -134,6 +141,57 @@ namespace
         }
         std::cout << "PASS: obstructed, wet and uneven junctions preserve the existing corner\n";
     }
+    void CheckModules()
+    {
+        for (unsigned turn=0; turn<4; ++turn)
+        {
+            const int inside=Direction(2,turn), outside=Direction(0,turn);
+            const int x=Center+DX[inside], z=Center+DZ[inside];
+            auto world=FlatWorld();
+            Add(world,Arm(Direction(5,turn))); Add(world,Arm(Direction(6,turn)));
+            const auto ownerId=world.GetRoadAt(Center,Center)->id;
+            // One new inside tile is enough. It belongs to the junction's
+            // straight, rather than drawing the standalone flared end model.
+            const auto result=world.PlaceRoads(Arm(inside,0,1));
+            Check(!result.evaluation.blocked && result.changed == 2 && result.evaluation.upgrades == 1,
+                  "Short integrated branch failed");
+            Expect(world,Shapes[0],turn); CheckNetwork(world);
+            const auto childId=world.GetRoadAt(x,z)->id;
+            Check(!HasRoadModel(*world.GetRoadAt(x,z)) &&
+                  world.GetRoadModuleAt(x,z) == world.GetRoadAt(Center,Center) &&
+                  world.GetRoadModuleAt(Center,Center)->id == ownerId &&
+                  world.GetRoadAt(x,z)->modulePorts == RotateRoadConnections(RoadWest|RoadEast,turn),
+                  "Inside cell is not owned by the corner model");
+            Check(std::count_if(world.GetRoads().begin(),world.GetRoads().end(),HasRoadModel) ==
+                  static_cast<std::ptrdiff_t>(world.GetRoads().size()-1), "Module would be drawn twice");
+            Check(world.GetTile(x,z).infrastructureId == childId && world.GetTile(x,z).zoneType == ZoneType::None,
+                  "Integrated cell lost occupancy or retained zoning");
+            const auto revision=world.GetRoadRevision();
+            Check(!world.PlaceRoad(x,z) && revision == world.GetRoadRevision(), "Clicking the covered tile charged again");
+            Add(world,Arm(inside,1,4)); // Continue the road at the far edge.
+            Add(world,Arm(outside));
+            Expect(world,Shapes[2],turn);
+            Check(world.GetRoadAt(x,z)->id == childId && world.GetRoadModuleAt(x,z)->id == ownerId,
+                  "Acute-to-double upgrade lost tile/module identity");
+            const auto memberBefore=*world.GetRoadAt(x,z);
+            const auto across=RotateRoadConnections(RoadNorth|RoadSouth,turn);
+            Check(!world.PlaceRoad(x,z,across), "Covered straight converted independently into a junction");
+            const int side=Direction(1,turn);
+            const auto blocked=world.PlaceRoads({x,z,x+DX[side],z+DZ[side]});
+            Check(blocked.evaluation.blocked > 0 && world.GetRoadAt(x,z)->connections == memberBefore.connections &&
+                  world.GetRoadAt(x,z)->modulePorts == memberBefore.modulePorts,
+                  "Sideways drag damaged a covered tile");
+            Expect(world,Shapes[2],turn); CheckNetwork(world);
+        }
+        // The broad phase must include the entire inside cell, even outside
+        // the original diamond. This is an independent crossing, not a member.
+        Road owner; owner.mixedConnections=RoadNorthEast|RoadSouthEast|RoadEast;
+        Road crossing; crossing.tileX=1; crossing.connections=RoadNorth|RoadSouth;
+        Check(RoadMeshesOverlap(owner,crossing), "Collision omitted the second tile of the model");
+        Road extension; extension.tileX=2; extension.connections=RoadWest|RoadEast;
+        Check(!RoadMeshesOverlap(owner,extension), "Far edge seam overlaps the next straight");
+        std::cout << "PASS: two-cell ownership, short branches, single model instances, extension, stable IDs, reuse and protected inside tiles\n";
+    }
     void CheckSeams(const std::filesystem::path& assets)
     {
         for (auto shape : Shapes)
@@ -146,7 +204,8 @@ namespace
             for (int d=0; d<8; ++d) if (asset.connections & (1 << d)) for (float side : {-1.f,1.f})
             {
                 const float width = .25f / (d >= 4 ? RoadDiagonalLength : 1.f);
-                const float x = DX[d]*.5f-DZ[d]*side*width, z = DZ[d]*.5f+DX[d]*side*width;
+                const float reach = RoadModulePortsAt(asset.connections,DX[d],DZ[d]) ? 1.5f : .5f;
+                const float x = DX[d]*reach-DZ[d]*side*width, z = DZ[d]*reach+DX[d]*side*width;
                 Check(std::any_of(mesh.vertices.begin(),mesh.vertices.end(),[&](const auto& v) { return Near(v.x,x) && Near(v.z,z); }),
                       "Junction mouth misses the eight-meter road seam");
             }
@@ -159,7 +218,7 @@ int main(int argc,char** argv)
     try
     {
         if (argc != 2) throw std::runtime_error("Usage: CityDiagonalCornerIntersectionTests assets-directory");
-        CheckSeams(argv[1]); CheckPlacement(); CheckBlocked(); return 0;
+        CheckSeams(argv[1]); CheckPlacement(); CheckBlocked(); CheckModules(); return 0;
     }
     catch (const std::exception& e) { std::cerr << "FAIL: " << e.what() << '\n'; return 1; }
 }

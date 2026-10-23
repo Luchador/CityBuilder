@@ -250,10 +250,10 @@ namespace
                     Check(!(zonePixels[(z * 16 + x) * 4 + 3] & 1), "Diagonal shoulder remained zone eligible");
             }
         }
-        // The R channel distinguishes diagonal anchors from unbuildable shoulders,
-        // so an anchor can be reused while shoulders remain unavailable to zoning.
+        // Planned metadata uses B/R/A for the footprint and G for acceptance.
+        // Unplanned shoulder metadata still reports no standalone road ports.
         const auto pixels = BuildPlannedRoadPreviewPixels(world, world.PlanRoads({2, 2, 4, 4, true, true}), {3, 3, 4, 3});
-        Check(pixels[0] == RoadDiagonalNWSE && pixels[1] == 255 && pixels[2] == 15 && pixels[4] == 0,
+        Check(pixels[0] == 0 && pixels[1] == 255 && pixels[2] == 15 && pixels[3] == 0 && pixels[4] == 0,
               "Diagonal eligibility metadata lost axis or shoulder occupancy");
         std::cout << "PASS: diagonal footprint preview, partial/blocked/reused placement, and zone exclusion\n";
     }

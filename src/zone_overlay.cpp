@@ -57,8 +57,8 @@ void ZoneOverlay::PrepareRoadPreview(const World& world, const ToolPreview& prev
     // A failed partial upload must not leave the old preview marked as cached.
     preparedRoadPath.reset();
     const auto plan = world.PlanRoads(path);
-    // Upload small blocks along either kind of route. G holds acceptance and B
-    // holds footprint sides. Off-path values are never sampled by the shader.
+    // Upload small blocks along either kind of route. G holds acceptance;
+    // B/R/A hold the 24 footprint bits. Off-path values are never sampled.
     for (std::size_t first = 0; first < plan.tiles.size(); first += 16)
     {
         const auto& a = plan.tiles[first];

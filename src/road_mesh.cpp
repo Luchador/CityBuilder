@@ -44,8 +44,11 @@ StaticMesh LoadRoadMesh(const std::filesystem::path& path, const RoadAsset& asse
     }
     for (auto& v : geometry.vertices)
     {
-        if (asset.mixedJunction && std::abs(v.x) + std::abs(v.z) > 1.0001f)
-            throw std::runtime_error(std::string(asset.model) + " must fit the mixed-junction diamond footprint");
+        const bool inModuleCell = std::any_of(asset.moduleCells.begin(), asset.moduleCells.end(), [&](auto cell)
+            { return (cell.ports & RoadAllDiagonals) ? std::abs(v.x - cell.x) + std::abs(v.z - cell.z) <= 1.0001f :
+                std::abs(v.x - cell.x) <= .5001f && std::abs(v.z - cell.z) <= .5001f; });
+        if (asset.mixedJunction && std::abs(v.x) + std::abs(v.z) > 1.0001f && !inModuleCell)
+            throw std::runtime_error(std::string(asset.model) + " must fit its anchor and owned-cell footprint");
         if (!asset.fitGridTransition && !asset.mixedJunction && (std::abs(v.x) > asset.sourceHalfExtent + .0001f || std::abs(v.z) > asset.sourceHalfExtent + .0001f))
             throw std::runtime_error(std::string(asset.model) + " exceeds its centered source footprint");
         v.u = v.u * asset.uScale + asset.uOffset;

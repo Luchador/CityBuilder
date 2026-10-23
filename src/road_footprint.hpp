@@ -9,26 +9,49 @@
 #include <limits>
 #include <utility>
 
-// W/N/E/S bits indicate the side tiles reserved in addition to the anchor.
-// Ends reserve room for their eventual straight. Transitions only spill toward
-// their diagonal opening, leaving their cardinal approach tile available.
+// 24 bits describe every offset in a 5x5 footprint except the implicit center.
+// The low four bits retain W/N/E/S. CPU preview packing and HLSL use this order.
+constexpr std::uint32_t RoadFootprintBit(int dx, int dz)
+{
+    if (dx == -1 && dz == 0) return RoadWest;
+    if (dx == 0 && dz == -1) return RoadNorth;
+    if (dx == 1 && dz == 0) return RoadEast;
+    if (dx == 0 && dz == 1) return RoadSouth;
+    if ((!dx && !dz) || dx < -2 || dx > 2 || dz < -2 || dz > 2) return 0;
+    const int index = (dz + 2) * 5 + dx + 2;
+    const unsigned bit = 4 + index - (index > 7) - (index > 11) - (index > 12) - (index > 13) - (index > 17);
+    return 1u << bit;
+}
+constexpr std::uint8_t RoadPortShoulders(std::uint8_t ports)
+{
+    return static_cast<std::uint8_t>(
+        ((ports & (RoadNorthWest | RoadSouthWest)) ? RoadWest : 0) |
+        ((ports & (RoadNorthWest | RoadNorthEast)) ? RoadNorth : 0) |
+        ((ports & (RoadNorthEast | RoadSouthEast)) ? RoadEast : 0) |
+        ((ports & (RoadSouthWest | RoadSouthEast)) ? RoadSouth : 0));
+}
+constexpr std::uint32_t RoadFootprintMask(std::uint8_t axis, std::uint8_t mixed = 0)
+{
+    std::uint32_t mask = mixed ? RoadPortShoulders(mixed) : axis ? 15 : 0;
+    ForEachRoadModuleCell(mixed, [&](auto cell)
+    {
+        mask |= RoadFootprintBit(cell.x, cell.z);
+        if (cell.ports & RoadAllDiagonals)
+        {
+            mask |= RoadFootprintBit(cell.x - 1, cell.z) | RoadFootprintBit(cell.x + 1, cell.z) |
+                    RoadFootprintBit(cell.x, cell.z - 1) | RoadFootprintBit(cell.x, cell.z + 1);
+        }
+    });
+    return mask;
+}
 constexpr std::uint8_t RoadFootprintSides(std::uint8_t axis, std::uint8_t mixed = 0)
 {
-    if (!mixed) return axis ? 15 : 0;
-    return static_cast<std::uint8_t>(
-        ((mixed & (RoadNorthWest | RoadSouthWest)) ? RoadWest : 0) |
-        ((mixed & (RoadNorthWest | RoadNorthEast)) ? RoadNorth : 0) |
-        ((mixed & (RoadNorthEast | RoadSouthEast)) ? RoadEast : 0) |
-        ((mixed & (RoadSouthWest | RoadSouthEast)) ? RoadSouth : 0));
+    return static_cast<std::uint8_t>(RoadFootprintMask(axis, mixed) & 15);
 }
-
 constexpr bool RoadReservesTile(const Road& road, int x, int z)
 {
     const int dx = x - road.tileX, dz = z - road.tileZ;
-    const auto sides = RoadFootprintSides(road.diagonalAxis, road.mixedConnections);
-    return (!dx && !dz) || (dx == -1 && !dz && (sides & RoadWest)) ||
-        (!dx && dz == -1 && (sides & RoadNorth)) || (dx == 1 && !dz && (sides & RoadEast)) ||
-        (!dx && dz == 1 && (sides & RoadSouth));
+    return (!dx && !dz) || (RoadFootprintMask(road.diagonalAxis, road.mixedConnections) & RoadFootprintBit(dx, dz));
 }
 
 // Conservative convex cells contain the complete road meshes. Integer
@@ -64,6 +87,18 @@ struct RoadCell
         }
         else if (road.diagonalAxis || road.mixedConnections) points = {{{-2, 0}, {0, -2}, {2, 0}, {0, 2}, {}}};
         else points = {{{-1, -1}, {1, -1}, {1, 1}, {-1, 1}, {}}};
+        // A multi-cell model can extend beyond the anchor's diamond. Its AABB
+        // is conservative; the triangle test below still decides collisions.
+        int minX = -2, maxX = 2, minZ = -2, maxZ = 2;
+        bool multiCell = false;
+        ForEachRoadModuleCell(road.mixedConnections, [&](auto cell)
+        {
+            multiCell = true;
+            const int radius = (cell.ports & RoadAllDiagonals) ? 2 : 1;
+            minX = std::min(minX, cell.x * 2 - radius); maxX = std::max(maxX, cell.x * 2 + radius);
+            minZ = std::min(minZ, cell.z * 2 - radius); maxZ = std::max(maxZ, cell.z * 2 + radius);
+        });
+        if (multiCell) { count = 4; points = {{{minX,minZ}, {maxX,minZ}, {maxX,maxZ}, {minX,maxZ}, {}}}; }
         for (int i = 0; i < count; ++i)
         { points[i].x += 2 * road.tileX; points[i].z += 2 * road.tileZ; }
     }
@@ -101,6 +136,9 @@ inline bool RoadCellsOverlap(const Road& a, const Road& b)
 // Touching seams are allowed; crossing pavement between tile centers is not.
 inline bool RoadMeshesOverlap(const Road& a, const Road& b)
 {
+    // Covered logical cells have no separate pavement; their owner's complete
+    // mesh is tested instead (also against roads beyond the covered tile).
+    if (!HasRoadModel(a) || !HasRoadModel(b)) return false;
     if (!RoadCellsOverlap(a, b)) return false;
     static_assert(RoadCollisionShapes.size() == RoadAssets.size());
     const auto transform = [](const Road& road, int offsetX, int offsetZ)

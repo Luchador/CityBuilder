@@ -12,7 +12,8 @@ inline constexpr float ZoneOverlayOpacity = 0.65f;
 std::vector<std::uint8_t> BuildZonePixels(const World& world, ToolTileRect bounds);
 // Separate from zoning: a slope may accept a road but never a zone. Red stores
 // allowed connection bits (0 = blocked). Before any road preview, the complete
-// plan fills G with acceptance and B with W/N/E/S footprint-side bits; A=255.
+// plan fills G with acceptance and B/R/A with the low/middle/high bytes of
+// a 24-bit footprint mask (5x5 minus its implicit center).
 std::vector<std::uint8_t> BuildRoadPreviewPixels(const World& world, ToolTileRect bounds);
 std::vector<std::uint8_t> BuildPlannedRoadPreviewPixels(const World& world, const RoadPlan& plan, ToolTileRect bounds);
 MinimapImage BuildZoneMinimapPatch(const MinimapImage& base, const World& world, ToolTileRect bounds);

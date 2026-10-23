@@ -82,6 +82,9 @@ public:
 
     std::span<const Road> GetRoads() const { return roads; }
     const Road* GetRoadAt(int x, int z) const;
+    // Resolve any tile of a multi-cell module to the road owning its model.
+    // GetRoadAt still returns the per-tile node used by the road network.
+    const Road* GetRoadModuleAt(int x, int z) const;
     std::uint64_t GetRoadRevision() const { return roadRevision; }
     // 0 means a single click; dragged routes specify their needed directions.
     // Sloped cardinal roads require level pairs; diagonal roads require their
@@ -104,11 +107,13 @@ private:
     RoadPlan PlanRoadsInternal(const RoadPath& path, std::uint8_t singleConnections) const;
     RoadPlacementResult CommitRoadPlan(const RoadPlan& plan);
     std::optional<Road> PlannedRoadAt(int x, int z, const RoadPath* path = nullptr, const RoadPlan* plan = nullptr) const;
+    std::optional<Road> RawPlannedRoadAt(int x, int z, const RoadPath* path, const RoadPlan* plan) const;
     RoadPlacementStatus CheckRoadFootprint(const Road& road, const RoadPath& path, const RoadPlan& plan) const;
     std::uint8_t RoadConnectionsAt(const Road& road, const RoadPath* path = nullptr, const RoadPlan* plan = nullptr) const;
     void InsertRoad(const PlannedRoadTile& tile);
     void RefreshRoadReservations(int x, int z);
     void ReconnectRoadNeighborhood(int x, int z);
+    void RefreshRoadModules(int x, int z);
 
     TerrainSettings terrainSettings;
     TerrainHeightmap terrain;

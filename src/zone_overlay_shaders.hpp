@@ -28,22 +28,34 @@ bool OnRoadPath(float2 tile)
         (tile.x == roadPath.x || tile.y == roadPath.w);
 }
 
-// One CPU plan supplies eligibility and footprint sides for every route.
+// CPU RoadFootprintBit uses the same 24-bit offset ordering (center implicit).
+uint RoadFootprintBit(int2 offset)
+{
+    if (all(offset == int2(-1, 0))) return 1u;
+    if (all(offset == int2(0, -1))) return 2u;
+    if (all(offset == int2(1, 0))) return 4u;
+    if (all(offset == int2(0, 1))) return 8u;
+    if (all(offset == 0) || any(abs(offset) > 2)) return 0u;
+    int index = (offset.y + 2) * 5 + offset.x + 2;
+    uint bit = 4u + (uint)index - (uint)(index > 7) - (uint)(index > 11) -
+        (uint)(index > 12) - (uint)(index > 13) - (uint)(index > 17);
+    return 1u << bit;
+}
 // A shared tile is red if any proposed module covering it is rejected.
+// Only current route anchors are sampled, so earlier previews cannot linger.
 bool RoadPreviewFootprint(float2 tile, out bool allowed)
 {
     bool covered = false;
     allowed = true;
-    const float2 offsets[5] = {float2(0, 0), float2(-1, 0), float2(0, -1), float2(1, 0), float2(0, 1)};
-    const uint sides[5] = {0u, 4u, 8u, 1u, 2u};
-    [unroll] for (int i = 0; i < 5; ++i)
+    [loop] for (int z = -2; z <= 2; ++z) [loop] for (int x = -2; x <= 2; ++x)
     {
-        float2 anchor = tile + offsets[i];
+        float2 anchor = tile - float2(x, z);
         if (OnRoadPath(anchor))
         {
             float4 eligibility = roadMap.SampleLevel(roadSampler, (anchor + 0.5) / zoneSettings.x, 0);
-            uint footprint = (uint)round(eligibility.b * 255.0);
-            if (i == 0 || (footprint & sides[i]) != 0)
+            uint footprint = (uint)round(eligibility.b * 255.0) |
+                ((uint)round(eligibility.r * 255.0) << 8u) | ((uint)round(eligibility.a * 255.0) << 16u);
+            if ((x == 0 && z == 0) || (footprint & RoadFootprintBit(int2(x, z))) != 0)
             {
                 allowed = allowed && eligibility.g > 0.5;
                 covered = true;

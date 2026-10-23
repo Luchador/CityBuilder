@@ -77,8 +77,8 @@ void RoadTool::BuildPreview(ToolPreview& preview) const
         {
             // A cardinal drag can also upgrade an endpoint to a transition.
             // The shader selects each planned module's actual footprint.
-            --preview.tiles->minX; --preview.tiles->minZ;
-            ++preview.tiles->maxX; ++preview.tiles->maxZ;
+            preview.tiles->minX -= RoadFootprintRadius; preview.tiles->minZ -= RoadFootprintRadius;
+            preview.tiles->maxX += RoadFootprintRadius; preview.tiles->maxZ += RoadFootprintRadius;
         }
         preview.placementAllowed = allowed;
         preview.roadPath = path;

@@ -103,7 +103,14 @@ const Road* World::GetRoadAt(int x, int z) const
     return tiles[index].infrastructureId == road.id ? &road : nullptr;
 }
 
-std::optional<Road> World::PlannedRoadAt(int x, int z, const RoadPath* path, const RoadPlan* plan) const
+const Road* World::GetRoadModuleAt(int x, int z) const
+{
+    const auto* road = GetRoadAt(x, z);
+    if (!road || HasRoadModel(*road)) return road;
+    return GetRoadAt(x + road->modelOwnerOffsetX, z + road->modelOwnerOffsetZ);
+}
+
+std::optional<Road> World::RawPlannedRoadAt(int x, int z, const RoadPath* path, const RoadPlan* plan) const
 {
     if (!ContainsTile(x, z)) return std::nullopt;
     const auto* existing = GetRoadAt(x, z);
@@ -117,10 +124,32 @@ std::optional<Road> World::PlannedRoadAt(int x, int z, const RoadPath* path, con
             else { road.tileX = x; road.tileZ = z; ReadRoadSurface(terrain, x, z, road.surface); }
             road.diagonalAxis = tile.diagonalAxis;
             road.mixedConnections = tile.mixedConnections;
+            road.modulePorts = 0; road.modelOwnerOffsetX = road.modelOwnerOffsetZ = 0;
             return road;
         }
     }
-    return existing ? std::optional<Road>(*existing) : std::nullopt;
+    if (!existing) return std::nullopt;
+    auto road = *existing;
+    road.modulePorts = 0; road.modelOwnerOffsetX = road.modelOwnerOffsetZ = 0;
+    return road;
+}
+
+std::optional<Road> World::PlannedRoadAt(int x, int z, const RoadPath* path, const RoadPlan* plan) const
+{
+    auto road = RawPlannedRoadAt(x, z, path, plan);
+    if (!road) return road;
+    // Module ownership is derived from the same future state as placement,
+    // including rejected upgrades falling back to the original live road.
+    constexpr int dx[]{-1,0,1,0,-1,1,1,-1}, dz[]{0,-1,0,1,-1,-1,1,1};
+    for (int d = 0; d < 8; ++d)
+        if (const auto owner = RawPlannedRoadAt(x + dx[d], z + dz[d], path, plan))
+            if (const auto ports = RoadModulePortsAt(owner->mixedConnections, -dx[d], -dz[d]))
+            {
+                road->modulePorts = ports;
+                road->modelOwnerOffsetX = dx[d]; road->modelOwnerOffsetZ = dz[d];
+                break;
+            }
+    return road;
 }
 
 std::uint8_t World::RoadConnectionsAt(const Road& road, const RoadPath* path, const RoadPlan* plan) const
@@ -132,7 +161,10 @@ std::uint8_t World::RoadConnectionsAt(const Road& road, const RoadPath* path, co
     {
         const auto bit = static_cast<std::uint8_t>(1 << i);
         if (!(ports & bit)) continue;
-        const auto neighbor = PlannedRoadAt(road.tileX + dx[i], road.tileZ + dz[i], path, plan);
+        const int nx = road.tileX + dx[i], nz = road.tileZ + dz[i];
+        const auto* live = path ? nullptr : GetRoadAt(nx, nz);
+        const auto neighbor = path ? PlannedRoadAt(nx, nz, path, plan) :
+            live ? std::optional<Road>(*live) : std::nullopt;
         if (!neighbor || !(RoadPorts(*neighbor) & RotateRoadConnections(bit, 2))) continue;
         const float edgeX = dx[i] * .5f, edgeZ = dz[i] * .5f;
         if (road.surface.HeightAt(edgeX, edgeZ) == neighbor->surface.HeightAt(-edgeX, -edgeZ)) connections |= bit;
@@ -143,8 +175,38 @@ std::uint8_t World::RoadConnectionsAt(const Road& road, const RoadPath* path, co
 RoadPlacementStatus World::CheckRoadFootprint(const Road& road, const RoadPath& path, const RoadPlan& plan) const
 {
     const int x = road.tileX, z = road.tileZ;
+    if (!HasRoadModel(road))
+    {
+        const auto owner = RawPlannedRoadAt(x + road.modelOwnerOffsetX, z + road.modelOwnerOffsetZ, &path, &plan);
+        if (!owner || road.mixedConnections || road.diagonalAxis != DiagonalRoadAxis(road.modulePorts))
+            return RoadPlacementStatus::UnsupportedConnection;
+        const auto status = CheckRoadFootprint(*owner, path, plan);
+        if (!RoadPlacementAccepted(status)) return status;
+        return GetRoadAt(x, z) ? RoadPlacementStatus::ExistingRoad : RoadPlacementStatus::Allowed;
+    }
+    auto moduleStatus = RoadPlacementStatus::Allowed;
+    ForEachRoadModuleCell(road.mixedConnections, [&](auto cell)
+    {
+        const int px = x + cell.x, pz = z + cell.z;
+        if (!ContainsTile(px, pz)) { moduleStatus = RoadPlacementStatus::OutsideMap; return; }
+        const auto child = RawPlannedRoadAt(px, pz, &path, &plan);
+        // The integrated straight replaces only a compatible per-tile road,
+        // never a junction, incompatible diagonal, slope, or another module's anchor.
+        if (!child || child->mixedConnections || child->diagonalAxis != DiagonalRoadAxis(cell.ports) ||
+            (RoadConnectionsAt(*child, &path, &plan) & ~cell.ports) ||
+            (path.Contains(px, pz) && RoadPlacementAccepted(plan.tiles[path.IndexOf(px, pz)].status) &&
+             (path.ConnectionsAt(px, pz) & ~cell.ports)))
+        { moduleStatus = RoadPlacementStatus::UnsupportedConnection; return; }
+        if (child->surface.slopeX != 0 || child->surface.slopeZ != 0 || child->surface.elevation != road.surface.elevation)
+            moduleStatus = RoadPlacementStatus::NotFlat;
+        const auto resolved = PlannedRoadAt(px, pz, &path, &plan);
+        if (!resolved || px + resolved->modelOwnerOffsetX != x || pz + resolved->modelOwnerOffsetZ != z)
+            moduleStatus = RoadPlacementStatus::Occupied;
+    });
+    if (!RoadPlacementAccepted(moduleStatus)) return moduleStatus;
     const bool flatOnly = road.diagonalAxis || road.mixedConnections;
-    for (int pz = z - 1; pz <= z + 1; ++pz) for (int px = x - 1; px <= x + 1; ++px)
+    for (int pz = z - RoadFootprintRadius; pz <= z + RoadFootprintRadius; ++pz)
+        for (int px = x - RoadFootprintRadius; px <= x + RoadFootprintRadius; ++px)
     {
         if (!RoadReservesTile(road, px, pz)) continue;
         if (!ContainsTile(px, pz)) return RoadPlacementStatus::OutsideMap;
@@ -164,12 +226,14 @@ RoadPlacementStatus World::CheckRoadFootprint(const Road& road, const RoadPath& 
     }
     // Inspect every nearby anchor, not just the first reservation owner. This
     // prevents hiding a collision behind another road sharing the same tile.
-    for (int nz = z - 2; nz <= z + 2; ++nz) for (int nx = x - 2; nx <= x + 2; ++nx)
+    for (int nz = z - 2 * RoadFootprintRadius; nz <= z + 2 * RoadFootprintRadius; ++nz)
+        for (int nx = x - 2 * RoadFootprintRadius; nx <= x + 2 * RoadFootprintRadius; ++nx)
     {
         if (nx == x && nz == z) continue;
         auto other = PlannedRoadAt(nx, nz, &path, &plan);
-        if (other) other->connections = RoadConnectionsAt(*other, &path, &plan);
-        if (other && RoadMeshesOverlap(road, *other)) return RoadPlacementStatus::Occupied;
+        if (!other || !HasRoadModel(*other)) continue;
+        other->connections = RoadConnectionsAt(*other, &path, &plan);
+        if (RoadMeshesOverlap(road, *other)) return RoadPlacementStatus::Occupied;
     }
     return GetRoadAt(x, z) ? RoadPlacementStatus::ExistingRoad : RoadPlacementStatus::Allowed;
 }
@@ -192,6 +256,8 @@ RoadPlan World::PlanRoadsInternal(const RoadPath& path, std::uint8_t singleConne
         RoadSurface surface;
         const auto status = ReadRoadSurface(terrain, x, z, surface);
         if (status != RoadPlacementStatus::Allowed) tile.status = status;
+        else if (existing && existing->modulePorts && (required & ~existing->modulePorts))
+            tile.status = RoadPlacementStatus::UnsupportedConnection;
         else if ((required & 240) && !SupportedDiagonalConnections(required))
             tile.status = RoadPlacementStatus::UnsupportedConnection;
         else if (!(required & 240) && (required & surface.AllowedConnections()) != required)
@@ -294,7 +360,7 @@ RoadPlan World::PlanRoadsInternal(const RoadPath& path, std::uint8_t singleConne
                         if (path.Contains(nx, nz) && RoadPlacementAccepted(plan.tiles[path.IndexOf(nx, nz)].status)) continue;
                         const auto* old = GetRoadAt(nx, nz);
                         if (!old) continue;
-                        auto neighbor = *old;
+                        auto neighbor = *PlannedRoadAt(nx, nz, &path, &plan);
                         neighbor.connections = RoadConnectionsAt(neighbor, &path, &plan);
                         if (neighbor.connections == old->connections) continue;
                         const auto status = (neighbor.diagonalAxis && !SupportedDiagonalConnections(neighbor.connections)) ||
@@ -352,7 +418,8 @@ void World::InsertRoad(const PlannedRoadTile& tile)
 
 void World::RefreshRoadReservations(int x, int z)
 {
-    for (int pz = z - 1; pz <= z + 1; ++pz) for (int px = x - 1; px <= x + 1; ++px)
+    for (int pz = z - RoadFootprintRadius; pz <= z + RoadFootprintRadius; ++pz)
+        for (int px = x - RoadFootprintRadius; px <= x + RoadFootprintRadius; ++px)
     {
         if (!ContainsTile(px, pz)) continue;
         const auto index = TileIndex(px, pz);
@@ -360,8 +427,8 @@ void World::RefreshRoadReservations(int x, int z)
         auto owner = roadAtTile[index]; // An anchor always owns its own tile.
         if (!owner)
         {
-            for (int nz = pz - 1; nz <= pz + 1 && !owner; ++nz)
-                for (int nx = px - 1; nx <= px + 1 && !owner; ++nx)
+            for (int nz = pz - RoadFootprintRadius; nz <= pz + RoadFootprintRadius && !owner; ++nz)
+                for (int nx = px - RoadFootprintRadius; nx <= px + RoadFootprintRadius && !owner; ++nx)
                     if (const auto* road = GetRoadAt(nx, nz); road && RoadReservesTile(*road, px, pz))
                         owner = roadAtTile[TileIndex(nx, nz)];
         }
@@ -387,7 +454,18 @@ void World::ReconnectRoad(int x, int z)
 
 void World::ReconnectRoadNeighborhood(int x, int z)
 {
-    for (int nz = z - 1; nz <= z + 1; ++nz) for (int nx = x - 1; nx <= x + 1; ++nx) ReconnectRoad(nx, nz);
+    for (int nz = z - 2; nz <= z + 2; ++nz) for (int nx = x - 2; nx <= x + 2; ++nx) ReconnectRoad(nx, nz);
+}
+
+void World::RefreshRoadModules(int x, int z)
+{
+    for (int nz = z - 1; nz <= z + 1; ++nz) for (int nx = x - 1; nx <= x + 1; ++nx)
+        if (const auto road = PlannedRoadAt(nx, nz))
+        {
+            auto& live = roads[roadAtTile[TileIndex(nx, nz)] - 1];
+            live.modulePorts = road->modulePorts;
+            live.modelOwnerOffsetX = road->modelOwnerOffsetX; live.modelOwnerOffsetZ = road->modelOwnerOffsetZ;
+        }
 }
 
 RoadPlacementResult World::CommitRoadPlan(const RoadPlan& plan)
@@ -410,6 +488,8 @@ RoadPlacementResult World::CommitRoadPlan(const RoadPlan& plan)
             ++roadRevision; ++result.changed;
         }
     }
+    for (const auto& tile : plan.tiles)
+        if (RoadPlacementAccepted(tile.status)) RefreshRoadModules(tile.x, tile.z);
     for (const auto& tile : plan.tiles)
         if (RoadPlacementAccepted(tile.status)) RefreshRoadReservations(tile.x, tile.z);
     for (const auto& tile : plan.tiles)

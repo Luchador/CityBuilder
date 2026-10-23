@@ -66,7 +66,10 @@ std::vector<std::uint8_t> BuildPlannedRoadPreviewPixels(const World& world, cons
         if (tile.x < r.minX || tile.x > r.maxX || tile.z < r.minZ || tile.z > r.maxZ) continue;
         const auto offset = (static_cast<std::size_t>(tile.z - r.minZ) * (r.maxX - r.minX + 1) + tile.x - r.minX) * 4;
         pixels[offset + 1] = RoadPlacementAccepted(tile.status) ? 255 : 0;
-        pixels[offset + 2] = RoadFootprintSides(tile.diagonalAxis, tile.mixedConnections);
+        const auto footprint = RoadFootprintMask(tile.diagonalAxis, tile.mixedConnections);
+        pixels[offset + 2] = static_cast<std::uint8_t>(footprint);
+        pixels[offset] = static_cast<std::uint8_t>(footprint >> 8);
+        pixels[offset + 3] = static_cast<std::uint8_t>(footprint >> 16);
     }
     return pixels;
 }

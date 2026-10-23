@@ -164,6 +164,7 @@ void RoadRenderer::Prepare(const World& world)
 
     for (const auto& road : roads)
     {
+        if (!HasRoadModel(road)) continue;
         const auto visual = GetRoadVisual(road);
 
         groups[static_cast<std::size_t>(visual.shape)].push_back({static_cast<float>(road.tileX) + 0.5f,

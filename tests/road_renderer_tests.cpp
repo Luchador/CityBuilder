@@ -327,12 +327,15 @@ int main(int argc, char** argv)
             mixedRenderer.Initialize(&device, textures, SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM);
             mixedRenderer.Prepare(mixed); mixedRenderer.Draw(&pass);
             const auto visual = GetRoadVisual(*mixed.GetRoadAt(7, 7));
-            Check(shapeInstances[static_cast<std::size_t>(visual.shape)] == 1 && drawnInstances == mixed.GetRoads().size(),
+            const auto modelCount = static_cast<Uint32>(std::count_if(mixed.GetRoads().begin(),mixed.GetRoads().end(),HasRoadModel));
+            Check(shapeInstances[static_cast<std::size_t>(visual.shape)] == 1 && drawnInstances == modelCount,
                   "Mixed junction mesh batch missing");
             bool found = false;
             for (unsigned i = 0; i < drawnInstances; ++i)
             {
                 float values[8]; std::memcpy(values, boundInstances->bytes.data() + i * 32, sizeof(values));
+                const auto* node = mixed.GetRoadAt(static_cast<int>(values[0]),static_cast<int>(values[2]));
+                Check(node && HasRoadModel(*node), "Covered tile was rendered a second time");
                 if (values[0] == 7.5f && values[2] == 7.5f)
                 {
                     found = true;

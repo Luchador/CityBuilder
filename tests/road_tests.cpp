@@ -51,7 +51,7 @@ namespace
         controller.SetTool(std::make_unique<RoadTool>());
         Check(Empty(controller.Update(At(2, 3), .016f)) && Empty(controller.End(At(2, 3))),
               "Hover or flyout release placed a road");
-        Check(controller.BuildPreview().tiles == ToolTileRect{1, 2, 3, 4} &&
+        Check(controller.BuildPreview().tiles == ToolTileRect{0, 1, 4, 5} &&
               !controller.BuildPreview().zoneType && controller.BuildPreview().placementAllowed,
               "Valid road preview missing");
         world.GetTile(2, 3).zoneType = ZoneType::ResidentialLight;
@@ -346,7 +346,7 @@ namespace
             const auto path = std::get<RoadRequest>(controller.End(At(ex, ez))).path;
             Check(path.diagonal && preview.roadPath == path && preview.placementAllowed,
                   "Diagonal preview/release mismatch");
-            Check(preview.tiles->minX == std::min(7, ex) - 1 && preview.tiles->maxZ == std::max(7, ez) + 1,
+            Check(preview.tiles->minX == std::min(7, ex) - RoadFootprintRadius && preview.tiles->maxZ == std::max(7, ez) + RoadFootprintRadius,
                   "Preview omitted the diagonal footprint");
             Check(world.PlaceRoads(path).changed == 5, "Diagonal route left holes");
             const auto forward = static_cast<std::uint8_t>(16 << d);

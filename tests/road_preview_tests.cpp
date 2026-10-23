@@ -30,8 +30,11 @@ namespace
         {
             Check(roadImage->pixels[(tile.z * roadImage->width + tile.x) * 4 + 1] ==
                   (RoadPlacementAccepted(tile.status) ? 255 : 0), "Uploaded preview disagrees with the placement plan");
-            Check(roadImage->pixels[(tile.z * roadImage->width + tile.x) * 4 + 2] ==
-                RoadFootprintSides(tile.diagonalAxis, tile.mixedConnections), "Wrong planned shoulder mask");
+            const auto offset = (tile.z * roadImage->width + tile.x) * 4;
+            const auto mask = roadImage->pixels[offset + 2] | (roadImage->pixels[offset] << 8) |
+                (roadImage->pixels[offset + 3] << 16);
+            Check(static_cast<std::uint32_t>(mask) == RoadFootprintMask(tile.diagonalAxis, tile.mixedConnections),
+                "Wrong planned footprint mask");
         }
     }
 }
@@ -138,8 +141,12 @@ int main()
         overlay.PrepareRoadPreview(world, mixed);
         CheckPreview(world, mixed);
         auto center = (30 * 128 + 35) * 4;
-        Check(roadImage->pixels[center + 1] == 255 && roadImage->pixels[center + 2] == (RoadNorth | RoadEast),
+        Check(roadImage->pixels[center + 1] == 255 && (roadImage->pixels[center + 2] & 15) == (RoadNorth | RoadEast),
               "Mixed T preview did not reserve the correct shoulders");
+        // Grid-NE owns E and NE, with the NE pavement's two far shoulders.
+        // These exceed the old four side bits and cross the B/R byte boundary.
+        Check(roadImage->pixels[center+2] == 0x86 && roadImage->pixels[center] == 0x18 &&
+              roadImage->pixels[center+3] == 0, "Three-tile preview omitted a diagonal cell or far shoulder");
         world.GetTile(36, 29).buildingId = 22;
         overlay.Update(world, {36, 29, 36, 29});
         overlay.PrepareRoadPreview(world, mixed);
@@ -151,15 +158,16 @@ int main()
         mixed.roadPath = RoadPath{35, 30, 31, 34, true, true};
         overlay.PrepareRoadPreview(world, mixed);
         CheckPreview(world, mixed);
-        Check(roadImage->pixels[center + 1] == 255 && roadImage->pixels[center + 2] == 15,
+        Check(roadImage->pixels[center + 1] == 255 && (roadImage->pixels[center + 2] & 15) == 15,
               "Mixed cross preview did not reserve all shoulders");
+        Check(roadImage->pixels[center+3] != 0, "Five-tile preview lost the high footprint byte");
         world.PlaceRoads({80, 80, 84, 76, true, true});
         ToolPreview curve;
         curve.roadPath = RoadPath{80, 80, 84, 84, true, true};
         overlay.PrepareRoadPreview(world, curve);
         CheckPreview(world, curve);
         center = (80 * 128 + 80) * 4;
-        Check(roadImage->pixels[center + 1] == 255 && roadImage->pixels[center + 2] == 15,
+        Check(roadImage->pixels[center + 1] == 255 && (roadImage->pixels[center + 2] & 15) == 15,
               "Diagonal curve preview missing or wrong footprint");
         world.GetTile(81, 81).buildingId = 33;
         overlay.Update(world, {81, 81, 81, 81});
@@ -193,6 +201,13 @@ int main()
               roadImage->pixels[center + 2] == (RoadNorth | RoadEast | RoadSouth),
               "Double corner junction preview has the wrong footprint");
         Check(world.PlaceRoads(*curve.roadPath).evaluation.upgrades == 1, "Double junction preview/commit mismatch");
+        Check(world.GetRoadModuleAt(81,80) == world.GetRoadAt(80,80) &&
+              world.GetRoadAllowedConnections(81,80) == (RoadWest|RoadEast),
+              "Covered cell did not expose the module's straight ports");
+        curve.roadPath = RoadPath{81,80,81,79};
+        overlay.PrepareRoadPreview(world,curve);
+        CheckPreview(world,curve);
+        Check(roadImage->pixels[(80*128+81)*4+1] == 0, "Covered inside tile allowed an independent sideways turn");
         overlay.Release(); overlay.Release();
         Check(!texturesAlive && !samplersAlive, "Preview resources leaked");
         std::cout << "PASS: uploaded junction preview, obstacle/revision invalidation, cache, bounded batches, failed-upload retry and cleanup\n";
