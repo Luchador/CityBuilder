@@ -23,7 +23,7 @@ inline constexpr std::uint8_t RoadDiagonalNESW = RoadNorthEast | RoadSouthWest;
 inline constexpr std::uint8_t RoadAllDiagonals = RoadDiagonalNWSE | RoadDiagonalNESW;
 inline constexpr float RoadDiagonalLength = 1.41421356237f;
 
-// Axis of a straight or end. Junctions use both axes.
+// Axis of a straight or end. Curves and junctions use both axes.
 constexpr std::uint8_t DiagonalRoadAxis(std::uint8_t connections)
 {
     if (connections && !(connections & ~RoadDiagonalNWSE)) return RoadDiagonalNWSE;
@@ -33,8 +33,22 @@ constexpr std::uint8_t DiagonalRoadAxis(std::uint8_t connections)
 
 constexpr bool SupportedDiagonalConnections(std::uint8_t connections)
 {
-    return !(connections & 15) && (connections == 0 || DiagonalRoadAxis(connections) ||
-        std::popcount(connections) >= 3);
+    // Every subset of the four diagonal ports has a mesh: end, straight,
+    // 90-degree curve, three-way junction, or four-way junction.
+    return !(connections & 15);
+}
+
+constexpr std::uint8_t DiagonalRoadAxes(std::uint8_t connections)
+{
+    if (connections & 15) return 0;
+    return static_cast<std::uint8_t>(((connections & RoadDiagonalNWSE) ? RoadDiagonalNWSE : 0) |
+                                     ((connections & RoadDiagonalNESW) ? RoadDiagonalNESW : 0));
+}
+
+constexpr bool IsDiagonalRoadCurve(std::uint8_t connections)
+{
+    return SupportedDiagonalConnections(connections) && std::popcount(connections) == 2 &&
+        !DiagonalRoadAxis(connections);
 }
 
 enum class RoadShape : std::size_t
@@ -42,7 +56,7 @@ enum class RoadShape : std::size_t
     Straight, ThreeWay, FourWay, DeadEnd, Curve,
     DiagonalThreeWay, DiagonalFourWay, GridToDiagonalLeft, GridToDiagonalRight,
     MixedThreeWayGridNE, MixedThreeWayGridNW, MixedThreeWayDiagonalE, MixedThreeWayDiagonalN,
-    MixedFourWayNESW, MixedFourWayNWSE, Count
+    MixedFourWayNESW, MixedFourWayNWSE, DiagonalCurve, Count
 };
 struct RoadVisual
 {
@@ -75,11 +89,13 @@ struct RoadAsset
 {
     const char* model;
     const char* texture;
-    std::uint8_t connections; // Authored openings AFTER the GLB node transforms.
+    std::uint8_t connections; // Openings after source fitting and base rotation.
     float uScale = 1.0f, uOffset = 0.0f;
     bool extendDiagonalApproaches = false;
     bool fitGridTransition = false;
     bool mixedJunction = false; // Authored diagonally, with optional UVs/texture.
+    float sourceHalfExtent = 0.5f; // Tile units, after GLB node transforms.
+    float rotationOffset = 0.0f; // Quarter-turns, added to the instance rotation.
 };
 
 inline constexpr char StraightRoadModelPath[] = "models/transportation/roads/road_straight.glb";
@@ -113,7 +129,11 @@ inline constexpr std::array<RoadAsset, static_cast<std::size_t>(RoadShape::Count
     {"models/transportation/roads/road_mixed_4way_ne_sw.glb", "models/transportation/roads/road_mixed_4way_ne_sw_basecolor.png",
         RoadWest | RoadEast | RoadNorthEast | RoadSouthWest, 1, 0, false, false, true},
     {"models/transportation/roads/road_mixed_4way_nw_se.glb", "models/transportation/roads/road_mixed_4way_nw_se_basecolor.png",
-        RoadWest | RoadEast | RoadNorthWest | RoadSouthEast, 1, 0, false, false, true}
+        RoadWest | RoadEast | RoadNorthWest | RoadSouthEast, 1, 0, false, false, true},
+    // Authored with full-length E/N openings. Rotate 45 degrees to SE/NE;
+    // preserve the wider radius and UVs, without stretching the geometry.
+    {"models/transportation/roads/road_diagonal_curve.glb", StraightRoadTexturePath,
+        RoadNorthEast | RoadSouthEast, 0.5f, 0.25f, false, false, false, RoadDiagonalLength * 0.5f, 0.5f}
 }};
 
 constexpr bool IsMixedRoadJunction(std::uint8_t connections)
@@ -147,7 +167,7 @@ constexpr RoadVisual GetRoadVisual(std::uint8_t connections)
             if (RotateRoadConnections(RoadAssets[shape].connections, turns) == connections)
             {
                 return {static_cast<RoadShape>(shape), static_cast<float>(turns) +
-                    (RoadAssets[shape].extendDiagonalApproaches ? .5f : 0.0f)};
+                    (RoadAssets[shape].extendDiagonalApproaches ? .5f : 0.0f) + RoadAssets[shape].rotationOffset};
             }
         }
     }
@@ -181,8 +201,8 @@ struct Road
     int tileZ = 0;
     RoadSurface surface;
     std::uint8_t connections = 0;
-    // Allowed corridor axes, including both axes at a junction. 0 keeps the
-    // cardinal rules. A pair of adjacent diagonal ports is not a supported bend.
+    // Allowed corridor axes, including both axes at a curve or junction.
+    // Zero keeps the cardinal rules.
     std::uint8_t diagonalAxis = 0;
     // Exact ports of a grid/diagonal bend or junction. Zero uses the axis rules.
     // The planner upgrades this mask only when a matching mesh is available.

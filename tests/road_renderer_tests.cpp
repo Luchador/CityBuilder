@@ -339,6 +339,32 @@ int main(int argc, char** argv)
             }
             Check(found, "Mixed center missing from instance buffer");
         }
+        for (int turn = 0; turn < 4; ++turn)
+        {
+            World curve(settings);
+            constexpr int dx[]{-1, 1, 1, -1}, dz[]{-1, -1, 1, 1};
+            for (int d : {(turn + 1) % 4, (turn + 2) % 4})
+                Check(!curve.PlaceRoads({7, 7, 7 + 3 * dx[d], 7 + 3 * dz[d], true, true}).evaluation.blocked,
+                      "Curve renderer fixture failed");
+            RoadRenderer curveRenderer;
+            curveRenderer.Initialize(&device, textures, SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM);
+            drawnInstances = 0; draws = 0; shapeInstances = {};
+            curveRenderer.Prepare(curve); curveRenderer.Draw(&pass);
+            Check(drawnInstances == 7 && draws == 3 && shapeInstances[static_cast<std::size_t>(RoadShape::DiagonalCurve)] == 1,
+                  "Diagonal curve was not rendered with its dedicated mesh");
+            bool found = false;
+            for (unsigned i = 0; i < drawnInstances; ++i)
+            {
+                float values[8]; std::memcpy(values, boundInstances->bytes.data() + i * 32, sizeof(values));
+                if (values[0] == 7.5f && values[2] == 7.5f)
+                {
+                    found = true;
+                    Check(values[3] == turn + .5f && values[6] == 1 && values[7] == 0,
+                          "Authored curve was stretched or given the wrong rotation/UV mode");
+                }
+            }
+            Check(found, "Curve missing from instance buffer");
+        }
         World empty(settings);
         renderer.Prepare(empty);
         drawnInstances = 0;
@@ -346,7 +372,7 @@ int main(int argc, char** argv)
         Check(drawnInstances == 0 && buffers == MeshBuffers, "Switching worlds retained stale road instances");
         renderer.Release(); renderer.Release();
         CheckReleased();
-        std::cout << "PASS: fifteen shared mesh batches and all mixed junction rotations, diagonal junction upgrades, instance layout, upload cache, failure recovery and cleanup\n";
+        std::cout << "PASS: sixteen shared mesh batches, diagonal curves and all mixed junction rotations, diagonal junction upgrades, instance layout, upload cache, failure recovery and cleanup\n";
         return 0;
     }
     catch (const std::exception& error)

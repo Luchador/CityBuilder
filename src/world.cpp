@@ -187,12 +187,12 @@ RoadPlan World::PlanRoadsInternal(const RoadPath& path, std::uint8_t singleConne
         const auto required = requiredAt(x, z);
         const auto* existing = GetRoadAt(x, z);
         PlannedRoadTile tile{x, z, existing ? RoadPlacementStatus::ExistingRoad : RoadPlacementStatus::Allowed,
-            static_cast<std::uint8_t>((existing ? existing->diagonalAxis : 0) | DiagonalRoadAxis(required)),
+            static_cast<std::uint8_t>((existing ? existing->diagonalAxis : 0) | DiagonalRoadAxes(required)),
             existing ? existing->mixedConnections : std::uint8_t{0}};
         RoadSurface surface;
         const auto status = ReadRoadSurface(terrain, x, z, surface);
         if (status != RoadPlacementStatus::Allowed) tile.status = status;
-        else if ((required & 240) && !DiagonalRoadAxis(required))
+        else if ((required & 240) && !SupportedDiagonalConnections(required))
             tile.status = RoadPlacementStatus::UnsupportedConnection;
         else if (!(required & 240) && (required & surface.AllowedConnections()) != required)
             tile.status = RoadPlacementStatus::WrongSlopeDirection;
@@ -242,10 +242,11 @@ RoadPlan World::PlanRoadsInternal(const RoadPath& path, std::uint8_t singleConne
             }
             else proposed.status = RoadPlacementStatus::UnsupportedConnection;
         }
-        else if (tile.diagonalAxis && (connections & tile.diagonalAxis) && (connections & ~tile.diagonalAxis))
+        else if (connections & RoadAllDiagonals)
         {
-            if (SupportedDiagonalConnections(connections)) proposed.diagonalAxis = RoadAllDiagonals;
-            else proposed.status = RoadPlacementStatus::UnsupportedConnection;
+            // Also discover a curve/junction when clicking its missing center.
+            // A pair of adjacent diagonal ports needs both corridor axes.
+            proposed.diagonalAxis = DiagonalRoadAxes(connections);
         }
     }
     plan.tiles = std::move(discovered);

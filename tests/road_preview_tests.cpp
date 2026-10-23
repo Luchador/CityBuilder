@@ -153,6 +153,24 @@ int main()
         CheckPreview(world, mixed);
         Check(roadImage->pixels[center + 1] == 255 && roadImage->pixels[center + 2] == 15,
               "Mixed cross preview did not reserve all shoulders");
+        world.PlaceRoads({80, 80, 84, 76, true, true});
+        ToolPreview curve;
+        curve.roadPath = RoadPath{80, 80, 84, 84, true, true};
+        overlay.PrepareRoadPreview(world, curve);
+        CheckPreview(world, curve);
+        center = (80 * 128 + 80) * 4;
+        Check(roadImage->pixels[center + 1] == 255 && roadImage->pixels[center + 2] == 15,
+              "Diagonal curve preview missing or wrong footprint");
+        world.GetTile(81, 81).buildingId = 33;
+        overlay.Update(world, {81, 81, 81, 81});
+        overlay.PrepareRoadPreview(world, curve);
+        CheckPreview(world, curve);
+        Check(roadImage->pixels[center + 1] == 0, "Curve preview ignored a blocked approach");
+        world.GetTile(81, 81).buildingId = NoBuilding;
+        overlay.Update(world, {81, 81, 81, 81});
+        Check(world.PlaceRoads(*curve.roadPath).evaluation.upgrades == 1, "Curve preview did not match commit");
+        overlay.PrepareRoadPreview(world, curve);
+        CheckPreview(world, curve);
         overlay.Release(); overlay.Release();
         Check(!texturesAlive && !samplersAlive, "Preview resources leaked");
         std::cout << "PASS: uploaded junction preview, obstacle/revision invalidation, cache, bounded batches, failed-upload retry and cleanup\n";

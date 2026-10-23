@@ -296,7 +296,7 @@ namespace
     {
         for (const auto& asset : RoadAssets)
         {
-            if (asset.extendDiagonalApproaches || asset.fitGridTransition || asset.mixedJunction) continue;
+            if (asset.extendDiagonalApproaches || asset.fitGridTransition || asset.mixedJunction || asset.rotationOffset != 0) continue;
             const auto mesh = LoadStaticGlb(directory / std::filesystem::path(asset.model).filename(), 1.0f / MetersPerTile);
             std::uint8_t openings = 0;
             for (unsigned d = 0; d < 4; ++d)
@@ -383,8 +383,7 @@ namespace
                   revision == world.GetRoadRevision(), "Reverse drag duplicated a diagonal road");
             Check(world.PlaceRoads({ex, ez, ex + dx[d], ez + dz[d], true, true}).changed == 1 &&
                   world.GetRoadAt(ex, ez)->connections == axis, "Extending a diagonal did not replace the old end");
-            Check(world.CheckRoadPlacement(7, 7, RoadWest) == RoadPlacementStatus::UnsupportedConnection &&
-                  world.CheckRoadPlacement(7, 7, RoadNorthWest | RoadNorthEast) == RoadPlacementStatus::UnsupportedConnection,
+            Check(world.CheckRoadPlacement(7, 7, RoadWest) == RoadPlacementStatus::UnsupportedConnection,
                   "Unsupported diagonal/cardinal turn accepted");
         }
 
@@ -540,10 +539,10 @@ namespace
         ends.PlaceRoads({3, 3, 7, 7, true, true});
         const auto original = *ends.GetRoadAt(7, 7);
         const auto turn = ends.PlaceRoads({3, 11, 7, 7, true, true});
-        Check(turn.evaluation.blocked == 1 && turn.changed == 4 &&
-              ends.GetRoadAt(7, 7)->connections == original.connections &&
-              ends.GetRoadAt(7, 7)->diagonalAxis == original.diagonalAxis,
-              "Unsupported two-arm diagonal bend was built");
+        Check(!turn.evaluation.blocked && turn.changed == 5 && turn.evaluation.upgrades == 1 &&
+              ends.GetRoadAt(7, 7)->id == original.id &&
+              GetRoadVisual(*ends.GetRoadAt(7, 7)).shape == RoadShape::DiagonalCurve,
+              "Two-arm diagonal bend failed");
         Check(ends.PlaceRoads({3, 11, 11, 3, true, true}).evaluation.upgrades == 1 &&
               GetRoadVisual(*ends.GetRoadAt(7, 7)).shape == RoadShape::DiagonalThreeWay,
               "Passing through a dead end did not form a T");
@@ -552,11 +551,11 @@ namespace
         partial.PlaceRoads({3, 3, 7, 7, true, true});
         partial.GetTile(8, 6).buildingId = 42;
         const auto planned = partial.PlanRoads({3, 11, 11, 3, true, true});
-        Check(planned.tiles[4].status == RoadPlacementStatus::UnsupportedConnection,
-              "Blocked approach left a two-arm junction upgrade in the plan");
+        Check(planned.tiles[4].status == RoadPlacementStatus::UpgradeRoad,
+              "Surviving two-arm corner was not planned as a curve");
         const auto built = partial.PlaceRoads({3, 11, 11, 3, true, true});
         Check(built.changed == planned.evaluation.changes &&
-              partial.GetRoadAt(7, 7)->diagonalAxis == RoadDiagonalNWSE && partial.GetTile(8, 6).buildingId == 42,
+              GetRoadVisual(*partial.GetRoadAt(7, 7)).shape == RoadShape::DiagonalCurve && partial.GetTile(8, 6).buildingId == 42,
               "Commit disagreed with its blocked-approach plan");
 
         auto halfTile = FlatWorld();
@@ -571,7 +570,7 @@ namespace
         const auto mixed = cardinal.PlaceRoads({3, 3, 11, 11, true, true});
         Check(mixed.evaluation.blocked == 0 && cardinal.GetRoadAt(7, 7)->mixedConnections ==
               (RoadWest | RoadEast | RoadNorthWest | RoadSouthEast), "Mixed intersection failed");
-        std::cout << "PASS: all diagonal T orientations, cross/extension/gap upgrades, stable IDs, reuse, partial approaches and rejected bends/half-tile crossings\n";
+        std::cout << "PASS: all diagonal T orientations, cross/extension/gap upgrades, stable IDs, reuse, partial approaches, curves and rejected half-tile crossings\n";
     }
 
     void CheckDiagonalJunctionGeometry(const std::filesystem::path& directory)
