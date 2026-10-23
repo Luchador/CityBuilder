@@ -224,7 +224,8 @@ int main(int argc, char** argv)
 
         Check(world.PlaceRoads({4, 3, 4, 5, false}).changed == 2, "Cross fixture failed");
         Check(world.PlaceRoad(5, 4), "Cross fixture failed");
-        Check(world.PlaceRoads({8, 8, 11, 9}).changed == 5 && world.PlaceRoad(9, 7), "Mixed shapes fixture failed");
+        Check(world.PlaceRoads({8, 8, 11, 9}).changed == 5 && world.PlaceRoads({9,8,9,7}).changed == 1,
+              "Mixed shapes fixture failed");
         drawnInstances = 0; draws = 0; shapeInstances = {}; instanceTurns.clear();
         renderer.Prepare(world); renderer.Draw(&pass);
         Check(drawnInstances == world.GetRoads().size() && draws == 5 && buffers == MeshBuffers + 1,
@@ -233,6 +234,30 @@ int main(int argc, char** argv)
         const auto mixedUploads = uploads;
         renderer.Prepare(world);
         Check(uploads == mixedUploads, "Stable connected roads reuploaded");
+        {
+            RoadRenderer parallelRenderer;
+            parallelRenderer.Initialize(&device,textures,SDL_GPU_TEXTUREFORMAT_B8G8R8A8_UNORM);
+            World parallel(settings);
+            Check(parallel.PlaceRoads({2,5,12,5}).changed==11 && parallel.PlaceRoads({2,6,12,6}).changed==11,
+                  "Parallel renderer fixture failed");
+            drawnInstances=0;draws=0;shapeInstances={};
+            parallelRenderer.Prepare(parallel);parallelRenderer.Draw(&pass);
+            Check(drawnInstances==22 && draws==2 &&
+                  shapeInstances[static_cast<std::size_t>(RoadShape::Straight)]==18 &&
+                  shapeInstances[static_cast<std::size_t>(RoadShape::DeadEnd)]==4,
+                  "Parallel roads rendered unwanted junctions");
+            const auto parallelUploads=uploads;
+            Check(parallel.PlaceRoads({7,5,7,6}).changed>0,"Manual renderer connector failed");
+            drawnInstances=0;draws=0;shapeInstances={};
+            parallelRenderer.Prepare(parallel);parallelRenderer.Draw(&pass);
+            Check(uploads==parallelUploads+1 && drawnInstances==22 && draws==3 &&
+                  shapeInstances[static_cast<std::size_t>(RoadShape::Straight)]==16 &&
+                  shapeInstances[static_cast<std::size_t>(RoadShape::DeadEnd)]==4 &&
+                  shapeInstances[static_cast<std::size_t>(RoadShape::ThreeWay)]==2,
+                  "Connection-only edit did not upload exactly two T junctions");
+            parallelRenderer.Prepare(parallel);
+            Check(uploads==parallelUploads+1,"Unchanged connector reuploaded instances");
+        }
         World sloped(settings);
         auto& terrain = const_cast<TerrainHeightmap&>(sloped.GetTerrain());
         for (unsigned z = 0; z <= 16; ++z) for (unsigned x = 0; x <= 16; ++x)

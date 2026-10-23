@@ -116,7 +116,8 @@ namespace
             auto world = FlatWorld();
             if (centerFirst) Check(world.PlaceRoad(7, 7), "Center placement failed");
             for (int d = 0; d < 4; ++d) if (mask & (1 << d))
-                Check(world.PlaceRoad(7 + dx[d], 7 + dz[d]), "Neighbor placement failed");
+                Check(centerFirst ? world.PlaceRoads({7,7,7+dx[d],7+dz[d]}).changed != 0 :
+                      world.PlaceRoad(7+dx[d],7+dz[d]), "Neighbor placement failed");
             if (!centerFirst) Check(world.PlaceRoad(7, 7), "Center placement failed");
             const auto* center = world.GetRoadAt(7, 7);
             Check(center && center->connections == mask, "Incorrect neighbor mask");
@@ -187,6 +188,79 @@ namespace
               edge.PlaceRoads({15, 0, 15, 15}).changed == 15, "Edge route incorrect");
         Check(edge.GetRoadAt(15, 0)->connections == (RoadWest | RoadSouth), "Map-edge curve incorrect");
         std::cout << "PASS: all 16 connection masks, insertion order, all drag directions, exact L previews, partial/reused/blocked routes and map edges\n";
+    }
+
+    void CheckParallelRoads()
+    {
+        for (bool alongX : {false,true}) for (int side : {-1,1})
+            for (bool reverse : {false,true}) for (bool staggered : {false,true})
+        {
+            auto world=FlatWorld();
+            const auto tile=[&](int along,int across) { return alongX ? ToolTile{along,across} : ToolTile{across,along}; };
+            const auto line=[&](int from,int to,int across)
+            {
+                const auto a=tile(from,across),b=tile(to,across);
+                return reverse ? RoadPath{b.x,b.z,a.x,a.z} : RoadPath{a.x,a.z,b.x,b.z};
+            };
+            const auto first=line(2,12,6),second=line(staggered ? 4 : 2,staggered ? 10 : 12,6+side);
+            Check(!world.PlaceRoads(first).evaluation.blocked,"First parallel road failed");
+            const auto plan=world.PlanRoads(second);
+            Check(!plan.evaluation.blocked && world.PlaceRoads(second).changed==plan.evaluation.changes,
+                  "Parallel road plan/commit mismatch");
+            const auto axis=alongX ? RoadWest|RoadEast : RoadNorth|RoadSouth;
+            const auto checkSeparated=[&](int connector=-1)
+            {
+                for (const auto& road : world.GetRoads())
+                    if ((alongX ? road.tileX : road.tileZ)!=connector)
+                        Check(road.connections && !(road.connections & ~axis),"Parallel road gained an incidental side edge");
+            };
+            checkSeparated();
+            const auto revision=world.GetRoadRevision();
+            Check(!world.PlaceRoads(first).changed && !world.PlaceRoads(second).changed && world.GetRoadRevision()==revision,
+                  "Redrawing parallel roads changed their topology");
+            const std::vector<Road> before(world.GetRoads().begin(),world.GetRoads().end());
+            const auto a=tile(7,6),b=tile(7,6+side);
+            const RoadPath connector=reverse ? RoadPath{b.x,b.z,a.x,a.z} : RoadPath{a.x,a.z,b.x,b.z};
+            const auto connectPlan=world.PlanRoads(connector);
+            Check(connectPlan.evaluation.changes && !connectPlan.evaluation.blocked &&
+                  connectPlan.evaluation.changes==connectPlan.evaluation.upgrades,"Existing-only connector was not an upgrade");
+            Check(world.PlaceRoads(connector).changed==connectPlan.evaluation.changes && world.GetRoads().size()==before.size(),
+                  "Manual connector inserted duplicate roads or differed from preview");
+            const auto toward=alongX ? (side<0 ? RoadNorth : RoadSouth) : (side<0 ? RoadWest : RoadEast);
+            Check(world.GetRoadAt(a.x,a.z)->connections==(axis|toward) &&
+                  world.GetRoadAt(b.x,b.z)->connections==(axis|RotateRoadConnections(toward,2)),
+                  "Manual connector failed to form two reciprocal T junctions");
+            checkSeparated(7);
+            for (const auto& old : before)
+                Check(world.GetRoadAt(old.tileX,old.tileZ)->id==old.id,"Connecting parallel roads changed an ID");
+            const auto connectedRevision=world.GetRoadRevision();
+            Check(!world.PlaceRoads(connector).changed && !world.PlaceRoads(first).changed && !world.PlaceRoads(second).changed &&
+                  world.GetRoadRevision()==connectedRevision,"Reusing the connector or parallel routes was not a no-op");
+            // A later nearby edit rebuilds the same neighborhood without
+            // reopening any of the other closed side edges.
+            Check(world.PlaceRoads(line(11,13,6+side)).changed>0,"Parallel extension failed");
+            checkSeparated(7);
+        }
+        // Clicking individual tiles can also extend a parallel road. Clicking
+        // an existing tile alone does not request a connection across its side.
+        auto clicks=FlatWorld();
+        clicks.PlaceRoads({2,6,12,6});
+        for (int x=2;x<=12;++x) Check(clicks.PlaceRoad(x,7),"Clicked parallel tile failed");
+        for (const auto& road : clicks.GetRoads())
+            Check(!(road.connections & (RoadNorth|RoadSouth)),"Clicked parallel tiles connected sideways");
+        Check(!clicks.PlaceRoad(7,7),"Single click reopened a parallel side edge");
+
+        // A rejected endpoint must not partially reopen a persistent edge.
+        const auto old=*clicks.GetRoadAt(7,7);
+        clicks.GetTile(7,6).buildingId=999;
+        const auto rejected=clicks.PlaceRoads({7,7,7,6});
+        Check(rejected.evaluation.blocked && !rejected.changed &&
+              clicks.GetRoadAt(7,7)->connections==old.connections &&
+              clicks.GetRoadAt(7,7)->suppressedConnections==old.suppressedConnections,
+              "Blocked connector altered the separated roads");
+        clicks.GetTile(7,6).buildingId=NoBuilding;
+        Check(clicks.PlaceRoads({7,7,7,6}).changed>0,"Unblocked connector failed");
+        std::cout << "PASS: parallel grid roads, both axes/sides/drag directions, staggered ends, explicit connectors, stable IDs, reuse and blocked-connector fallback\n";
     }
 
     World RampWorld(bool alongX, bool descending)
@@ -651,7 +725,8 @@ namespace
                 {
                     const auto* a = world.GetRoadAt(px, pz); const auto* b = backward.GetRoadAt(px, pz);
                     Check((a != nullptr) == (b != nullptr) && (!a ||
-                          (a->connections == b->connections && a->diagonalAxis == b->diagonalAxis && a->mixedConnections == b->mixedConnections)),
+                          (a->connections == b->connections && a->diagonalAxis == b->diagonalAxis &&
+                           a->mixedConnections == b->mixedConnections && a->suppressedConnections == b->suppressedConnections)),
                           "Reversing a drag changed the road topology");
                 }
                 for (const auto& road : world.GetRoads())
@@ -760,6 +835,7 @@ int main(int argc, char** argv)
         if (argc != 3) throw std::runtime_error("Usage: CityRoadTests road_straight.glb scratch-directory");
         CheckWorldAndTool();
         CheckConnectionsAndRoutes();
+        CheckParallelRoads();
         CheckSlopes();
         CheckDiagonals();
         CheckDiagonalJunctions();

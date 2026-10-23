@@ -260,6 +260,27 @@ int main()
         overlay.PrepareRoadPreview(world,curve);
         CheckPreview(world,curve);
         Check(roadImage->pixels[(80*128+81)*4+1] == 0, "Covered inside tile allowed an independent sideways turn");
+        // Two adjacent grid routes stay separate, but an existing-only drag
+        // between them is a valid upgrade and invalidates the cached preview.
+        Check(!world.PlaceRoads({40,100,50,100}).evaluation.blocked &&
+              !world.PlaceRoads({40,101,50,101}).evaluation.blocked,"Parallel preview fixture failed");
+        ToolPreview connector;
+        connector.roadPath=RoadPath{45,100,45,101};
+        overlay.PrepareRoadPreview(world,connector);
+        CheckPreview(world,connector);
+        Check(world.PlanRoads(*connector.roadPath).evaluation.upgrades>0 &&
+              roadImage->pixels[(100*128+45)*4+1]==255 && roadImage->pixels[(101*128+45)*4+1]==255,
+              "Existing-only connector preview was not allowed");
+        const int beforeConnection=updates;
+        Check(world.PlaceRoads(*connector.roadPath).changed>0,"Previewed connector did not commit");
+        overlay.PrepareRoadPreview(world,connector);
+        CheckPreview(world,connector);
+        Check(updates>beforeConnection && !world.PlaceRoads(*connector.roadPath).changed,
+              "Connection-only edit failed to invalidate preview or remained an upgrade");
+        for (int x=40;x<=50;++x) if (x!=45)
+            Check(world.GetRoadAt(x,100)->connections==(x==40 ? RoadEast : x==50 ? RoadWest : RoadWest|RoadEast) &&
+                  world.GetRoadAt(x,101)->connections==world.GetRoadAt(x,100)->connections,
+                  "Connector preview/commit reconnected neighboring parallel tiles");
         overlay.Release(); overlay.Release();
         Check(!texturesAlive && !samplersAlive, "Preview resources leaked");
         std::cout << "PASS: uploaded junction preview, obstacle/revision invalidation, cache, bounded batches, failed-upload retry and cleanup\n";

@@ -311,6 +311,9 @@ struct Road
     // Zero ports means this road owns its own model.
     std::uint8_t modulePorts = 0;
     int modelOwnerOffsetX = 0, modelOwnerOffsetZ = 0;
+    // Cardinal edges deliberately left closed when a parallel road was built.
+    // A later drag across the shared edge can connect the two roads explicitly.
+    std::uint8_t suppressedConnections = 0;
 };
 
 constexpr bool HasRoadModel(const Road& road) { return road.modulePorts == 0; }
@@ -449,6 +452,7 @@ struct PlannedRoadTile
     RoadPlacementStatus status = RoadPlacementStatus::OutsideMap;
     std::uint8_t diagonalAxis = 0;
     std::uint8_t mixedConnections = 0;
+    std::uint8_t suppressedConnections = 0;
 };
 
 // One plan drives evaluation, preview and commit. In particular, a junction
