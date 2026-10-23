@@ -94,6 +94,8 @@ public:
     // 0 = blocked, otherwise the directions a road can use on this tile.
     std::uint8_t GetRoadAllowedConnections(int x, int z) const;
     RoadPlan PlanRoads(const RoadPath& path) const;
+    // Compare the two shortest one-bend grid/diagonal routes to the exact target.
+    RoadDragPlan PlanRoadDrag(int startX,int startZ,int endX,int endZ) const;
     RoadEvaluation EvaluateRoads(const RoadPath& path) const;
     RoadPlacementResult PlaceRoads(const RoadPath& path);
     // Clears zones in the footprint, reserves occupancy and reconnects neighbors.

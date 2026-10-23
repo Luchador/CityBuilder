@@ -19,8 +19,9 @@ void RoadTool::UpdateHover(const ToolContext& context, const ToolPointer& pointe
         const auto start = anchor.value_or(*hovered);
 
         // Rebuild from the anchor so skipped mouse-motion events cannot leave gaps.
-        path = RoadPath::FromDrag(start.x, start.z, hovered->x, hovered->z);
-        const auto evaluation = context.world.EvaluateRoads(*path);
+        const auto route = context.world.PlanRoadDrag(start.x, start.z, hovered->x, hovered->z);
+        path = route.path;
+        const auto& evaluation = route.plan.evaluation;
         allowed = evaluation.valid && evaluation.blocked == 0;
     }
 }

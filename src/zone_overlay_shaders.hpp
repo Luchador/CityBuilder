@@ -17,15 +17,18 @@ cbuffer ZoneOverlay : register(ZONE_UNIFORMS, space3)
     float4 zoneSettings; // map size, opacity, preview (0=off, 1=zone, 2=rectangle, 3=road), affordable
     float4 zoneBounds;   // inclusive min X/Z, max X/Z
     float4 zonePreview;  // RGB, zone type
-    float4 roadPath;     // start X/Z, end X/Z; zonePreview.w = route kind in road mode
+    float4 roadPath;     // start X/Z, end X/Z
+    float4 roadBend;     // bend X/Z, padding
 };
 
+bool OnRoadSegment(float2 tile, float2 start, float2 end)
+{
+    if (any(tile < min(start, end)) || any(tile > max(start, end))) return false;
+    return start.x == end.x || start.y == end.y || abs(tile.x - start.x) == abs(tile.y - start.y);
+}
 bool OnRoadPath(float2 tile)
 {
-    if (any(tile < min(roadPath.xy, roadPath.zw)) || any(tile > max(roadPath.xy, roadPath.zw))) return false;
-    if (zonePreview.w == 2) return abs(tile.x - roadPath.x) == abs(tile.y - roadPath.y);
-    return zonePreview.w != 0 ? (tile.y == roadPath.y || tile.x == roadPath.z) :
-        (tile.x == roadPath.x || tile.y == roadPath.w);
+    return OnRoadSegment(tile, roadPath.xy, roadBend.xy) || OnRoadSegment(tile, roadBend.xy, roadPath.zw);
 }
 
 // CPU RoadFootprintBit uses the same 24-bit offset ordering (center implicit).

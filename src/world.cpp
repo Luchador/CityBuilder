@@ -6,6 +6,7 @@
 #include <cmath>
 #include <limits>
 #include <stdexcept>
+#include <tuple>
 
 namespace
 {
@@ -253,6 +254,35 @@ RoadPlacementStatus World::CheckRoadFootprint(const Road& road, const RoadPath& 
 
 RoadPlan World::PlanRoads(const RoadPath& path) const { return PlanRoadsInternal(path, 0); }
 
+RoadDragPlan World::PlanRoadDrag(int startX,int startZ,int endX,int endZ) const
+{
+    // Check before coordinate differences, including calls outside mouse picking.
+    if (!ContainsTile(startX,startZ) || !ContainsTile(endX,endZ))
+        return {{startX,startZ,endX,endZ},{}};
+    RoadDragPlan route;
+    route.path=RoadPath::FromDrag(startX,startZ,endX,endZ);
+    route.plan=PlanRoads(route.path);
+    if (!route.path.mixed) return route;
+    auto alternate=route.path;
+    alternate.diagonalFirst=true;
+    auto alternatePlan=PlanRoads(alternate);
+    const auto score=[](const RoadPlan& plan)
+    {
+        const auto& e=plan.evaluation;
+        const auto first=std::find_if(plan.tiles.begin(),plan.tiles.end(),[](const auto& tile)
+        { return RoadPlacementAccepted(tile.status); });
+        const auto start=first-plan.tiles.begin();
+        // Complete routes win. Otherwise prefer a section attached to the
+        // start, then greater usable reach. Reuse breaks equal-length ties.
+        return std::tuple{e.valid,e.valid && e.blocked==0,first!=plan.tiles.end() && start==0,
+            e.changes+e.unchanged,-start,-static_cast<std::int64_t>(e.changes-e.upgrades),
+            -static_cast<std::int64_t>(e.upgrades)};
+    };
+    if (score(alternatePlan)>score(route.plan))
+    { route.path=alternate;route.plan=std::move(alternatePlan); }
+    return route;
+}
+
 RoadPlan World::PlanRoadsInternal(const RoadPath& path, std::uint8_t singleConnections) const
 {
     RoadPlan plan;
@@ -265,14 +295,14 @@ RoadPlan World::PlanRoadsInternal(const RoadPath& path, std::uint8_t singleConne
         const auto* existing = GetRoadAt(x, z);
         PlannedRoadTile tile{x, z, existing ? RoadPlacementStatus::ExistingRoad : RoadPlacementStatus::Allowed,
             static_cast<std::uint8_t>((existing ? existing->diagonalAxis : 0) | DiagonalRoadAxes(required)),
-            existing ? existing->mixedConnections : std::uint8_t{0},
+            existing ? existing->mixedConnections : IsRoadTransition(required) ? required : std::uint8_t{0},
             existing ? existing->suppressedConnections : std::uint8_t{0}};
         RoadSurface surface;
         const auto status = ReadRoadSurface(terrain, x, z, surface);
         if (status != RoadPlacementStatus::Allowed) tile.status = status;
         else if (existing && existing->modulePorts && (required & ~existing->modulePorts))
             tile.status = RoadPlacementStatus::UnsupportedConnection;
-        else if ((required & 240) && !SupportedDiagonalConnections(required))
+        else if ((required & 240) && !SupportedDiagonalConnections(required) && !IsRoadTransition(required))
             tile.status = RoadPlacementStatus::UnsupportedConnection;
         else if (!(required & 240) && (required & surface.AllowedConnections()) != required)
             tile.status = RoadPlacementStatus::WrongSlopeDirection;

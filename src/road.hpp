@@ -350,97 +350,103 @@ constexpr bool RoadPlacementAccepted(RoadPlacementStatus status)
         status == RoadPlacementStatus::UpgradeRoad;
 }
 
-// An orthogonal route with at most one bend, or one straight diagonal.
-// World validates endpoints and shape before traversal; never traverse
-// arbitrary/unvalidated coordinates.
+// Two connected cardinal/diagonal legs, with at most one bend.
+// Legacy explicitly constructed paths can still request an orthogonal L.
+// World validates endpoints and shape before traversal.
 struct RoadPath
 {
     int startX = 0, startZ = 0, endX = 0, endZ = 0;
     bool xFirst = true;
     bool diagonal = false;
+    bool mixed = false;
+    bool diagonalFirst = false;
     bool operator==(const RoadPath&) const = default;
+    struct Point { int x, z; };
 
-    // Near 45 degrees, snap to a straight diagonal inside the drag rectangle.
-    // Else preserve the existing L route. Equal 2:1 drags remain orthogonal.
-    static RoadPath FromDrag(int x, int z, int targetX, int targetZ)
+    // Reach the exact target with min(dx,dz) diagonal steps and the remaining
+    // cardinal steps: the shortest route on an eight-direction tile network.
+    static RoadPath FromDrag(int x,int z,int targetX,int targetZ)
     {
-        const int dx = std::abs(targetX - x), dz = std::abs(targetZ - z);
-        RoadPath result{x, z, targetX, targetZ, dx >= dz};
-        if (std::min(dx, dz) * 2 > std::max(dx, dz))
-        {
-            const int steps = std::min(dx, dz);
-            result.endX = x + (targetX > x ? steps : -steps);
-            result.endZ = z + (targetZ > z ? steps : -steps);
-            result.diagonal = true;
-        }
+        const int dx=std::abs(targetX-x),dz=std::abs(targetZ-z);
+        RoadPath result{x,z,targetX,targetZ,dx>=dz};
+        result.diagonal=dx!=0 && dx==dz;
+        result.mixed=dx!=0 && dz!=0 && dx!=dz;
         return result;
     }
-
+    Point Bend() const
+    {
+        if (diagonal) return {endX,endZ};
+        if (mixed)
+        {
+            const int steps=std::min(std::abs(endX-startX),std::abs(endZ-startZ));
+            const int dx=endX>startX ? steps : -steps,dz=endZ>startZ ? steps : -steps;
+            return diagonalFirst ? Point{startX+dx,startZ+dz} : Point{endX-dx,endZ-dz};
+        }
+        return {xFirst ? endX : startX,xFirst ? startZ : endZ};
+    }
+    static int Distance(Point a,Point b) { return std::max(std::abs(b.x-a.x),std::abs(b.z-a.z)); }
+    static bool OnSegment(Point p,Point a,Point b)
+    {
+        if (p.x<std::min(a.x,b.x) || p.x>std::max(a.x,b.x) || p.z<std::min(a.z,b.z) || p.z>std::max(a.z,b.z)) return false;
+        return a.x==b.x || a.z==b.z || std::abs(p.x-a.x)==std::abs(p.z-a.z);
+    }
+    std::size_t Steps() const
+    {
+        const auto bend=Bend();
+        return static_cast<std::size_t>(Distance({startX,startZ},bend)+Distance(bend,{endX,endZ}));
+    }
+    // Valid indices are 0..Steps(), inclusive.
+    Point TileAt(std::size_t index) const
+    {
+        const auto bend=Bend();
+        const auto first=static_cast<std::size_t>(Distance({startX,startZ},bend));
+        const auto a=index<=first ? Point{startX,startZ} : bend;
+        const auto b=index<=first ? bend : Point{endX,endZ};
+        const int step=static_cast<int>(index<=first ? index : index-first);
+        return {a.x+((b.x>a.x)-(b.x<a.x))*step,a.z+((b.z>a.z)-(b.z<a.z))*step};
+    }
     bool HasValidShape() const
     {
-        // World checks bounds before calling this (subtraction cannot overflow).
-        return !diagonal || (startX != endX && std::abs(endX - startX) == std::abs(endZ - startZ));
+        // Called after checking bounds, so coordinate differences cannot overflow.
+        const int dx=std::abs(endX-startX),dz=std::abs(endZ-startZ);
+        if (mixed) return !diagonal && dx && dz && dx!=dz;
+        return !diagonal || (dx && dx==dz);
     }
-
-    bool Contains(int x, int z) const
+    bool Contains(int x,int z) const
     {
-        if (x < std::min(startX, endX) || x > std::max(startX, endX) ||
-            z < std::min(startZ, endZ) || z > std::max(startZ, endZ)) return false;
-        if (diagonal) return std::abs(x - startX) == std::abs(z - startZ);
-        return xFirst ? (z == startZ || x == endX) : (x == startX || z == endZ);
+        const auto bend=Bend();
+        return OnSegment({x,z},{startX,startZ},bend) || OnSegment({x,z},bend,{endX,endZ});
     }
-
-    // Required directions along the proposed route, before skipping obstacles.
-    // A bend or a cross-slope drag cannot masquerade as disconnected end tiles.
-    std::uint8_t ConnectionsAt(int x, int z) const
+    // Use consecutive route tiles, not every neighboring tile on either leg.
+    // This avoids introducing diagonal shortcuts across an orthogonal corner.
+    std::uint8_t ConnectionsAt(int x,int z) const
     {
-        if (!Contains(x, z)) return 0;
-        if (diagonal)
-            return static_cast<std::uint8_t>((Contains(x - 1, z - 1) ? RoadNorthWest : 0) |
-                (Contains(x + 1, z - 1) ? RoadNorthEast : 0) | (Contains(x + 1, z + 1) ? RoadSouthEast : 0) |
-                (Contains(x - 1, z + 1) ? RoadSouthWest : 0));
-        return static_cast<std::uint8_t>((Contains(x - 1, z) ? RoadWest : 0) |
-            (Contains(x, z - 1) ? RoadNorth : 0) | (Contains(x + 1, z) ? RoadEast : 0) |
-            (Contains(x, z + 1) ? RoadSouth : 0));
+        if (!Contains(x,z)) return 0;
+        const auto index=IndexOf(x,z);
+        std::uint8_t ports=0;
+        const auto connect=[&](Point p)
+        {
+            if (p.z==z) ports |= p.x<x ? RoadWest : RoadEast;
+            else if (p.x==x) ports |= p.z<z ? RoadNorth : RoadSouth;
+            else if (p.z<z) ports |= p.x<x ? RoadNorthWest : RoadNorthEast;
+            else ports |= p.x<x ? RoadSouthWest : RoadSouthEast;
+        };
+        if (index) connect(TileAt(index-1));
+        if (index<Steps()) connect(TileAt(index+1));
+        return ports;
     }
-
-    // Constant-time lookup into ForEachTile order, including both legs of an L.
-    std::size_t IndexOf(int x, int z) const
+    // Constant-time lookup into ForEachTile order for either pair of legs.
+    std::size_t IndexOf(int x,int z) const
     {
-        if (diagonal) return static_cast<std::size_t>(std::abs(x - startX));
-        return static_cast<std::size_t>(xFirst ?
-            (z == startZ ? std::abs(x - startX) : std::abs(endX - startX) + std::abs(z - startZ)) :
-            (x == startX ? std::abs(z - startZ) : std::abs(endZ - startZ) + std::abs(x - startX)));
+        const auto bend=Bend();
+        return static_cast<std::size_t>(OnSegment({x,z},{startX,startZ},bend) ? Distance({startX,startZ},{x,z}) :
+            Distance({startX,startZ},bend)+Distance(bend,{x,z}));
     }
-
     template<class Visitor> void ForEachTile(Visitor visit) const
     {
-        int x = startX, z = startZ;
-
-        visit(x, z);
-        if (diagonal)
-        {
-            while (x != endX)
-            {
-                x += endX > x ? 1 : -1;
-                z += endZ > z ? 1 : -1;
-                visit(x, z);
-            }
-            return;
-        }
-        const auto moveX = [&] { while (x != endX) { x += endX > x ? 1 : -1; visit(x, z); } };
-        const auto moveZ = [&] { while (z != endZ) { z += endZ > z ? 1 : -1; visit(x, z); } };
-
-        if (xFirst) 
-        { 
-            moveX(); 
-            moveZ(); 
-        }
-        else 
-        { 
-            moveZ(); 
-            moveX(); 
-        }
+        const auto steps=Steps();
+        for (std::size_t i=0;i<=steps;++i)
+        { const auto tile=TileAt(i);visit(tile.x,tile.z); }
     }
 };
 
@@ -473,4 +479,10 @@ struct RoadPlacementResult
 {
     RoadEvaluation evaluation;
     std::uint32_t changed = 0;
+};
+
+struct RoadDragPlan
+{
+    RoadPath path;
+    RoadPlan plan;
 };

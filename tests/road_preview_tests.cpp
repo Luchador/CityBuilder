@@ -19,6 +19,7 @@ namespace
     int texturesAlive = 0, samplersAlive = 0, updates = 0, failAfter = -1;
     Uint32 largestPatch = 0;
     SDL_GPUTexture* roadImage = nullptr;
+    ZoneOverlayUniforms lastUniforms;
     void Check(bool condition, const char* message)
     {
         if (!condition) throw std::runtime_error(message);
@@ -76,7 +77,8 @@ void SDL_PushGPUFragmentUniformData(SDL_GPUCommandBuffer*, Uint32 slot, const vo
     Check(slot == 1 && size == sizeof(ZoneOverlayUniforms), "Preview uniform layout changed");
     ZoneOverlayUniforms values;
     std::memcpy(&values, data, size);
-    Check(values.previewEnabled == 3 && values.zoneType == 2, "Diagonal preview mode was lost");
+    Check(values.previewEnabled == 3, "Road preview mode was lost");
+    lastUniforms=values;
 }
 
 int main()
@@ -303,6 +305,40 @@ int main()
         Check(world.PlaceRoads(*partial.roadPath).changed==5,"Partial preview disagreed with commit");
         for (int x=30;x<=40;++x)
             Check((world.GetRoadAt(x,115)!=nullptr)==(x<35),"Previewed discarded section was built");
+        // Same endpoints, different bend: path membership and the uploaded
+        // uniform layout must change together, without sampling an old leg.
+        ToolPreview mixedDrag;
+        mixedDrag.tiles=ToolTileRect{18,68,52,92};
+        mixedDrag.roadPath=RoadPath::FromDrag(20,70,50,90);
+        const auto shaderContains=[&](int x,int z)
+        {
+            const auto onSegment=[&](float ax,float az,float bx,float bz)
+            {
+                return x>=std::min(ax,bx) && x<=std::max(ax,bx) && z>=std::min(az,bz) && z<=std::max(az,bz) &&
+                    (ax==bx || az==bz || std::abs(x-ax)==std::abs(z-az));
+            };
+            return onSegment(lastUniforms.startX,lastUniforms.startZ,lastUniforms.bendX,lastUniforms.bendZ) ||
+                   onSegment(lastUniforms.bendX,lastUniforms.bendZ,lastUniforms.endX,lastUniforms.endZ);
+        };
+        for (bool diagonalFirst : {false,true})
+        {
+            mixedDrag.roadPath->diagonalFirst=diagonalFirst;
+            largestPatch=0;
+            const int beforeMixed=updates;
+            overlay.PrepareRoadPreview(world,mixedDrag);
+            overlay.Bind(&commands,&pass,mixedDrag,{});
+            CheckPreview(world,mixedDrag);
+            Check(updates>beforeMixed && largestPatch<=16*16 &&
+                  lastUniforms.bendX==(diagonalFirst ? 40 : 30) && lastUniforms.bendZ==(diagonalFirst ? 90 : 70),
+                  "Mixed preview bend, cache key or upload bounds are wrong");
+            for (int z=68;z<=92;++z) for (int x=18;x<=52;++x)
+                Check(shaderContains(x,z)==mixedDrag.roadPath->Contains(x,z),
+                      "Shader route membership disagrees with the chosen CPU path");
+            const int unchanged=updates;
+            overlay.PrepareRoadPreview(world,mixedDrag);
+            Check(updates==unchanged,"Stable mixed preview reuploaded");
+        }
+        Check(!shaderContains(30,70),"Old grid-first bend remained in the diagonal-first preview");
         overlay.Release(); overlay.Release();
         Check(!texturesAlive && !samplersAlive, "Preview resources leaked");
         std::cout << "PASS: uploaded junction preview, obstacle/revision invalidation, cache, bounded batches, failed-upload retry and cleanup\n";

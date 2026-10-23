@@ -147,23 +147,24 @@ namespace
             const auto request = std::get<RoadRequest>(controller.End(At(end.x, end.z)));
             Check(preview.roadPath == request.path, "Released path differs from preview");
             const auto result = world.PlaceRoads(request.path);
-            Check(result.changed == 7 && !result.evaluation.blocked, "Route length/gaps/bend duplicate wrong");
+            Check(result.changed == 5 && !result.evaluation.blocked, "Route length/gaps/bend duplicate wrong");
             const auto again = world.PlaceRoads(request.path);
-            Check(!again.changed && again.evaluation.unchanged == 7 && !again.evaluation.blocked,
+            Check(!again.changed && again.evaluation.unchanged == 5 && !again.evaluation.blocked,
                   "Repeated route was not a no-op");
             std::set<std::pair<int, int>> selected;
             request.path.ForEachTile([&](int x, int z) { selected.emplace(x, z); });
-            const int bendX = request.path.xFirst ? end.x : 7;
-            const int bendZ = request.path.xFirst ? 7 : end.z;
-            Check(GetRoadVisual(world.GetRoadAt(bendX, bendZ)->connections).shape == RoadShape::Curve,
-                  "Route bend did not become a curve");
-            // Independent shader membership check: only the L, never its interior.
+            const int sx=end.x>7 ? 1 : -1,sz=end.z>7 ? 1 : -1;
+            const int bendX=std::abs(end.x-7)>std::abs(end.z-7) ? 7+2*sx : 7;
+            const int bendZ=std::abs(end.z-7)>std::abs(end.x-7) ? 7+2*sz : 7;
+            Check(IsRoadTransition(world.GetRoadAt(bendX,bendZ)->mixedConnections),
+                  "Mixed drag bend did not become a grid/diagonal transition");
+            // The expected shortest route: two grid steps and two diagonal
+            // steps. No interior tiles from the old orthogonal L are included.
+            const std::set<std::pair<int,int>> expected{{7,7},{(7+bendX)/2,(7+bendZ)/2},
+                {bendX,bendZ},{bendX+sx,bendZ+sz},{end.x,end.z}};
             for (int z = 0; z < 16; ++z) for (int x = 0; x < 16; ++x)
             {
-                const bool inBounds = x >= std::min(7, end.x) && x <= std::max(7, end.x) &&
-                                      z >= std::min(7, end.z) && z <= std::max(7, end.z);
-                const bool onLeg = request.path.xFirst ? (z == 7 || x == end.x) : (x == 7 || z == end.z);
-                Check(selected.contains({x, z}) == (inBounds && onLeg), "Preview route membership mismatch");
+                Check(selected.contains({x,z})==expected.contains({x,z}),"Preview route membership mismatch");
             }
         }
 
@@ -188,6 +189,88 @@ namespace
               edge.PlaceRoads({15, 0, 15, 15}).changed == 15, "Edge route incorrect");
         Check(edge.GetRoadAt(15, 0)->connections == (RoadWest | RoadSouth), "Map-edge curve incorrect");
         std::cout << "PASS: all 16 connection masks, insertion order, all drag directions, exact L previews, partial/reused/blocked routes and map edges\n";
+    }
+
+    void CheckMixedDrags()
+    {
+        constexpr int portX[]{-1,0,1,0,-1,1,1,-1},portZ[]{0,-1,0,1,-1,-1,1,1};
+        for (int dx=-5;dx<=5;++dx) for (int dz=-5;dz<=5;++dz)
+            for (bool diagonalFirst : {false,true})
+        {
+            auto path=RoadPath::FromDrag(7,7,7+dx,7+dz);
+            if (diagonalFirst && !path.mixed) continue;
+            path.diagonalFirst=diagonalFirst;
+            auto world=FlatWorld();
+            std::vector<RoadPath::Point> ordered;
+            path.ForEachTile([&](int x,int z) { ordered.push_back({x,z}); });
+            const auto steps=std::max(std::abs(dx),std::abs(dz));
+            Check(path.HasValidShape() && ordered.size()==static_cast<std::size_t>(steps+1) &&
+                  ordered.back().x==7+dx && ordered.back().z==7+dz,"Mixed path missed its target or used excess tiles");
+            int diagonalSteps=0;
+            for (std::size_t i=0;i<ordered.size();++i)
+            {
+                const auto p=ordered[i];
+                Check(path.Contains(p.x,p.z) && path.IndexOf(p.x,p.z)==i,"Mixed path index/traversal mismatch");
+                std::uint8_t expected=0;
+                for (int d=0;d<8;++d)
+                    if ((i && ordered[i-1].x-p.x==portX[d] && ordered[i-1].z-p.z==portZ[d]) ||
+                        (i+1<ordered.size() && ordered[i+1].x-p.x==portX[d] && ordered[i+1].z-p.z==portZ[d]))
+                        expected |= static_cast<std::uint8_t>(1 << d);
+                Check(path.ConnectionsAt(p.x,p.z)==expected,"Mixed path added a shortcut or lost a route edge");
+                if (i && p.x!=ordered[i-1].x && p.z!=ordered[i-1].z) ++diagonalSteps;
+            }
+            Check(diagonalSteps==std::min(std::abs(dx),std::abs(dz)),"Mixed path did not maximize efficient diagonal travel");
+            const auto plan=world.PlanRoads(path);
+            if (plan.evaluation.blocked)
+                throw std::runtime_error("Empty-map mixed route rejected: dx="+std::to_string(dx)+" dz="+std::to_string(dz)+
+                    " diagonalFirst="+std::to_string(diagonalFirst));
+            Check(world.PlaceRoads(path).changed==ordered.size(),"Mixed plan/commit mismatch");
+            for (const auto& a : world.GetRoads())
+            {
+                Check(a.connections==path.ConnectionsAt(a.tileX,a.tileZ),"Mixed route grew an incidental connection");
+                for (const auto& b : world.GetRoads()) if (a.id<b.id)
+                    Check(!RoadMeshesOverlap(a,b),"Mixed route pavement overlaps");
+            }
+            if (path.mixed)
+            {
+                const auto bend=path.Bend();
+                Check(IsRoadTransition(world.GetRoadAt(bend.x,bend.z)->mixedConnections),"Mixed bend has no transition mesh");
+            }
+            Check(!world.PlaceRoads(path).changed,"Repeating a mixed drag changed the network");
+        }
+        for (bool blockGridFirst : {false,true})
+        {
+            auto world=FlatWorld();
+            world.GetTile(4,blockGridFirst ? 2 : 4).buildingId=123;
+            const auto route=world.PlanRoadDrag(2,2,12,6);
+            Check(route.path.diagonalFirst==blockGridFirst && !route.plan.evaluation.blocked && route.plan.evaluation.changes==11,
+                  "Routing failed to choose the clear shortest alternative");
+            ToolController controller(world);
+            controller.SetTool(std::make_unique<RoadTool>());
+            controller.Begin(At(2,2));controller.Update(At(12,6),.016f);
+            const auto preview=controller.BuildPreview();
+            const auto request=std::get<RoadRequest>(controller.End(At(12,6)));
+            Check(preview.roadPath==route.path && request.path==route.path &&
+                  world.PlaceRoads(request.path).changed==route.plan.evaluation.changes,
+                  "Chosen route differed between hover, release and commit");
+        }
+        auto reuse=FlatWorld();
+        reuse.PlaceRoads({8,6,9,6});
+        auto gridFirst=RoadPath::FromDrag(2,2,12,6),diagFirst=gridFirst;
+        diagFirst.diagonalFirst=true;
+        Check(!reuse.PlanRoads(gridFirst).evaluation.blocked && !reuse.PlanRoads(diagFirst).evaluation.blocked,
+              "Reuse route fixture does not offer two clear alternatives");
+        const auto reused=reuse.PlanRoadDrag(2,2,12,6);
+        Check(reused.path.diagonalFirst && reused.plan.evaluation.changes==9,"Equal-length route did not favor existing roads");
+        auto blocked=FlatWorld();
+        blocked.GetTile(4,2).buildingId=1;blocked.GetTile(5,5).buildingId=2;
+        const auto partial=blocked.PlanRoadDrag(2,2,12,6);
+        Check(partial.path.diagonalFirst && partial.plan.evaluation.changes==3 && partial.plan.evaluation.blocked==8 &&
+              blocked.PlaceRoads(partial.path).changed==3,"Blocked alternatives did not retain the best section from the start");
+        Check(!blocked.PlanRoadDrag(-1,2,12,6).plan.evaluation.valid &&
+              !blocked.PlanRoadDrag(2,2,std::numeric_limits<int>::max(),6).plan.evaluation.valid,
+              "Out-of-map automatic routing was not bounded");
+        std::cout << "PASS: shortest exact-target mixed drags in every octant, both leg orders, transition meshes, clear alternatives, road reuse and partial fallback\n";
     }
 
     void CheckFirstRoadSection()
@@ -398,6 +481,12 @@ namespace
         {
             auto world = RampWorld(alongX, descending);
             const auto tile = [&](int along, int across) { return alongX ? ToolTile{along, across} : ToolTile{across, along}; };
+            auto routed=RampWorld(alongX,descending);
+            const auto routeStart=tile(2,8),routeEnd=tile(13,12);
+            const auto route=routed.PlanRoadDrag(routeStart.x,routeStart.z,routeEnd.x,routeEnd.z);
+            Check(route.path.mixed && !route.path.diagonalFirst && !route.plan.evaluation.blocked &&
+                  routed.PlaceRoads(route.path).changed==12,
+                  "Automatic routing did not keep the diagonal leg on the flat plateau");
             const auto a = tile(2, 8), b = tile(10, 8);
             const RoadPath path{a.x, a.z, b.x, b.z, alongX};
             Check(world.EvaluateRoads(path).changes == 9 && world.PlaceRoads(path).changed == 9,
@@ -577,9 +666,9 @@ namespace
                   "Unsupported diagonal/cardinal turn accepted");
         }
 
-        Check(RoadPath::FromDrag(3, 3, 8, 7) == RoadPath{3, 3, 7, 7, true, true},
-              "Near-diagonal drag did not snap inside its rectangle");
-        Check(!RoadPath::FromDrag(3, 3, 9, 6).diagonal, "A 2:1 drag lost its existing L route");
+        Check(RoadPath::FromDrag(3,3,8,7)==RoadPath{3,3,8,7,true,false,true,false},
+              "Near-diagonal drag did not reach the exact cursor tile");
+        Check(RoadPath::FromDrag(3,3,9,6).mixed,"A 2:1 drag did not combine grid and diagonal legs");
         auto world = FlatWorld();
         for (int z = 0; z < 16; ++z) for (int x = 0; x < 16; ++x)
             world.GetTile(x, z).zoneType = ZoneType::ResidentialLight;
@@ -830,9 +919,13 @@ namespace
                 const int steps = 1 + static_cast<int>(next() % available);
                 RoadPath path{x, z, x + dx * steps, z + dz * steps, true, true};
                 if (edit % 5 == 0) { path.diagonal = false; path.endZ = z; }
+                if (edit % 3 == 0 && steps>=2)
+                    path=world.PlanRoadDrag(x,z,x+dx*steps,z+dz*(steps/2)).path;
                 auto backward = world;
                 auto reverse = path;
                 std::swap(reverse.startX, reverse.endX); std::swap(reverse.startZ, reverse.endZ);
+                if (reverse.mixed) reverse.diagonalFirst=!reverse.diagonalFirst;
+                else if (!reverse.diagonal) reverse.xFirst=!reverse.xFirst;
                 const auto plan = world.PlanRoads(path);
                 const auto reversePlan = backward.PlanRoads(reverse);
                 const auto placed = world.PlaceRoads(path), reversed = backward.PlaceRoads(reverse);
@@ -963,6 +1056,7 @@ int main(int argc, char** argv)
         if (argc != 3) throw std::runtime_error("Usage: CityRoadTests road_straight.glb scratch-directory");
         CheckWorldAndTool();
         CheckConnectionsAndRoutes();
+        CheckMixedDrags();
         CheckFirstRoadSection();
         CheckParallelRoads();
         CheckSlopes();

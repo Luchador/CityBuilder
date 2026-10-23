@@ -9,8 +9,9 @@ struct alignas(16) ZoneOverlayUniforms
     float minX = 0, minZ = 0, maxX = 0, maxZ = 0;
     float red = 0, green = 0, blue = 0, zoneType = 0;
     float startX = 0, startZ = 0, endX = 0, endZ = 0;
+    float bendX = 0, bendZ = 0, padding0 = 0, padding1 = 0;
 };
-static_assert(sizeof(ZoneOverlayUniforms) == 64);
+static_assert(sizeof(ZoneOverlayUniforms) == 80);
 
 // Two maps with one texel per tile: zone data and direction-aware road eligibility.
 class ZoneOverlay
@@ -24,7 +25,7 @@ public:
     // Also call after future occupancy/height edits to refresh eligibility.
     void Update(const World& world, ToolTileRect bounds);
     // Upload a changed road plan before acquiring the frame command buffer.
-    // Both route kinds can contain endpoint transitions with wider footprints.
+    // Both legs can contain transitions or junctions with wider footprints.
     void PrepareRoadPreview(const World& world, const ToolPreview& preview);
     // Binds zone data at samplerSlot and road eligibility at samplerSlot + 1.
     void Bind(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, const ToolPreview& preview,
