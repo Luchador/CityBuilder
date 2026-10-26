@@ -485,6 +485,8 @@ namespace
             auto& ao=settings.ambientOcclusion;
             if(ImGui::Checkbox("Bake AO into albedo",&ao.enabled))Changed();
             ImGui::BeginDisabled(!ao.enabled);
+            if(ImGui::Checkbox("Use Ground Plane",&ao.useGroundPlane))Changed();
+            ImGui::SetItemTooltip("Invisible AO ground at the model's lowest point (ground pivot). Uses the AO radius and intensity; never appears in the sprite or sun mask.");
             if(ImGui::SliderFloat("AO intensity",&ao.intensity,0,1,"%.2f",ImGuiSliderFlags_AlwaysClamp))Changed();
             if(ImGui::SliderFloat("AO radius",&ao.radius,.001f,10000,"%.3f units",
                 ImGuiSliderFlags_Logarithmic|ImGuiSliderFlags_AlwaysClamp))Changed();

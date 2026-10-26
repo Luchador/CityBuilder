@@ -42,6 +42,7 @@ void SceneFileTests(const std::filesystem::path& folder)
     document.settings.lighting.directionalColor={1,.8f,.6f};document.settings.lighting.directionalIntensity=1.7f;
     document.settings.lighting.shadows=false;document.view=3;document.previewChannel=2;
     document.settings.ambientOcclusion={true,.65f,2.5f,48};
+    document.settings.ambientOcclusion.useGroundPlane=true;
     auto& material=document.scene.materials[0];
     material.baseFactor={.7f,.8f,.4f,.9f};material.cutoff=.25f;material.doubleSided=false;
     material.uvScale={.8f,1.2f};material.uvOffset={.2f,-.3f};material.uvRotation=.33f;
@@ -61,10 +62,19 @@ void SceneFileTests(const std::filesystem::path& folder)
     rk::SaveSceneFile(secondPath,loaded);
     Check(Read(secondPath)==saved,"Scene roundtrip lost a setting");
     Check(loaded.settings.ambientOcclusion.enabled && loaded.settings.ambientOcclusion.intensity==.65f &&
-          loaded.settings.ambientOcclusion.radius==2.5f && loaded.settings.ambientOcclusion.samples==48,"AO settings were not restored");
+          loaded.settings.ambientOcclusion.radius==2.5f && loaded.settings.ambientOcclusion.samples==48 &&
+          loaded.settings.ambientOcclusion.useGroundPlane,"AO settings were not restored");
+    auto beforeGround=saved;beforeGround["ambient_occlusion"].erase("use_ground_plane");Write(secondPath,beforeGround);
+    const auto oldAoScene=rk::LoadSceneFile(secondPath);
+    Check(oldAoScene.settings.ambientOcclusion.enabled && !oldAoScene.settings.ambientOcclusion.useGroundPlane,
+          "Older AO scenes must load without a ground plane");
+    auto noGround=document;noGround.settings.ambientOcclusion.useGroundPlane=false;CompareRender(noGround,oldAoScene);
+    rk::SaveSceneFile(secondPath,noGround);
+    Check(!rk::LoadSceneFile(secondPath).settings.ambientOcclusion.useGroundPlane,"Disabled ground plane did not roundtrip");
     auto legacy=saved;legacy.erase("ambient_occlusion");Write(secondPath,legacy);
     const auto oldScene=rk::LoadSceneFile(secondPath);
-    Check(!oldScene.settings.ambientOcclusion.enabled,"Pre-AO .rks files must retain their appearance");
+    Check(!oldScene.settings.ambientOcclusion.enabled && !oldScene.settings.ambientOcclusion.useGroundPlane,
+          "Pre-AO .rks files must retain their appearance");
     auto original=document;original.settings.ambientOcclusion.enabled=false;CompareRender(original,oldScene);
 
     // A user-cleared texture must not be restored from the original model.
@@ -100,6 +110,8 @@ void SceneFileTests(const std::filesystem::path& folder)
     }
     auto badAo=valid;badAo["ambient_occlusion"]["radius"]=nullptr;Write(invalidPath,badAo);
     Reject([&]{rk::LoadSceneFile(invalidPath);},"number");
+    badAo=valid;badAo["ambient_occlusion"]["use_ground_plane"]="yes";Write(invalidPath,badAo);
+    Reject([&]{rk::LoadSceneFile(invalidPath);},"boolean");
     auto invalid=valid;invalid["version"]=99;Write(invalidPath,invalid);
     Reject([&]{rk::LoadSceneFile(invalidPath);},"version");
     invalid=valid;invalid["render"]["width"]=1.5;Write(invalidPath,invalid);

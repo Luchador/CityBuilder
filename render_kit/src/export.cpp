@@ -74,6 +74,7 @@ std::filesystem::path ExportViews(const Scene& scene,const RenderSettings& setti
                 <<", \"intensity\": "<<settings.ambientOcclusion.intensity
                 <<", \"radius_model_units\": "<<settings.ambientOcclusion.radius
                 <<", \"samples\": "<<settings.ambientOcclusion.samples
+                <<", \"use_ground_plane\": "<<(settings.ambientOcclusion.useGroundPlane?"true":"false")
                 <<", \"bake_target\": \"linear albedo before sRGB encoding\"}"
                 <<",\n  \"lighting_formula\": \"displayRGB = albedo_sRGB * (ambient_color * ambient_intensity + directional_color * directional_intensity * sun_mask_linear) / lighting_divisor\",\n"
                 <<"  \"views\": [\n";

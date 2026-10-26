@@ -112,9 +112,17 @@ namespace
             // Smooth shading normals can aim rays inside their own polygon. Do not
             // let those rays create dark seams on otherwise exposed convex surfaces.
             if(Dot(ray,geometric)<=0)continue;
-            // Any accepted hit within the radius blocks this sample. This uses the
-            // same PNG/cutoff test as camera rays, with two-sided shadow traversal.
-            if(Trace(scene,origin,ray,ao.radius,true,hit.triangle).found)++blocked;
+            // The infinite ground plane uses the same height as FitFrame's pivot.
+            // Test it only here: it never affects camera hits, framing or sun rays.
+            bool groundHit=false;
+            if(ao.useGroundPlane && ray.y<0)
+            {
+                const float distance=(scene.geometry->bounds.min.y-origin.y)/ray.y;
+                groundHit=distance>=0 && distance<ao.radius;
+            }
+            // Count each sample once, even if it hits both the ground and model.
+            // Model occluders still use the PNG/cutoff test and two-sided traversal.
+            if(groundHit || Trace(scene,origin,ray,ao.radius,true,hit.triangle).found)++blocked;
         }
         return 1-ao.intensity*static_cast<float>(blocked)/static_cast<float>(samples.size());
     }

@@ -116,6 +116,7 @@ namespace
             const auto& encoded=root.at("ambient_occlusion");auto& ao=settings.ambientOcclusion;
             ao.enabled=encoded.at("enabled").get<bool>();ao.intensity=Number(encoded.at("intensity"));
             ao.radius=Number(encoded.at("radius"));ao.samples=Integer(encoded.at("samples"),16,256);
+            ao.useGroundPlane=encoded.value("use_ground_plane",false);
         }
         settings.Validate();
         const auto& output=root.at("output");document.outputDirectory=Resolve(output.at("directory"),folder);
@@ -174,7 +175,8 @@ void SaveSceneFile(const std::filesystem::path& path,const SceneDocument& docume
             {"render",{{"width",settings.width},{"height",settings.height},{"padding",settings.padding},{"auto_fit",settings.autoFit},{"pixels_per_unit",settings.pixelsPerUnit}}},
             {"lighting",{{"ambient_color",Vector(light.ambientColor)},{"directional_color",Vector(light.directionalColor)},
                          {"ambient_intensity",light.ambientIntensity},{"directional_intensity",light.directionalIntensity},{"shadows",light.shadows}}},
-            {"ambient_occlusion",{{"enabled",ao.enabled},{"intensity",ao.intensity},{"radius",ao.radius},{"samples",ao.samples}}},
+            {"ambient_occlusion",{{"enabled",ao.enabled},{"intensity",ao.intensity},{"radius",ao.radius},{"samples",ao.samples},
+                                 {"use_ground_plane",ao.useGroundPlane}}},
             {"output",{{"directory",Reference(document.outputDirectory,folder)},{"prefix",document.outputPrefix},{"lighting_layers",document.exportLayers}}},
             {"preview",{{"view",document.view},{"channel",document.previewChannel},{"material",document.selectedMaterial}}},
             {"materials",Json::array()}};

@@ -22,6 +22,7 @@ namespace renderkit
         float intensity = .75f; // 0 = unchanged, 1 = full occlusion strength.
         float radius = 1.0f; // Maximum ray distance in imported model units.
         int samples = 64;
+        bool useGroundPlane = false; // Invisible AO-only plane at the model's minimum Y.
     };
     struct RenderSettings
     {

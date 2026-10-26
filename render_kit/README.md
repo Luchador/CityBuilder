@@ -79,7 +79,7 @@ A scene stores:
 - Tint, factor alpha, opaque/cut-out mode, cutoff, double-sided rendering,
   opacity channel/inversion/strength, base-alpha toggle, UV settings and wrapping.
 - Ambient/directional colors and intensities, plus self-shadow settings.
-- Ambient occlusion enabled state, intensity, radius and sample count.
+- Ambient occlusion enabled state, intensity, radius, sample count and ground-plane toggle.
 - Output dimensions, auto-fit/padding/manual scale, export folder, filename
   prefix and whether to export day/night layers.
 - The selected preview view, display channel and material.
@@ -104,6 +104,7 @@ files use UTF-8 JSON with a format tag and version, allowing future migrations.
 They do not save preview images, generated sprites, undo history or UI layout.
 Older `.rks` files without AO settings still load with AO disabled. Save them
 again after enabling AO to retain the new settings.
+Scenes saved before the ground-plane option was added load with that option off.
 
 ## Camera and alignment
 
@@ -221,6 +222,11 @@ on both sides, so thin foliage cards can block nearby light.
 - **AO samples**: 16–256 rays per visible point; default 64. Higher values reduce
   sampling steps but increase CPU rendering time, especially with dense foliage.
   Preview and export use the same deterministic sampling pattern and count.
+- **Use Ground Plane**: adds an infinite horizontal AO occluder at the model's
+  minimum Y, matching its ground pivot. It darkens nearby model surfaces using
+  the same intensity and radius. The plane is invisible in the preview and all
+  exported layers; it does not change framing, alpha or the sun mask. It defaults
+  to off and only takes effect while **Bake AO into albedo** is enabled.
 
 AO defaults to off, preserving existing scenes. It multiplies **linear base
 color before sRGB encoding**, then the normal light calculation uses that color.
@@ -231,8 +237,8 @@ works. Since AO is baked into albedo, its darkening affects both ambient and
 directional contributions and stays fixed as their colors/intensities change.
 It cannot be independently adjusted in the game without rerendering the sprites.
 
-AO only sees geometry in the imported model. There is no implicit ground plane
-or ground-contact shadow. Radius is a hard distance limit, and finite sampling
+AO sees geometry in the imported model plus the optional invisible ground plane.
+It does not render a shadow onto the ground. Radius is a hard distance limit, and finite sampling
 can produce visible steps; increase samples when necessary. This is local
 occlusion, not global illumination or color bounce. Scene files and export
 metadata record the AO settings. **Reset lighting** resets the lights only;
@@ -342,6 +348,8 @@ relative-path relocation, missing assets, invalid data and safe replacement.
 AO checks cover unobstructed surfaces, overhangs, radius/intensity changes,
 linear-color baking, cutouts, stable repeated renders, preserved alpha/sun masks,
 four-view exports, and compatibility with scenes saved before AO was added.
+Ground-plane checks compare against real floor geometry, verify radius/intensity
+and transparent backgrounds, and cover scene compatibility and exported settings.
 
 The standalone project also supports an installed SDL3 via
 `-DRENDER_KIT_USE_INSTALLED_SDL=ON`. A window smoke test for development is
