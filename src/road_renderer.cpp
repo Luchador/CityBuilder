@@ -19,12 +19,15 @@ namespace
     // A small physical lift prevents the coplanar authored road plane from
     // sharing the terrain surface. It does not alter terrain/picking heights.
     constexpr float RoadSurfaceLift = 0.001f;
+
     struct RoadInstance
     {
         float x, y, z, quarterTurns;
         float slopeX, slopeZ, lengthScale = 1.0f, repeatAlongRoad = 0.0f;
     };
+
     static_assert(sizeof(RoadInstance) == 32);
+
     [[noreturn]] void Fail(const char* message)
     {
         throw std::runtime_error(std::string(message) + ": " + SDL_GetError());
@@ -60,8 +63,7 @@ void RoadRenderer::Initialize(SDL_GPUDevice* gpu, TextureManager& textures, SDL_
             auto geometry = LoadRoadMesh(path, asset);
             auto& mesh = meshes[i];
     
-            if (asset.mixedJunction && (!geometry.hasTexcoords ||
-                !std::filesystem::exists(std::filesystem::path(unicodeBase) / "assets" / asset.texture)))
+            if (asset.mixedJunction && (!geometry.hasTexcoords || !std::filesystem::exists(std::filesystem::path(unicodeBase) / "assets" / asset.texture)))
             {
                 if (!untexturedAsphalt)
                 {
@@ -70,7 +72,11 @@ void RoadRenderer::Initialize(SDL_GPUDevice* gpu, TextureManager& textures, SDL_
                 }
                 mesh.baseColor = untexturedAsphalt.get();
             }
-            else mesh.baseColor = &textures.Load(asset.texture, {TextureContent::Color, true});
+            else 
+            {
+                mesh.baseColor = &textures.Load(asset.texture, {TextureContent::Color, true});
+            }
+
             maxMipLevels = std::max(maxMipLevels, mesh.baseColor->MipLevels());
             mesh.vertices = UploadBuffer(device, geometry.vertices.data(), static_cast<Uint32>(geometry.vertices.size() * sizeof(StaticMeshVertex)), SDL_GPU_BUFFERUSAGE_VERTEX);
             mesh.indices = UploadBuffer(device, geometry.indices.data(), static_cast<Uint32>(geometry.indices.size() * sizeof(std::uint32_t)), SDL_GPU_BUFFERUSAGE_INDEX);
@@ -134,6 +140,7 @@ void RoadRenderer::Initialize(SDL_GPUDevice* gpu, TextureManager& textures, SDL_
         info.target_info.has_depth_stencil_target = true;
         info.target_info.depth_stencil_format = SDL_GPU_TEXTUREFORMAT_D32_FLOAT;
         pipeline = SDL_CreateGPUGraphicsPipeline(device, &info);
+
         if (!pipeline) 
         {
             Fail("Create road pipeline");
@@ -164,7 +171,11 @@ void RoadRenderer::Prepare(const World& world)
 
     for (const auto& road : roads)
     {
-        if (!HasRoadModel(road)) continue;
+        if (!HasRoadModel(road)) 
+        {
+            continue;
+        }
+
         const auto visual = GetRoadVisual(road);
 
         groups[static_cast<std::size_t>(visual.shape)].push_back({static_cast<float>(road.tileX) + 0.5f,
@@ -255,7 +266,9 @@ void RoadRenderer::Release() noexcept
         }
         mesh = {};
     }
+
     untexturedAsphalt.reset();
+
     if (pipeline) SDL_ReleaseGPUGraphicsPipeline(device, pipeline);
     if (fragmentShader) SDL_ReleaseGPUShader(device, fragmentShader);
     if (vertexShader) SDL_ReleaseGPUShader(device, vertexShader);
