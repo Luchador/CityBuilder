@@ -2,7 +2,7 @@
 
 #include "camera.hpp"
 #include "toolcontroller.hpp"
-#include "ui_manager.hpp"
+#include "ui/ui_manager.hpp"
 
 #include <stdexcept>
 #include <utility>

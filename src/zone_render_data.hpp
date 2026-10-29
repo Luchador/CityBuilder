@@ -1,6 +1,6 @@
 #pragma once
 
-#include "minimap_map.hpp"
+#include "ui/minimap_map.hpp"
 #include "tool.hpp"
 
 class World;

@@ -12,7 +12,7 @@
 #include "camera.hpp"
 #include "input.hpp"
 #include "gpu_utils.hpp"
-#include "ui_manager.hpp"
+#include "ui/ui_manager.hpp"
 #include "city.hpp"
 #include "debug_commands.hpp"
 #include "simulation.hpp"

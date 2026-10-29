@@ -42,6 +42,8 @@ file(GLOB_RECURSE CITYBUILDER_SOURCES CONFIGURE_DEPENDS
 add_executable(CityBuilder ${CITYBUILDER_SOURCES})
 
 target_compile_features(CityBuilder PRIVATE cxx_std_20)
+# UI sources live under src/ui and include shared game headers from src.
+target_include_directories(CityBuilder PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_include_directories(CityBuilder SYSTEM PRIVATE "${renderkit_cgltf_SOURCE_DIR}")
 target_compile_definitions(CityBuilder PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 # D3DCompile is supplied by the Windows SDK; no separate shader tools needed.
@@ -114,8 +116,8 @@ option(CITY_BUILD_DEBUG_CONSOLE_TESTS "Build debug console command and text subm
 if(CITY_BUILD_DEBUG_CONSOLE_TESTS)
     enable_testing()
     add_executable(CityDebugConsoleTests tests/debug_console_tests.cpp
-        src/debug_commands.cpp src/ui_debug_console.cpp src/ui_window.cpp
-        src/ui_text_input.cpp src/ui_button.cpp src/ui_layout.cpp)
+        src/debug_commands.cpp src/ui/ui_debug_console.cpp src/ui/ui_window.cpp
+        src/ui/ui_text_input.cpp src/ui/ui_button.cpp src/ui/ui_layout.cpp)
     target_compile_features(CityDebugConsoleTests PRIVATE cxx_std_20)
     target_include_directories(CityDebugConsoleTests PRIVATE src
         $<TARGET_PROPERTY:SDL3_ttf::SDL3_ttf,INTERFACE_INCLUDE_DIRECTORIES>)
@@ -126,7 +128,7 @@ endif()
 option(CITY_BUILD_TOOLTIP_TESTS "Build tooltip formatting and wrapping checks" OFF)
 if(CITY_BUILD_TOOLTIP_TESTS)
     enable_testing()
-    add_executable(CityTooltipTextTests tests/tooltip_text_tests.cpp src/ui_tooltip_text.cpp)
+    add_executable(CityTooltipTextTests tests/tooltip_text_tests.cpp src/ui/ui_tooltip_text.cpp)
     target_compile_features(CityTooltipTextTests PRIVATE cxx_std_20)
     target_include_directories(CityTooltipTextTests PRIVATE src)
     add_test(NAME CityTooltipTextTests COMMAND CityTooltipTextTests)
@@ -159,7 +161,7 @@ if(CITY_BUILD_ZONING_TESTS)
     enable_testing()
     add_executable(CityZoningTests tests/zoning_tests.cpp
         src/world_zoning.cpp src/zone_render_data.cpp src/zone.cpp src/world.cpp src/terrain.cpp
-        src/city.cpp src/minimap_map.cpp src/water.cpp
+        src/city.cpp src/ui/minimap_map.cpp src/water.cpp
         src/tool.cpp src/toolcontroller.cpp src/zone_tool.cpp)
     target_compile_features(CityZoningTests PRIVATE cxx_std_20)
     target_include_directories(CityZoningTests PRIVATE src)
@@ -182,7 +184,7 @@ if(CITY_BUILD_MAP_SIZE_TESTS)
     enable_testing()
     add_executable(CityMapSizeTests tests/map_size_tests.cpp
         src/city.cpp src/terrain.cpp src/world.cpp src/terrain_skirt.cpp src/water.cpp
-        src/minimap_map.cpp src/camera.cpp)
+        src/ui/minimap_map.cpp src/camera.cpp)
     target_compile_features(CityMapSizeTests PRIVATE cxx_std_20)
     target_include_directories(CityMapSizeTests PRIVATE src)
     add_test(NAME CityMapSizeTests COMMAND CityMapSizeTests)
@@ -192,11 +194,11 @@ option(CITY_BUILD_UI_MANAGER_TESTS "Build UI manager input/render lifetime check
 if(CITY_BUILD_UI_MANAGER_TESTS)
     enable_testing()
     add_executable(CityUiManagerTests tests/ui_manager_tests.cpp
-        src/ui_manager.cpp src/ui_manager_draw.cpp src/ui.cpp src/ui_terrain.cpp src/ui_transport.cpp src/ui_zoning.cpp src/ui_utilities.cpp src/ui_government.cpp src/ui_tool_buttons.cpp src/ui_layout.cpp
-        src/ui_manager_windows.cpp src/ui_window.cpp src/ui_window_draw.cpp src/ui_text_input.cpp
-        src/ui_button.cpp src/ui_buttons.cpp src/ui_buttons_draw.cpp
-        src/ui_minimap.cpp src/ui_minimap_draw.cpp src/ui_text.cpp
-        src/pan_overlay.cpp src/minimap_map.cpp src/camera.cpp)
+        src/ui/ui_manager.cpp src/ui/ui_manager_draw.cpp src/ui/ui.cpp src/ui/ui_terrain.cpp src/ui/ui_transport.cpp src/ui/ui_zoning.cpp src/ui/ui_utilities.cpp src/ui/ui_government.cpp src/ui/ui_tool_buttons.cpp src/ui/ui_layout.cpp
+        src/ui/ui_manager_windows.cpp src/ui/ui_window.cpp src/ui/ui_window_draw.cpp src/ui/ui_text_input.cpp
+        src/ui/ui_button.cpp src/ui/ui_buttons.cpp src/ui/ui_buttons_draw.cpp
+        src/ui/ui_minimap.cpp src/ui/ui_minimap_draw.cpp src/ui/ui_text.cpp
+        src/ui/pan_overlay.cpp src/ui/minimap_map.cpp src/camera.cpp)
     target_compile_features(CityUiManagerTests PRIVATE cxx_std_20)
     # Device/font doubles only need the public headers, not the SDL_ttf binary.
     target_include_directories(CityUiManagerTests PRIVATE src
@@ -208,8 +210,8 @@ endif()
 option(CITY_BUILD_UI_TESTS "Build UI visibility and input tests" OFF)
 if(CITY_BUILD_UI_TESTS)
     enable_testing()
-    add_executable(CityUiVisibilityTests tests/ui_visibility_tests.cpp src/ui.cpp src/ui_terrain.cpp src/ui_transport.cpp src/ui_zoning.cpp src/ui_utilities.cpp src/ui_government.cpp src/ui_tool_buttons.cpp src/ui_layout.cpp
-        src/ui_button.cpp src/ui_buttons.cpp src/ui_buttons_draw.cpp src/ui_minimap.cpp src/camera.cpp)
+    add_executable(CityUiVisibilityTests tests/ui_visibility_tests.cpp src/ui/ui.cpp src/ui/ui_terrain.cpp src/ui/ui_transport.cpp src/ui/ui_zoning.cpp src/ui/ui_utilities.cpp src/ui/ui_government.cpp src/ui/ui_tool_buttons.cpp src/ui/ui_layout.cpp
+        src/ui/ui_button.cpp src/ui/ui_buttons.cpp src/ui/ui_buttons_draw.cpp src/ui/ui_minimap.cpp src/camera.cpp)
     target_compile_features(CityUiVisibilityTests PRIVATE cxx_std_20)
     target_include_directories(CityUiVisibilityTests PRIVATE src)
     target_link_libraries(CityUiVisibilityTests PRIVATE SDL3::Headers)
@@ -219,13 +221,13 @@ endif()
 option(CITY_BUILD_MINIMAP_TESTS "Build minimap map and texture tests" OFF)
 if(CITY_BUILD_MINIMAP_TESTS)
     enable_testing()
-    add_executable(CityMinimapMapTests tests/minimap_map_tests.cpp src/minimap_map.cpp src/terrain.cpp src/world.cpp)
+    add_executable(CityMinimapMapTests tests/minimap_map_tests.cpp src/ui/minimap_map.cpp src/terrain.cpp src/world.cpp)
     target_compile_features(CityMinimapMapTests PRIVATE cxx_std_20)
     target_include_directories(CityMinimapMapTests PRIVATE src)
     add_test(NAME CityMinimapMapTests COMMAND CityMinimapMapTests)
 
     add_executable(CityMinimapTextureTests tests/minimap_texture_tests.cpp src/texture.cpp
-        src/terrain_material.cpp src/ui_minimap.cpp src/ui_minimap_draw.cpp src/ui_layout.cpp src/camera.cpp)
+        src/terrain_material.cpp src/ui/ui_minimap.cpp src/ui/ui_minimap_draw.cpp src/ui/ui_layout.cpp src/camera.cpp)
     target_compile_features(CityMinimapTextureTests PRIVATE cxx_std_20)
     target_include_directories(CityMinimapTextureTests PRIVATE src)
     target_link_libraries(CityMinimapTextureTests PRIVATE SDL3::Headers)
@@ -251,7 +253,7 @@ if(CITY_BUILD_TESTS OR CITY_BUILD_LAKE_TESTS)
 endif()
 if(CITY_BUILD_TESTS)
     enable_testing()
-    add_executable(CityPanTests tests/pan_tests.cpp src/camera.cpp src/ui_layout.cpp)
+    add_executable(CityPanTests tests/pan_tests.cpp src/camera.cpp src/ui/ui_layout.cpp)
     target_compile_features(CityPanTests PRIVATE cxx_std_20)
     target_include_directories(CityPanTests PRIVATE src)
     add_test(NAME CityPanTests COMMAND CityPanTests)
