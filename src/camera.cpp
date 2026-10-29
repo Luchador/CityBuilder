@@ -165,6 +165,5 @@ GroundPan ScreenToGroundPan(float right, float down, unsigned int quarterTurns)
     const CameraOrientation orientation = GetCameraOrientation(quarterTurns);
     const float forward = down / orientation.sinPitch;
 
-    return {orientation.cosYaw * right + orientation.sinYaw * forward,
-           -orientation.sinYaw * right + orientation.cosYaw * forward};
+    return {orientation.cosYaw * right + orientation.sinYaw * forward, -orientation.sinYaw * right + orientation.cosYaw * forward};
 }

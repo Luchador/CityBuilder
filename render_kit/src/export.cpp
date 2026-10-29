@@ -22,37 +22,65 @@ namespace
     }
     void WriteVector(std::ostream& out,Vec3 value) {out<<'['<<value.x<<", "<<value.y<<", "<<value.z<<']';}
 }
-std::filesystem::path ExportViews(const Scene& scene,const RenderSettings& settings,
-    const std::filesystem::path& parent,const std::string& prefix,bool lightingLayers,
-    std::stop_token stop,std::atomic<int>* completedRows)
+std::filesystem::path ExportViews(const Scene& scene,const RenderSettings& settings, const std::filesystem::path& parent,const std::string& prefix,bool lightingLayers, std::stop_token stop,std::atomic<int>* completedRows)
 {
     settings.Validate();
-    if(!scene.geometry)throw std::invalid_argument("Import a model first");
+
+    if(!scene.geometry)
+    {
+        throw std::invalid_argument("Import a model first");
+    }
+
     if(prefix.empty() || prefix.size()>80 || prefix.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_-")!=std::string::npos)
+    {
         throw std::invalid_argument("File prefix must use letters, numbers, underscores or hyphens (1..80 characters)");
-    if(parent.empty() || !std::filesystem::is_directory(parent))throw std::invalid_argument("Choose an existing export folder");
+    }
+
+    if(parent.empty() || !std::filesystem::is_directory(parent))
+    {
+        throw std::invalid_argument("Choose an existing export folder");
+    }
+
     const Frame frame=FitFrame(*scene.geometry,settings);
     const auto& gi=settings.globalIllumination;
+
     std::filesystem::path folder;
+
     for(int i=1;i<=9999;++i)
     {
         std::ostringstream name;name<<prefix<<'_'<<std::setw(3)<<std::setfill('0')<<i;
         auto candidate=parent/NativePath(name.str());
-        if(std::filesystem::create_directory(candidate)) {folder=std::move(candidate);break;}
+    
+        if(std::filesystem::create_directory(candidate)) 
+        {
+            folder=std::move(candidate);
+            break;
+        }
     }
-    if(folder.empty())throw std::runtime_error("Cannot find an unused export folder name");
+
+    if(folder.empty())
+    {
+        throw std::runtime_error("Cannot find an unused export folder name");
+    }
+
     try
     {
         for(unsigned view=0;view<4;++view)
         {
-            if(stop.stop_requested())throw std::runtime_error("Export cancelled");
+            if(stop.stop_requested())
+            {
+                throw std::runtime_error("Export cancelled");
+            }
+        
             const auto image=Render(scene,settings,frame,view,stop,completedRows);
             const auto name=prefix+"_view"+std::to_string(view);
             SavePng(folder/NativePath(name+".png"),image.width,image.height,image.rgba);
+
             if(lightingLayers)
             {
                 SavePng(folder/NativePath(name+"_albedo.png"),image.width,image.height,image.albedo);
                 SavePng(folder/NativePath(name+"_sun.png"),image.width,image.height,image.directional);
+
                 if(gi.enabled)
                 {
                     SaveLightingDds(folder/NativePath(name+"_direct.dds"),image.width,image.height,image.directLight,image.rgba);
@@ -61,9 +89,19 @@ std::filesystem::path ExportViews(const Scene& scene,const RenderSettings& setti
                 }
             }
         }
-        if(stop.stop_requested())throw std::runtime_error("Export cancelled");
+
+        if(stop.stop_requested())
+        {
+            throw std::runtime_error("Export cancelled");
+        }
+
         std::ofstream metadata(folder/"sprites.json",std::ios::binary);
-        if(!metadata)throw std::runtime_error("Cannot write sprite metadata");
+
+        if(!metadata)
+        {
+            throw std::runtime_error("Cannot write sprite metadata");
+        }
+
         metadata<<std::setprecision(9)<<"{\n  \"version\": "<<(gi.enabled?2:1)<<",\n  \"source\": "<<JsonString(scene.source)
                 <<",\n  \"width\": "<<settings.width<<",\n  \"height\": "<<settings.height
                 <<",\n  \"pixels_per_model_unit\": "<<frame.pixelsPerUnit
@@ -74,6 +112,7 @@ std::filesystem::path ExportViews(const Scene& scene,const RenderSettings& setti
                 <<", \"samples_per_pixel\": "<<settings.aaGridSize*settings.aaGridSize
                 <<", \"resolve\": \"coverage-weighted linear-light RGB; linear sun mask; straight alpha\"}"
                 <<",\n  \"frame_center\": ";
+
         WriteVector(metadata,frame.center);metadata<<",\n  \"ground_pivot\": ";WriteVector(metadata,frame.pivot);
         metadata<<",\n  \"light_direction_toward_source\": ";WriteVector(metadata,gi.enabled?Normalize(DirectionalLightDirection):DirectionalLightDirection);
         metadata<<",\n  \"ambient_color\": ";WriteVector(metadata,settings.lighting.ambientColor);
@@ -105,22 +144,30 @@ std::filesystem::path ExportViews(const Scene& scene,const RenderSettings& setti
                     "DDS maps already include material color. Do not multiply albedo or AO again. Use premultiplied alpha blending (ONE, ONE_MINUS_SRC_ALPHA) in a linear framebuffer; display-encode afterward. Albedo and sun PNGs alone omit GI. Camera views keep light fixed in world space.":
                     "Applied per sample. With anti-aliasing, independently resolved albedo and sun maps approximate the resolved lit sprite at mixed-color or mixed-lighting pixels.")
                 <<",\n  \"views\": [\n";
+
         for(unsigned view=0;view<4;++view)
         {
             const auto name=prefix+"_view"+std::to_string(view);
             const auto basis=ViewBasis(view);
+
             metadata<<"    {\"quarter_turns\": "<<view<<", \"yaw_degrees\": "<<45+90*view
                     <<", \"file\": "<<JsonString(name+".png")<<", \"pivot_pixels\": ["
                     <<frame.pivotPixels[view].x<<", "<<frame.pivotPixels[view].y<<"], \"right\": ";
             WriteVector(metadata,basis.right);metadata<<", \"up\": ";WriteVector(metadata,basis.up);
             metadata<<", \"toward_camera\": ";WriteVector(metadata,basis.towardCamera);
+
             if(lightingLayers)metadata<<", \"albedo\": "<<JsonString(name+"_albedo.png")<<", \"sun_mask\": "<<JsonString(name+"_sun.png");
             if(lightingLayers && gi.enabled)metadata<<", \"direct_light\": "<<JsonString(name+"_direct.dds")
                 <<", \"indirect_light\": "<<JsonString(name+"_indirect.dds")<<", \"sky_light\": "<<JsonString(name+"_sky.dds");
             metadata<<'}'<<(view==3?"\n":",\n");
         }
+
         metadata<<"  ]\n}\n";metadata.close();
-        if(!metadata)throw std::runtime_error("Failed to finish sprite metadata");
+        if(!metadata)
+        {
+            throw std::runtime_error("Failed to finish sprite metadata");
+        }
+
         return folder;
     }
     catch(...)
