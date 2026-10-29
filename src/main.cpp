@@ -127,15 +127,15 @@ public:
         fragmentShader = CompileShader(device, FragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT);
         terrainVertexShader = CompileShader(device, TerrainVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
         const std::string terrainFragmentPreamble = std::string(WorldLightingShaderSource) + ZoneOverlayShaderSource;
-        terrainFragmentShader = CompileShader(device, TerrainFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 4, terrainFragmentPreamble.c_str(), 2);
+        terrainFragmentShader = CompileShader(device, TerrainFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 6, terrainFragmentPreamble.c_str(), 2);
         terrainPipeline = MakePipeline(false);
         gridPipeline = MakePipeline(true);
         skirtVertexShader = CompileShader(device, TerrainSkirtVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, worldPreamble.c_str());
         skirtFragmentShader = CompileShader(device, TerrainSkirtFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 0, "", 1);
         skirtPipeline = MakeSkirtPipeline();
         waterVertexShader = CompileShader(device, WaterVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
-        const std::string waterFragmentPreamble = std::string("#define ZONE_TEXTURE t0\n#define ZONE_SAMPLER s0\n#define ROAD_TEXTURE t1\n#define ROAD_SAMPLER s1\n#define ZONE_UNIFORMS b0\n") + ZoneOverlayShaderSource;
-        waterFragmentShader = CompileShader(device, WaterFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 2, waterFragmentPreamble.c_str(), 1);
+        const std::string waterFragmentPreamble = std::string("#define ZONE_TEXTURE t0\n#define ZONE_SAMPLER s0\n#define ROAD_TEXTURE t1\n#define ROAD_SAMPLER s1\n#define LOT_TEXTURE t2\n#define LOT_SAMPLER s2\n#define ARROW_TEXTURE t3\n#define ARROW_SAMPLER s3\n#define ZONE_UNIFORMS b0\n") + ZoneOverlayShaderSource;
+        waterFragmentShader = CompileShader(device, WaterFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 4, waterFragmentPreamble.c_str(), 1);
         waterPipeline = MakeWaterPipeline();
 
         UiActions uiActions;
@@ -767,6 +767,7 @@ private:
     ToolPointer GetToolPointer(float screenX, float screenY, Uint32 pixelWidth, Uint32 pixelHeight)
     {
         ToolPointer pointer{screenX, screenY, std::nullopt};
+        pointer.shiftHeld = (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
     
         const auto flags = SDL_GetWindowFlags(window);
     
@@ -847,9 +848,9 @@ private:
         {
             const auto placement = ApplyZoning(*world, *city, *request);
 
-            if (placement.changed)
+            if (placement.changed || placement.lotsCreated)
             {
-                // Upload only the edited region, before the next frame is acquired.
+                // Upload changed zones and refresh lot markings before the next frame.
                 zoneOverlay.Update(*world, request->tiles);
                 ui.UpdateMinimapZones(*world, request->tiles);
                 outcome = placement.evaluation.blocked > 0 ? ToolOutcome::PartialSuccess : ToolOutcome::Success;
@@ -963,11 +964,14 @@ private:
         if (activeZoneType)
         {
             const std::string name = *activeZoneType == ZoneType::None ? "Dezone" : std::string(Zone::GetZoneDefinition(*activeZoneType).name);
-            std::string status = name + " - click or drag; Esc to cancel";
+            std::string status = name + (*activeZoneType == ZoneType::None ?
+                " - click or drag; Esc to cancel" : " - click or drag; hold Shift for maximum lots; Esc to cancel");
     
             if (toolPreview.tiles && zoneEvaluation.valid)
             {
                 status = name + ": " + std::to_string(zoneEvaluation.changes) + " tiles, $" + std::to_string(zoneEvaluation.cost) + "; " + std::to_string(zoneEvaluation.blocked) + " blocked";
+                if (*activeZoneType != ZoneType::None)
+                    status += toolPointer.shiftHeld ? " - maximum lots" : " - preferred lots (Shift: maximum)";
 
                 if (!zoneEvaluation.affordable) 
                 {

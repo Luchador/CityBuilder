@@ -7,5 +7,7 @@
 // These handles reserve occupancy without allocating an object per tile.
 using BuildingId = std::uint32_t;
 using InfrastructureId = std::uint32_t;
+using LotId = std::uint32_t;
 inline constexpr BuildingId NoBuilding = 0;
 inline constexpr InfrastructureId NoInfrastructure = 0;
+inline constexpr LotId NoLot = 0;

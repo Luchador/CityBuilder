@@ -98,8 +98,8 @@ void RoadRenderer::Initialize(SDL_GPUDevice* gpu, TextureManager& textures, SDL_
         }
 
         vertexShader = CompileShader(device, RoadVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
-        const std::string fragmentPreamble = std::string(WorldLightingShaderSource) + "#define ZONE_TEXTURE t1\n#define ZONE_SAMPLER s1\n#define ROAD_TEXTURE t2\n#define ROAD_SAMPLER s2\n#define ZONE_UNIFORMS b0\n" + ZoneOverlayShaderSource;
-        fragmentShader = CompileShader(device, RoadFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 3, fragmentPreamble.c_str(), 1);
+        const std::string fragmentPreamble = std::string(WorldLightingShaderSource) + "#define ZONE_TEXTURE t1\n#define ZONE_SAMPLER s1\n#define ROAD_TEXTURE t2\n#define ROAD_SAMPLER s2\n#define LOT_TEXTURE t3\n#define LOT_SAMPLER s3\n#define ARROW_TEXTURE t4\n#define ARROW_SAMPLER s4\n#define ZONE_UNIFORMS b0\n" + ZoneOverlayShaderSource;
+        fragmentShader = CompileShader(device, RoadFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 5, fragmentPreamble.c_str(), 1);
 
         SDL_GPUVertexBufferDescription buffers[2]{};
         buffers[0].slot = 0;

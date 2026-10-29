@@ -545,6 +545,7 @@ void World::RefreshRoadReservations(int x, int z)
         }
         if (owner)
         {
+            RemoveLot(tiles[index].lotId);
             roadFootprintAtTile[index] = owner;
             tiles[index].infrastructureId = roads[owner - 1].id;
             tiles[index].zoneType = ZoneType::None;

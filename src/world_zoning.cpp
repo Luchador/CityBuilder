@@ -7,6 +7,8 @@
 bool CanZoneTile(const World& world, int x, int z)
 {
     if (!world.ContainsTile(x, z) || world.GetTile(x, z).IsOccupied()) return false;
+    if (const auto* lot = world.GetLotAt(x, z); lot &&
+        (lot->buildingId != NoBuilding || lot->lotStatus != LotStatus::UNDEVELOPED)) return false;
     const auto& terrain = world.GetTerrain();
     const auto ix = static_cast<std::uint32_t>(x), iz = static_cast<std::uint32_t>(z);
     const float height = terrain.Height(ix, iz);
@@ -48,16 +50,25 @@ ZonePlacementResult ApplyZoning(World& world, City& city, const ZoneRequest& req
 {
     ZonePlacementResult result{EvaluateZoning(world, request, city.funds)};
     if (!result.evaluation.valid || !result.evaluation.affordable) return result;
-    // No allocations or fallible operations after validation. Run on the same
-    // main thread as simulation/occupancy edits so the quote cannot go stale.
+    // Plan before edits, using the same eligibility rules as the quote. Run on
+    // the main thread so neither the quote nor the lot plan can go stale.
+    const auto lots = PlanZoneLots(world, request);
     const auto& r = request.tiles;
     for (int z = r.minZ; z <= r.maxZ; ++z)
         for (int x = r.minX; x <= r.maxX; ++x)
             if (GetZoneTileStatus(world, x, z, request.zoneType) == ZoneTileStatus::Change)
             {
+                // Until lot splitting is implemented, an edit dissolves the
+                // affected vacant lot. Its other tiles keep their zone.
+                world.RemoveLot(world.GetTile(x, z).lotId);
                 world.GetTile(x, z).zoneType = request.zoneType;
                 ++result.changed;
             }
     city.funds -= result.evaluation.cost;
+    for (const auto& lot : lots)
+    {
+        world.CreateLot(lot);
+        ++result.lotsCreated;
+    }
     return result;
 }

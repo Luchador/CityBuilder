@@ -13,7 +13,7 @@ struct alignas(16) ZoneOverlayUniforms
 };
 static_assert(sizeof(ZoneOverlayUniforms) == 80);
 
-// Two maps with one texel per tile: zone data and direction-aware road eligibility.
+// Three maps with one texel per tile: zones, road eligibility and lot markings.
 class ZoneOverlay
 {
 public:
@@ -27,7 +27,7 @@ public:
     // Upload a changed road plan before acquiring the frame command buffer.
     // Both legs can contain transitions or junctions with wider footprints.
     void PrepareRoadPreview(const World& world, const ToolPreview& preview);
-    // Binds zone data at samplerSlot and road eligibility at samplerSlot + 1.
+    // Binds zones, roads, lot metadata and arrow graphic in four consecutive slots.
     void Bind(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, const ToolPreview& preview,
               const ZoneEvaluation& evaluation, Uint32 samplerSlot = 2, Uint32 uniformSlot = 1) const;
     void Release() noexcept;
@@ -35,8 +35,12 @@ private:
     SDL_GPUDevice* device = nullptr;
     TextureManager* textures = nullptr;
     SDL_GPUSampler* sampler = nullptr;
+    SDL_GPUSampler* arrowSampler = nullptr;
     std::unique_ptr<Texture> image;
     std::unique_ptr<Texture> roadImage;
+    std::unique_ptr<Texture> lotImage;
+    const Texture* arrowImage = nullptr;
+    std::uint64_t preparedLotRevision = 0;
     std::optional<RoadPath> preparedRoadPath;
     const World* preparedWorld = nullptr;
     std::uint64_t preparedRoadRevision = 0;

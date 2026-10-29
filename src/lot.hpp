@@ -6,8 +6,9 @@
 #pragma once
 
 #include <cstdint>
-#include "building.hpp"
+#include "occupancy.hpp"
 #include "zone.hpp"
+#include <vector>
 
 enum class LotStatus
 {
@@ -18,9 +19,7 @@ enum class LotStatus
     DESTROYED
 };
 
-using LotId = std::uint32_t;
-inline constexpr LotId NoLot = 0;
-
+// World directions: north is -Z, east is +X. Camera rotation does not change these.
 enum class LotFacing : std::uint8_t
 {
     North,
@@ -45,3 +44,10 @@ class Lot
         BuildingId buildingId = NoBuilding;
         enum LotStatus lotStatus = LotStatus::UNDEVELOPED;
 };
+
+class World;
+struct ZoneRequest;
+// Plans only inside this gesture. Existing same-zone lots are left intact.
+// Preferred/max dimensions are frontage width and depth away from the road;
+// Lot::width/depth above are the resulting world X/Z footprint.
+std::vector<Lot> PlanZoneLots(const World& world, const ZoneRequest& request);

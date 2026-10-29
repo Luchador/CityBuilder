@@ -57,6 +57,7 @@ struct ToolPointer
     float screenY = 0.0f;
     // Empty when off the terrain, over UI, or blocked by camera interaction.
     std::optional<ToolHit> hit;
+    bool shiftHeld = false;
 
     bool HasValidHit(const World& world) const;
 };
@@ -72,6 +73,7 @@ struct ZoneRequest
 {
     ToolTileRect tiles;
     ZoneType zoneType = ZoneType::None; // None requests dezoning.
+    bool useMaximumLotSize = false;
 };
 
 struct RoadRequest

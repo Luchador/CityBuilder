@@ -57,6 +57,8 @@ struct ZoneDefinition
     ZoneColor color;
     std::int64_t costPerTile;
 
+    // Width along the front; depth away from it. Rotated into world X/Z when placed.
+    // No size means unrestricted rectangular area lots (Landfill and Seaport).
     std::optional<LotSize> preferredLotSize;
     std::optional<LotSize> maxLotSize;
 };

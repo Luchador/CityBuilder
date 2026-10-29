@@ -10,6 +10,9 @@ inline constexpr float ZoneOverlayOpacity = 0.65f;
 // ZoneType, bit 7 = an existing road that a route can reuse.
 // This is a data texture, NOT an alpha-premultiplied UI image.
 std::vector<std::uint8_t> BuildZonePixels(const World& world, ToolTileRect bounds);
+// One texel per tile. R: W/N/E/S outline bits; G: arrow facing + 1 (0=none);
+// B/A: arrow center relative to this tile, in eighths, biased by +1 tile.
+std::vector<std::uint8_t> BuildLotPixels(const World& world);
 // Separate from zoning: a slope may accept a road but never a zone. Red stores
 // allowed connection bits (0 = blocked). Before any road preview, the complete
 // plan fills G with acceptance and B/R/A with the low/middle/high bytes of

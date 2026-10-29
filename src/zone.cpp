@@ -18,7 +18,7 @@ namespace
         ZoneDefinition{"Dense Residential",        ZoneCategory::Residential, {0.04f, 0.40f, 0.10f},      100,  LotSize{3, 3},   LotSize{4, 4}},
         ZoneDefinition{"Mixed-Use Residential",    ZoneCategory::Residential, {0.20f, 0.75f, 0.45f},       60,  LotSize{2, 2},   LotSize{4, 4}},
 
-        ZoneDefinition{"Light Commercial",         ZoneCategory::Commercial,  {0.32f, 0.41f, 1.00f},       20,  LotSize{1, 2},   LotSize{2, 2}},
+        ZoneDefinition{"Light Commercial",         ZoneCategory::Commercial,  {0.32f, 0.41f, 1.00f},       20,  LotSize{1, 2},   LotSize{2, 3}},
         ZoneDefinition{"Medium Commercial",        ZoneCategory::Commercial,  {0.13f, 0.20f, 0.90f},       40,  LotSize{2, 2},   LotSize{3, 3}},
         ZoneDefinition{"Dense Commercial",         ZoneCategory::Commercial,  {0.08f, 0.10f, 0.75f},      100,  LotSize{3, 3},   LotSize{4, 4}},
 

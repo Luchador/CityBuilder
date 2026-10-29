@@ -24,6 +24,9 @@ void ZoneOverlay::Initialize(SDL_GPUDevice* gpu, TextureManager& manager, const 
 
         image = manager.CreateRgba(count, count, BuildZonePixels(world, {0, 0, last, last}), {TextureContent::Data});
         roadImage = manager.CreateRgba(count, count, BuildRoadPreviewPixels(world, {0, 0, last, last}), {TextureContent::Data});
+        lotImage = manager.CreateRgba(count, count, BuildLotPixels(world), {TextureContent::Data});
+        arrowImage = &manager.Load("materials/zones/zone_arrow.png", {TextureContent::Color});
+        preparedLotRevision = world.GetLotRevision();
         SDL_GPUSamplerCreateInfo info{};
         info.min_filter = info.mag_filter = SDL_GPU_FILTER_NEAREST;
         info.mipmap_mode = SDL_GPU_SAMPLERMIPMAPMODE_NEAREST;
@@ -34,6 +37,9 @@ void ZoneOverlay::Initialize(SDL_GPUDevice* gpu, TextureManager& manager, const 
         {
             throw std::runtime_error(std::string("Create zone sampler: ") + SDL_GetError());
         }
+        info.min_filter = info.mag_filter = SDL_GPU_FILTER_LINEAR;
+        arrowSampler = SDL_CreateGPUSampler(device, &info);
+        if (!arrowSampler) throw std::runtime_error(std::string("Create lot arrow sampler: ") + SDL_GetError());
     }
     catch (...) 
     { 
@@ -47,6 +53,14 @@ void ZoneOverlay::Update(const World& world, ToolTileRect bounds)
     preparedRoadPath.reset();
     textures->UpdateRgba(*image, bounds.minX, bounds.minZ, bounds.maxX - bounds.minX + 1, bounds.maxZ - bounds.minZ + 1, BuildZonePixels(world, bounds));
     textures->UpdateRgba(*roadImage, bounds.minX, bounds.minZ, bounds.maxX - bounds.minX + 1, bounds.maxZ - bounds.minZ + 1, BuildRoadPreviewPixels(world, bounds));
+    if (preparedLotRevision != world.GetLotRevision())
+    {
+        // A partial edit can dissolve a lot extending outside this rectangle.
+        // Refresh only when lots change; never rebuild this map per frame.
+        const auto count = world.GetDimensions().TileCount();
+        textures->UpdateRgba(*lotImage, 0, 0, count, count, BuildLotPixels(world));
+        preparedLotRevision = world.GetLotRevision();
+    }
 }
 
 void ZoneOverlay::PrepareRoadPreview(const World& world, const ToolPreview& preview)
@@ -118,8 +132,9 @@ void ZoneOverlay::Bind(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, 
         }
     }
 
-    const SDL_GPUTextureSamplerBinding bindings[] = {{image->Handle(), sampler}, {roadImage->Handle(), sampler}};
-    SDL_BindGPUFragmentSamplers(pass, samplerSlot, bindings, 2);
+    const SDL_GPUTextureSamplerBinding bindings[] = {{image->Handle(), sampler}, {roadImage->Handle(), sampler},
+        {lotImage->Handle(), sampler}, {arrowImage->Handle(), arrowSampler}};
+    SDL_BindGPUFragmentSamplers(pass, samplerSlot, bindings, 4);
     SDL_PushGPUFragmentUniformData(commands, uniformSlot, &uniforms, sizeof(uniforms));
 }
 
@@ -127,6 +142,11 @@ void ZoneOverlay::Release() noexcept
 {
     image.reset();
     roadImage.reset();
+    lotImage.reset();
+    arrowImage = nullptr;
+    if (arrowSampler) SDL_ReleaseGPUSampler(device, arrowSampler);
+    arrowSampler = nullptr;
+    preparedLotRevision = 0;
 
     if (sampler) 
     {

@@ -62,7 +62,7 @@ ToolResult ZoneTool::End(const ToolContext& context, const ToolPointer& pointer)
 
     if (anchor && hovered)
     {
-        result = ZoneRequest{ToolTileRect::FromCorners(*anchor, *hovered), zoneType};
+        result = ZoneRequest{ToolTileRect::FromCorners(*anchor, *hovered), zoneType, pointer.shiftHeld};
     }
 
     Cancel();

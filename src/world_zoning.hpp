@@ -28,6 +28,7 @@ struct ZonePlacementResult
 {
     ZoneEvaluation evaluation;
     std::uint32_t changed = 0;
+    std::uint32_t lotsCreated = 0;
 };
 // Re-evaluates on release. Insufficient funds cancel the whole placement;
 // otherwise only eligible changed tiles are charged, once per tile.

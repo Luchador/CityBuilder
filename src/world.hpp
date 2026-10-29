@@ -3,12 +3,14 @@
 #include "map_dimensions.hpp"
 #include "tile.hpp"
 #include "road.hpp"
+#include "lot.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
 #include <optional>
 #include <vector>
+#include <unordered_map>
 
 // Allowed elevation increments
 constexpr float TerrainHeightStep = 0.25f;
@@ -80,6 +82,15 @@ public:
     Tile& GetTile(int x, int z);
     const Tile& GetTile(int x, int z) const;
 
+    std::span<const Lot> GetLots() const { return lots; }
+    const Lot* GetLot(LotId id) const;
+    const Lot* GetLotAt(int x, int z) const;
+    // Validates a flat, dry, unoccupied rectangle of one zone; assigns a stable ID.
+    LotId CreateLot(Lot lot);
+    // Clears references, retaining the zoning. Developed lots cannot be removed.
+    bool RemoveLot(LotId id);
+    std::uint64_t GetLotRevision() const { return lotRevision; }
+
     std::span<const Road> GetRoads() const { return roads; }
     const Road* GetRoadAt(int x, int z) const;
     // Resolve any tile of a multi-cell module to the road owning its model.
@@ -120,6 +131,10 @@ private:
     TerrainSettings terrainSettings;
     TerrainHeightmap terrain;
     std::vector<Tile> tiles; // Row-major: z * tileCount + x.
+    std::vector<Lot> lots;
+    std::unordered_map<LotId, std::size_t> lotIndices;
+    LotId nextLotId = 1;
+    std::uint64_t lotRevision = 0;
     std::vector<Road> roads;
     // 0 = no road, otherwise index + 1. Constant-time neighbor lookup, even
     // on giant maps; infrastructure IDs remain independent of vector indices.
