@@ -9,6 +9,7 @@ public:
     ZoneType zoneType = ZoneType::None;
     BuildingId buildingId = NoBuilding;
     InfrastructureId infrastructureId = NoInfrastructure;
+    unsigned int LandValue = 0;
 
     bool IsOccupied() const
     {

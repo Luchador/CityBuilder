@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <string_view>
 
 struct ZoneColor
@@ -43,12 +44,21 @@ enum class ZoneCategory : std::uint8_t
     Other
 };
 
+struct LotSize
+{
+    unsigned int width;
+    unsigned int depth;
+};
+
 struct ZoneDefinition
 {
     std::string_view name;
     ZoneCategory category;
     ZoneColor color;
     std::int64_t costPerTile;
+
+    std::optional<LotSize> preferredLotSize;
+    std::optional<LotSize> maxLotSize;
 };
 
 class Zone

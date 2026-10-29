@@ -1,14 +1,11 @@
 #pragma once
 
-enum BuildingStatus
-{
-    CONSTRUCTION,
-    BUILT,
-    ABANDONED,
-    DESTROYED
-};
+#include <cstdint>
+
+using BuildingId = std::uint32_t;
+inline constexpr BuildingId NoBuilding = 0;
 
 class Building
 {
-    enum BuildingStatus buildingStatus = BUILT;
+
 };
