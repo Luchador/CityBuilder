@@ -58,6 +58,7 @@ struct ToolPointer
     // Empty when off the terrain, over UI, or blocked by camera interaction.
     std::optional<ToolHit> hit;
     bool shiftHeld = false;
+    bool altHeld = false;
 
     bool HasValidHit(const World& world) const;
 };
@@ -74,6 +75,7 @@ struct ZoneRequest
     ToolTileRect tiles;
     ZoneType zoneType = ZoneType::None; // None requests dezoning.
     bool useMaximumLotSize = false;
+    bool useAlternateLayout = false; // Alt selects the other layout in an exact two-way tie.
 
     bool operator==(const ZoneRequest&) const = default;
 };
@@ -101,6 +103,7 @@ struct ToolPreview
     // Road previews select their route/footprint inside tiles' bounding rectangle.
     std::optional<RoadPath> roadPath;
     bool useMaximumLotSize = false;
+    bool useAlternateLayout = false;
 };
 
 class Tool

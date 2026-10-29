@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <array>
 #include <stdexcept>
+#include <utility>
 
 namespace
 {
@@ -39,7 +40,8 @@ namespace
     }
 }
 
-std::vector<Lot> PlanZoneLots(const World& world, const ZoneRequest& request)
+static std::vector<Lot> PlanLots(const World& world, const ZoneRequest& request,
+    std::optional<LotFacing> preferredFacing = std::nullopt, std::uint8_t* frontageMask = nullptr)
 {
     std::vector<Lot> result;
     const auto& r = request.tiles;
@@ -65,6 +67,7 @@ std::vector<Lot> PlanZoneLots(const World& world, const ZoneRequest& request)
         for (int side = 0; side < 4; ++side)
             if (world.GetRoadOccupyingTile(x + RoadDx[side], z + RoadDz[side]))
                 roadSides[index(x, z)] |= static_cast<std::uint8_t>(1 << side);
+        if (frontageMask) *frontageMask |= roadSides[index(x, z)];
     }
     const bool light = request.zoneType == ZoneType::ResidentialLight || request.zoneType == ZoneType::CommercialLight;
     const bool single = width == 1 && depth == 1;
@@ -122,19 +125,33 @@ std::vector<Lot> PlanZoneLots(const World& world, const ZoneRequest& request)
         return best;
     };
 
-    // Road frontages get first choice. Then fill interiors with the same
-    // deterministic packing rules. No flood fill or scan beyond this gesture.
-    for (int pass = 0; pass < 2; ++pass)
-        for (int z = r.maxZ; z >= r.minZ; --z) for (int x = r.minX; x <= r.maxX; ++x)
+    // The normal plan keeps its existing scan/tie order. Alternate candidates
+    // first grow from one road frontage, then other roads, then interiors.
+    // Their scan starts at that frontage, so Alt can change the lot footprints
+    // (e.g. vertical versus horizontal strips), not only the front arrows.
+    const int roadPasses = preferredFacing ? 2 : 1;
+    const auto scanFacing = preferredFacing.value_or(LotFacing::South);
+    const bool alongZ = scanFacing == LotFacing::North || scanFacing == LotFacing::South;
+    const int anchorX = scanFacing == LotFacing::East ? r.maxX : r.minX;
+    const int anchorZ = scanFacing == LotFacing::North ? r.minZ : r.maxZ;
+    for (int pass = 0; pass <= roadPasses; ++pass)
+        for (int back = 0; back < (alongZ ? depth : width); ++back)
+            for (int across = 0; across < (alongZ ? width : depth); ++across)
     {
-        if (!free(x, z) || (pass == 0 && !roadSides[index(x, z)])) continue;
+        const auto tile = LotTile(anchorX, anchorZ, scanFacing, across, back);
+        const int x = tile.x, z = tile.z;
+        if (!free(x, z) || (pass < roadPasses && !roadSides[index(x, z)])) continue;
+        const bool frontagePass = preferredFacing && pass == 0;
+        if (frontagePass && !(roadSides[index(x, z)] & (1 << static_cast<unsigned>(*preferredFacing)))) continue;
         Candidate best;
-        for (const auto facing : Facings)
+        if (preferredFacing) best = findCandidate(x, z, *preferredFacing, false);
+        if (!frontagePass) for (const auto facing : Facings)
         {
+            if (preferredFacing == facing) continue;
             const auto candidate = findCandidate(x, z, facing, false);
             if (Better(candidate, best)) best = candidate;
         }
-        if (!best.area || (pass == 0 && !best.roadContacts)) continue;
+        if (!best.area || (pass < roadPasses && !best.roadContacts)) continue;
         // Choose the facing using preferred dimensions first. Extending a short
         // remainder must not turn otherwise regular rows sideways at an edge.
         if (light && !request.useMaximumLotSize)
@@ -146,4 +163,106 @@ std::vector<Lot> PlanZoneLots(const World& world, const ZoneRequest& request)
         result.push_back(lot);
     }
     return result;
+}
+
+namespace
+{
+    struct LayoutScore
+    {
+        std::size_t roadServedArea = 0, lotCount = 0, singleTiles = 0, deepArea = 0;
+        std::uint64_t contacts = 0, frontage = 0;
+    };
+
+    LayoutScore ScoreLayout(const World& world, std::span<const Lot> lots)
+    {
+        LayoutScore score;
+        score.lotCount = lots.size();
+        for (const auto& lot : lots)
+        {
+            const bool alongZ = lot.facing == LotFacing::North || lot.facing == LotFacing::South;
+            const unsigned width = alongZ ? lot.width : lot.depth;
+            const unsigned depth = alongZ ? lot.depth : lot.width;
+            const auto area = static_cast<std::size_t>(width) * depth;
+            const auto side = static_cast<unsigned>(lot.facing);
+            const int x = lot.x + (lot.facing == LotFacing::East ? static_cast<int>(lot.width) - 1 : 0);
+            const int z = lot.z + (lot.facing == LotFacing::South ? static_cast<int>(lot.depth) - 1 : 0);
+            unsigned contacts = 0;
+            for (unsigned i = 0; i < width; ++i)
+                if (world.GetRoadOccupyingTile(x + RoadDx[side] + (alongZ ? static_cast<int>(i) : 0),
+                    z + RoadDz[side] + (alongZ ? 0 : static_cast<int>(i)))) ++contacts;
+            if (contacts) score.roadServedArea += area;
+            score.contacts += contacts;
+            score.frontage += width;
+            if (area == 1) ++score.singleTiles;
+            if ((lot.zoneType == ZoneType::ResidentialLight || lot.zoneType == ZoneType::CommercialLight) && depth > width)
+                score.deepArea += area;
+        }
+        return score;
+    }
+
+    bool BetterLayout(const LayoutScore& a, const LayoutScore& b)
+    {
+        if (a.roadServedArea != b.roadServedArea) return a.roadServedArea > b.roadServedArea;
+        if (a.lotCount != b.lotCount) return a.lotCount < b.lotCount;
+        if (a.singleTiles != b.singleTiles) return a.singleTiles < b.singleTiles;
+        const auto firstCoverage = a.contacts * b.frontage, secondCoverage = b.contacts * a.frontage;
+        if (firstCoverage != secondCoverage) return firstCoverage > secondCoverage;
+        return a.deepArea > b.deepArea;
+    }
+
+    // Compare actual footprints AND arrows, independently of creation order.
+    // Several frontage passes can converge on the same layout; count it once.
+    using LayoutKey = std::vector<std::array<unsigned, 5>>;
+    LayoutKey KeyForLayout(std::span<const Lot> lots)
+    {
+        LayoutKey key;
+        key.reserve(lots.size());
+        for (const auto& lot : lots)
+            key.push_back({static_cast<unsigned>(lot.x), static_cast<unsigned>(lot.z),
+                lot.width, lot.depth, static_cast<unsigned>(lot.facing)});
+        std::sort(key.begin(), key.end());
+        return key;
+    }
+}
+
+std::vector<Lot> PlanZoneLots(const World& world, const ZoneRequest& request)
+{
+    std::uint8_t frontageMask = 0;
+    auto normal = PlanLots(world, request, std::nullopt, &frontageMask);
+    if (normal.empty()) return normal;
+    // Keep the common ordinary-zoning path cheap. Competing road frontages
+    // need comparison even without Alt, to avoid scan-order bias at corners.
+    const bool competingFrontages = (frontageMask & (frontageMask - 1)) != 0;
+    if (!request.useAlternateLayout && !competingFrontages) return normal;
+
+    auto bestScore = ScoreLayout(world, normal);
+    std::vector<LayoutKey> tiedLayouts;
+    if (request.useAlternateLayout) tiedLayouts.push_back(KeyForLayout(normal));
+    std::vector<Lot> alternate;
+    for (const auto facing : Facings)
+    {
+        auto candidate = PlanLots(world, request, facing);
+        const auto score = ScoreLayout(world, candidate);
+        if (BetterLayout(score, bestScore))
+        {
+            // Ordinary one-frontage/interior zoning keeps the normal plan.
+            // Alt must not change it just because a better plan was discovered.
+            if (!competingFrontages) return normal;
+            normal = std::move(candidate);
+            bestScore = score;
+            alternate.clear();
+            tiedLayouts.clear();
+            if (request.useAlternateLayout) tiedLayouts.push_back(KeyForLayout(normal));
+            continue;
+        }
+        if (!request.useAlternateLayout || BetterLayout(bestScore, score)) continue;
+        auto key = KeyForLayout(candidate);
+        if (std::find(tiedLayouts.begin(), tiedLayouts.end(), key) != tiedLayouts.end()) continue;
+        // Three distinct best layouts are enough to disallow the alternate.
+        // Continue comparing scores: a later, better plan resets the tie group.
+        if (tiedLayouts.size() < 3) tiedLayouts.push_back(std::move(key));
+        if (tiedLayouts.size() == 2) alternate = std::move(candidate);
+        else alternate.clear();
+    }
+    return request.useAlternateLayout && tiedLayouts.size() == 2 ? std::move(alternate) : std::move(normal);
 }

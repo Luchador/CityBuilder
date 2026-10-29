@@ -101,7 +101,7 @@ void ZoneOverlay::PrepareLotPreview(const World& world, const ToolPreview& previ
         RestoreLotPreview();
         return;
     }
-    const ZoneRequest request{*preview.tiles, *preview.zoneType, preview.useMaximumLotSize};
+    const ZoneRequest request{*preview.tiles, *preview.zoneType, preview.useMaximumLotSize, preview.useAlternateLayout};
     if (preparedLotWorld == &world && preparedLotRequest == request &&
         previewLotRevision == world.GetLotRevision() && previewRoadRevision == world.GetRoadRevision()) return;
 
@@ -191,7 +191,7 @@ void ZoneOverlay::Bind(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, 
         uniforms.green = *preview.zoneType == ZoneType::None ? 0.95f : color.g;
         uniforms.blue = *preview.zoneType == ZoneType::None ? 0.95f : color.b;
         uniforms.zoneType = static_cast<float>(*preview.zoneType);
-        const ZoneRequest request{r, *preview.zoneType, preview.useMaximumLotSize};
+        const ZoneRequest request{r, *preview.zoneType, preview.useMaximumLotSize, preview.useAlternateLayout};
         uniforms.lotPreviewEnabled = evaluation.affordable && preparedLotRequest == request ? 1.0f : 0.0f;
     }
     else if (preview.tiles && !preview.zoneType)

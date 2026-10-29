@@ -767,7 +767,9 @@ private:
     ToolPointer GetToolPointer(float screenX, float screenY, Uint32 pixelWidth, Uint32 pixelHeight)
     {
         ToolPointer pointer{screenX, screenY, std::nullopt};
-        pointer.shiftHeld = (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
+        const auto modifiers = SDL_GetModState();
+        pointer.shiftHeld = (modifiers & SDL_KMOD_SHIFT) != 0;
+        pointer.altHeld = (modifiers & SDL_KMOD_ALT) != 0;
     
         const auto flags = SDL_GetWindowFlags(window);
     
@@ -954,7 +956,8 @@ private:
     
             if (toolPreview.tiles && toolPreview.zoneType)
             {
-                zoneEvaluation = EvaluateZoning(*world, {*toolPreview.tiles, *toolPreview.zoneType, toolPreview.useMaximumLotSize}, city->funds);
+                zoneEvaluation = EvaluateZoning(*world, {*toolPreview.tiles, *toolPreview.zoneType,
+                    toolPreview.useMaximumLotSize, toolPreview.useAlternateLayout}, city->funds);
             }
 
             evaluatedPreview = toolPreview;
@@ -965,13 +968,16 @@ private:
         {
             const std::string name = *activeZoneType == ZoneType::None ? "Dezone" : std::string(Zone::GetZoneDefinition(*activeZoneType).name);
             std::string status = name + (*activeZoneType == ZoneType::None ?
-                " - click or drag; Esc to cancel" : " - click or drag; hold Shift for maximum lots; Esc to cancel");
+                " - click or drag; Esc to cancel" : " - click or drag; Shift: maximum lots; Alt: alternate layout; Esc to cancel");
     
             if (toolPreview.tiles && zoneEvaluation.valid)
             {
                 status = name + ": " + std::to_string(zoneEvaluation.changes) + " tiles, $" + std::to_string(zoneEvaluation.cost) + "; " + std::to_string(zoneEvaluation.blocked) + " blocked";
                 if (*activeZoneType != ZoneType::None)
+                {
                     status += toolPointer.shiftHeld ? " - maximum lots" : " - preferred lots (Shift: maximum)";
+                    status += toolPointer.altHeld ? " - Alt held" : " - Alt: alternate layout";
+                }
 
                 if (!zoneEvaluation.affordable) 
                 {
