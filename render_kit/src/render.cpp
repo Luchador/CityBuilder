@@ -1,4 +1,5 @@
 #include "render.hpp"
+#include "global_illumination.hpp"
 #include "camera.hpp"
 #include <numbers>
 #include <thread>
@@ -132,6 +133,24 @@ namespace
         return 1-ao.intensity*static_cast<float>(blocked)/static_cast<float>(samples.size());
     }
 }
+Surface EvaluateSurface(const Scene& scene,const Hit& hit,Vec3 incoming)
+{
+    const auto& t=scene.geometry->triangles[hit.triangle];const auto& m=scene.materials[t.material];
+    const auto& v=t.vertices;const float w=1-hit.u-hit.v;
+    Surface s;s.triangle=hit.triangle;
+    s.point=v[0].position*w+v[1].position*hit.u+v[2].position*hit.v;
+    s.geometric=Normalize(Cross(v[1].position-v[0].position,v[2].position-v[0].position));
+    if(Dot(s.geometric,incoming)>0)s.geometric=s.geometric*-1;
+    s.normal=Normalize(v[0].normal*w+v[1].normal*hit.u+v[2].normal*hit.v);
+    if(Dot(s.normal,s.geometric)<0)s.normal=s.normal*-1;
+    if(Dot(s.normal,incoming)>=0)s.normal=s.geometric;
+    const Vec4 texture=m.baseColor?m.baseColor->Sample(UvAt(t,m,hit.u,hit.v),m.wrapU,m.wrapV,true):Vec4{};
+    const auto color=ColorAt(t,hit.u,hit.v);
+    s.albedo={std::clamp(texture.r*m.baseFactor.r*color.r,0.0f,1.0f),
+              std::clamp(texture.g*m.baseFactor.g*color.g,0.0f,1.0f),
+              std::clamp(texture.b*m.baseFactor.b*color.b,0.0f,1.0f)};
+    return s;
+}
 void RenderSettings::Validate() const
 {
     if(width<16 || height<16 || width>4096 || height>4096)
@@ -149,6 +168,10 @@ void RenderSettings::Validate() const
     if(!std::isfinite(ao.intensity) || ao.intensity<0 || ao.intensity>1 ||
        !std::isfinite(ao.radius) || ao.radius<.001f || ao.radius>10000 || ao.samples<16 || ao.samples>256)
         throw std::invalid_argument("Invalid ambient occlusion settings: intensity 0..1, radius 0.001..10000, samples 16..256");
+    const auto& gi=globalIllumination;
+    if(gi.samples<1 || gi.samples>1024 || gi.previewSamples<1 || gi.previewSamples>1024 ||
+       gi.bounces<1 || gi.bounces>4 || !std::isfinite(gi.strength) || gi.strength<0 || gi.strength>4 || !color(gi.groundColor))
+        throw std::invalid_argument("Invalid global illumination settings: samples 1..1024, bounces 1..4, strength 0..4, ground color 0..1");
 }
 Basis ViewBasis(unsigned quarterTurns)
 {
@@ -192,7 +215,7 @@ Frame FitFrame(const Geometry& geometry,const RenderSettings& settings)
     }
     return frame;
 }
-Hit Trace(const Scene& scene,Vec3 origin,Vec3 direction,float maxDistance,bool shadowRay,std::uint32_t ignoredTriangle)
+Hit Trace(const Scene& scene,Vec3 origin,Vec3 direction,float maxDistance,bool shadowRay,std::uint32_t ignoredTriangle,bool twoSided)
 {
     Hit closest;closest.distance=maxDistance;
     const auto& geometry=*scene.geometry;
@@ -213,7 +236,7 @@ Hit Trace(const Scene& scene,Vec3 origin,Vec3 direction,float maxDistance,bool s
             const Vec3 e1=p[1].position-p[0].position,e2=p[2].position-p[0].position;
             const Vec3 h=Cross(direction,e2);const float determinant=Dot(e1,h);
             const float epsilon=1e-7f*Length(e1)*Length(e2);
-            if(std::abs(determinant)<=epsilon || (!shadowRay && !material.doubleSided && determinant<=epsilon))continue;
+            if(std::abs(determinant)<=epsilon || (!shadowRay && !twoSided && !material.doubleSided && determinant<=epsilon))continue;
             const float inverse=1/determinant;const Vec3 s=origin-p[0].position;
             const float u=Dot(s,h)*inverse;if(u<0 || u>1)continue;
             const Vec3 q=Cross(s,e1);const float v=Dot(direction,q)*inverse;if(v<0 || u+v>1)continue;
@@ -231,6 +254,7 @@ RenderImage Render(const Scene& scene,const RenderSettings& settings,const Frame
     settings.Validate();
     if(!scene.geometry || scene.geometry->nodes.empty())throw std::invalid_argument("No model loaded");
     if(stop.stop_requested())throw std::runtime_error("Render cancelled");
+    if(settings.globalIllumination.enabled)return RenderGlobalIllumination(scene,settings,frame,quarterTurns,stop,completedRows);
     RenderImage result;result.width=settings.width;result.height=settings.height;
     const auto bytes=static_cast<std::size_t>(settings.width)*settings.height*4;
     result.rgba.resize(bytes);result.albedo.resize(bytes);result.directional.resize(bytes);

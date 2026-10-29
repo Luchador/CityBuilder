@@ -208,6 +208,16 @@ namespace
             ++revision;dirty=true;lastChange=SDL_GetTicks();
             if(job && job->kind==JobKind::Preview)job->worker.request_stop();
         }
+        void LightingChanged()
+        {
+            if(settings.globalIllumination.enabled && previewImage && !previewImage->directLight.empty() && !dirty && !job)
+            {
+                ++revision;
+                rk::Relight(*previewImage,settings.lighting,settings.globalIllumination.strength);
+                UploadPreview();
+            }
+            else Changed();
+        }
         void LoadTexture(const std::string& path,JobKind kind,int material)
         {
             if(job || !scene)return;
@@ -253,6 +263,8 @@ namespace
                 settings.Validate();
                 const auto outputSettings=settings;
                 rk::RenderSettings previewSettings=settings;
+                if(previewSettings.globalIllumination.enabled)
+                    previewSettings.globalIllumination.samples=std::min(settings.globalIllumination.samples,settings.globalIllumination.previewSamples);
                 const float scale=std::max(std::min(1.0f,640.0f/std::max(settings.width,settings.height)),
                                            std::min(1.0f,16.0f/std::min(settings.width,settings.height)));
                 previewSettings.width=std::max(16,static_cast<int>(std::lround(settings.width*scale)));
@@ -344,6 +356,11 @@ namespace
             }
             else if(previewChannel==2)bytes=&image.albedo;
             else if(previewChannel==3)bytes=&image.directional;
+            else if(previewChannel>=4 && !image.directLight.empty())
+            {
+                const auto& layer=previewChannel==4?image.directLight:previewChannel==5?image.indirectLight:image.skyLight;
+                alpha=rk::LightingLayerPreview(image,layer);bytes=&alpha;
+            }
             Texture texture(SDL_CreateTexture(renderer,SDL_PIXELFORMAT_RGBA32,SDL_TEXTUREACCESS_STATIC,image.width,image.height),SDL_DestroyTexture);
             if(!texture || !SDL_UpdateTexture(texture.get(),nullptr,bytes->data(),image.width*4))throw std::runtime_error(SDL_GetError());
             SDL_SetTextureBlendMode(texture.get(),SDL_BLENDMODE_BLEND);
@@ -479,26 +496,53 @@ namespace
             auto& light=settings.lighting;
             float ambient[]={light.ambientColor.x,light.ambientColor.y,light.ambientColor.z};
             float sun[]={light.directionalColor.x,light.directionalColor.y,light.directionalColor.z};
-            if(ImGui::ColorEdit3("Ambient",ambient)){light.ambientColor={ambient[0],ambient[1],ambient[2]};Changed();}
-            if(sliderInput.Float("Ambient strength",&light.ambientIntensity,0,3,"%.2f"))Changed();
-            if(ImGui::ColorEdit3("Directional",sun)){light.directionalColor={sun[0],sun[1],sun[2]};Changed();}
-            if(sliderInput.Float("Sun strength",&light.directionalIntensity,0,3,"%.2f"))Changed();
+            if(ImGui::ColorEdit3("Ambient",ambient)){light.ambientColor={ambient[0],ambient[1],ambient[2]};LightingChanged();}
+            if(sliderInput.Float(settings.globalIllumination.enabled?"Sky strength":"Ambient strength",&light.ambientIntensity,0,3,"%.2f"))LightingChanged();
+            if(ImGui::ColorEdit3("Directional",sun)){light.directionalColor={sun[0],sun[1],sun[2]};LightingChanged();}
+            if(sliderInput.Float("Sun strength",&light.directionalIntensity,0,3,"%.2f"))LightingChanged();
             if(ImGui::Checkbox("Self shadows",&light.shadows))Changed();
             if(ImGui::Button("Reset lighting")){light=rk::Lighting{};Changed();}
-            ImGui::SeparatorText("Ambient occlusion");
-            auto& ao=settings.ambientOcclusion;
-            if(ImGui::Checkbox("Bake AO into albedo",&ao.enabled))Changed();
-            ImGui::BeginDisabled(!ao.enabled);
-            if(ImGui::Checkbox("Use Ground Plane",&ao.useGroundPlane))Changed();
-            ImGui::SetItemTooltip("Invisible AO ground at the model's lowest point (ground pivot). Uses the AO radius and intensity; never appears in the sprite or sun mask.");
-            if(sliderInput.Float("AO intensity",&ao.intensity,0,1,"%.2f",ImGuiSliderFlags_AlwaysClamp))Changed();
-            if(sliderInput.Float("AO radius",&ao.radius,.001f,10000,"%.3f units",
-                ImGuiSliderFlags_Logarithmic|ImGuiSliderFlags_AlwaysClamp))Changed();
-            ImGui::SetItemTooltip("Maximum distance to nearby occluders, in model units (meters for FBX). Click the number to type; Enter confirms.");
-            if(sliderInput.Int("AO samples",&ao.samples,16,256,"%d",ImGuiSliderFlags_AlwaysClamp))Changed();
-            ImGui::SetItemTooltip("More rays per surface point smooth the result but take longer. Preview and export use the same sample count.");
-            ImGui::EndDisabled();
-            ImGui::TextWrapped("AO darkens nearby creases and overlaps in the albedo and lit sprite. Alpha and the sun mask stay unchanged.");
+            ImGui::SeparatorText("Global illumination");
+            auto& gi=settings.globalIllumination;
+            if(ImGui::Checkbox("Bake global illumination",&gi.enabled))
+            {if(!gi.enabled && previewChannel>=4)previewChannel=0;Changed();}
+            ImGui::SetItemTooltip("Bakes direct sunlight, bounced sunlight and sky lighting. Sun and moon share the same fixed direction. Uses linear lighting; AO is bypassed.");
+            if(gi.enabled)
+            {
+                if(sliderInput.Float("GI strength",&gi.strength,0,4,"%.2f"))LightingChanged();
+                ImGui::SetItemTooltip("Scales bounced sun/moon light in the combined image. The reusable unit-light layers stay unchanged.");
+                if(sliderInput.Int("GI bounces",&gi.bounces,1,4))Changed();
+                if(sliderInput.Int("Bake samples",&gi.samples,1,1024))Changed();
+                if(sliderInput.Int("Preview samples",&gi.previewSamples,1,1024))Changed();
+                ImGui::SetItemTooltip("Paths per covered AA sample. Preview uses the smaller of preview and bake samples. Set both equal to compare identical settings.");
+                if(ImGui::Checkbox("GI ground plane",&gi.useGroundPlane))Changed();
+                ImGui::SetItemTooltip("Invisible diffuse ground at the model's lowest Y. Reflects light and blocks the lower sky; never changes coverage alpha.");
+                ImGui::BeginDisabled(!gi.useGroundPlane);
+                float ground[]={rk::LinearToSrgb(gi.groundColor.x),rk::LinearToSrgb(gi.groundColor.y),rk::LinearToSrgb(gi.groundColor.z)};
+                if(ImGui::ColorEdit3("Ground color",ground))
+                {gi.groundColor={rk::SrgbToLinear(ground[0]),rk::SrgbToLinear(ground[1]),rk::SrgbToLinear(ground[2])};Changed();}
+                ImGui::EndDisabled();
+                ImGui::TextWrapped("Ambient controls the sky. Light colors, strengths and GI strength reuse the completed preview bake.");
+            }
+            if(ImGui::CollapsingHeader("Ambient occlusion"))
+            {
+                ImGui::BeginDisabled(gi.enabled);
+                auto& ao=settings.ambientOcclusion;
+                if(ImGui::Checkbox("Bake AO into albedo",&ao.enabled))Changed();
+                ImGui::BeginDisabled(!ao.enabled);
+                if(ImGui::Checkbox("Use Ground Plane",&ao.useGroundPlane))Changed();
+                ImGui::SetItemTooltip("Invisible AO ground at the model's lowest point (ground pivot). Uses the AO radius and intensity; never appears in the sprite or sun mask.");
+                if(sliderInput.Float("AO intensity",&ao.intensity,0,1,"%.2f",ImGuiSliderFlags_AlwaysClamp))Changed();
+                if(sliderInput.Float("AO radius",&ao.radius,.001f,10000,"%.3f units",
+                    ImGuiSliderFlags_Logarithmic|ImGuiSliderFlags_AlwaysClamp))Changed();
+                ImGui::SetItemTooltip("Maximum distance to nearby occluders, in model units (meters for FBX). Click the number to type; Enter confirms.");
+                if(sliderInput.Int("AO samples",&ao.samples,16,256,"%d",ImGuiSliderFlags_AlwaysClamp))Changed();
+                ImGui::SetItemTooltip("More rays per surface point smooth the result but take longer. Preview and export use the same sample count.");
+                ImGui::EndDisabled();
+                ImGui::TextWrapped(gi.enabled?"AO is bypassed during GI to avoid double darkening. Its settings are retained for legacy mode.":
+                    "AO darkens nearby creases and overlaps in the albedo and lit sprite. Alpha and the sun mask stay unchanged.");
+                ImGui::EndDisabled();
+            }
             ImGui::Separator();ImGui::TextColored({.39f,.86f,.76f,1},"OUTPUT");
             int resolution[]={settings.width,settings.height};
             if(ImGui::InputInt2("Size (px)",resolution))
@@ -513,15 +557,17 @@ namespace
             int aa=settings.aaGridSize==8?3:settings.aaGridSize==4?2:settings.aaGridSize==2?1:0;
             if(ImGui::Combo("Anti-aliasing",&aa,"Off (1 sample)\0Low: 2x2 (4 samples)\0Medium: 4x4 (16 samples)\0High: 8x8 (64 samples)\0"))
             {settings.aaGridSize=1<<aa;Changed();}
-            ImGui::SetItemTooltip("Samples per output pixel, shared by preview and all exported maps. Smooths geometry, cutouts and shading with coverage alpha. More samples take longer, especially with AO. Start with 2x2.");
+            ImGui::SetItemTooltip("Samples per output pixel, shared by preview and all exported maps. Smooths geometry, cutouts and shading with coverage alpha. More samples take longer, especially with GI or AO. Start with 2x2.");
             if(ImGui::Checkbox("Fit all four views",&settings.autoFit))Changed();
             if(settings.autoFit)
             {if(sliderInput.Float("Padding",&settings.padding,0,.3f,"%.2f"))Changed();}
             else
             {if(ImGui::DragFloat("Pixels / unit",&settings.pixelsPerUnit,1,1,4096,"%.1f",ImGuiSliderFlags_AlwaysClamp))Changed();}
             ImGui::TextWrapped("One common scale and center for all views. 1 model unit = 1 game tile.");
-            ImGui::Checkbox("Export day/night layers",&exportLayers);
-            if(exportLayers)ImGui::TextWrapped("Adds albedo (including baked AO) and a directional-light mask for each view.");
+            ImGui::Checkbox("Export lighting layers",&exportLayers);
+            if(exportLayers)ImGui::TextWrapped(gi.enabled?
+                "Adds direct, indirect and sky RGBA16F DDS layers, plus albedo and sun PNGs, for each view.":
+                "Adds albedo (including baked AO) and a directional-light mask for each view.");
             ImGui::InputText("Prefix",prefix,sizeof(prefix));
             ImGui::SetNextItemWidth(-1);ImGui::InputTextWithHint("##outputDirectory","Export folder",outputDirectory,sizeof(outputDirectory));
             ImGui::BeginDisabled(job || inbox->pending);
@@ -550,7 +596,13 @@ namespace
             }
             ImGui::Text("Pitch 33 deg | Yaw %d deg | clockwise quarter-turn %d",45+view*90,view);
             ImGui::SetNextItemWidth(200);
-            if(ImGui::Combo("Display",&previewChannel,"Lit sprite\0Alpha mask\0Albedo (baked AO)\0Sun mask\0"))UploadPreview();
+            if(!settings.globalIllumination.enabled && previewChannel>=4)previewChannel=0;
+            if(ImGui::Combo("Display",&previewChannel,settings.globalIllumination.enabled?
+                "Lit sprite\0Alpha mask\0Albedo\0Sun mask\0Direct light\0Indirect light\0Sky light\0":
+                "Lit sprite\0Alpha mask\0Albedo (baked AO)\0Sun mask\0"))UploadPreview();
+            if(settings.globalIllumination.enabled)
+                ImGui::TextWrapped("GI: %d paths / AA sample in preview (%d on export). Layers show unit white light.",
+                    std::min(settings.globalIllumination.samples,settings.globalIllumination.previewSamples),settings.globalIllumination.samples);
             const ImVec2 available=ImGui::GetContentRegionAvail();
             const ImVec2 top=ImGui::GetCursorScreenPos();
             const float width=std::max(1.0f,available.x),height=std::max(1.0f,available.y);

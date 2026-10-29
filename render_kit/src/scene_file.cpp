@@ -119,12 +119,21 @@ namespace
             ao.radius=Number(encoded.at("radius"));ao.samples=Integer(encoded.at("samples"),16,256);
             ao.useGroundPlane=encoded.value("use_ground_plane",false);
         }
+        settings.globalIllumination=RenderSettings::GlobalIllumination{};
+        if(root.contains("global_illumination"))
+        {
+            const auto& encoded=root.at("global_illumination");auto& gi=settings.globalIllumination;
+            gi.enabled=encoded.at("enabled").get<bool>();gi.samples=Integer(encoded.at("samples"),1,1024);
+            gi.previewSamples=Integer(encoded.at("preview_samples"),1,1024);gi.bounces=Integer(encoded.at("bounces"),1,4);
+            gi.strength=Number(encoded.at("strength"),0,4);gi.useGroundPlane=encoded.at("use_ground_plane").get<bool>();
+            gi.groundColor=ReadColor(encoded.at("ground_color_linear"));
+        }
         settings.Validate();
         const auto& output=root.at("output");document.outputDirectory=Resolve(output.at("directory"),folder);
         document.outputPrefix=String(output.at("prefix"));CheckPrefix(document.outputPrefix);
         document.exportLayers=output.at("lighting_layers").get<bool>();
         const auto& preview=root.at("preview");document.view=Integer(preview.at("view"),0,3);
-        document.previewChannel=Integer(preview.at("channel"),0,3);
+        document.previewChannel=Integer(preview.at("channel"),0,6);
         document.selectedMaterial=Integer(preview.at("material"),0,100000);
     }
     void CheckStop(std::stop_token stop){if(stop.stop_requested())throw std::runtime_error("Scene load cancelled");}
@@ -170,15 +179,18 @@ void SaveSceneFile(const std::filesystem::path& path,const SceneDocument& docume
             throw std::runtime_error("Import a model before saving a scene");
         const auto destination=Absolute(path),folder=destination.parent_path();
         const auto& settings=document.settings;const auto& light=settings.lighting;
-        const auto& ao=settings.ambientOcclusion;
+        const auto& ao=settings.ambientOcclusion;const auto& gi=settings.globalIllumination;
         Json root={
-            {"format","CitiesUnlimited.RenderKit"},{"version",1},{"model",Reference(NativePath(document.scene.source),folder)},
+            {"format","CitiesUnlimited.RenderKit"},{"version",gi.enabled?2:1},{"model",Reference(NativePath(document.scene.source),folder)},
             {"render",{{"width",settings.width},{"height",settings.height},{"padding",settings.padding},{"auto_fit",settings.autoFit},
                        {"pixels_per_unit",settings.pixelsPerUnit},{"aa_grid_size",settings.aaGridSize}}},
             {"lighting",{{"ambient_color",Vector(light.ambientColor)},{"directional_color",Vector(light.directionalColor)},
                          {"ambient_intensity",light.ambientIntensity},{"directional_intensity",light.directionalIntensity},{"shadows",light.shadows}}},
             {"ambient_occlusion",{{"enabled",ao.enabled},{"intensity",ao.intensity},{"radius",ao.radius},{"samples",ao.samples},
                                  {"use_ground_plane",ao.useGroundPlane}}},
+            {"global_illumination",{{"enabled",gi.enabled},{"samples",gi.samples},{"preview_samples",gi.previewSamples},
+                                    {"bounces",gi.bounces},{"strength",gi.strength},{"use_ground_plane",gi.useGroundPlane},
+                                    {"ground_color_linear",Vector(gi.groundColor)}}},
             {"output",{{"directory",Reference(document.outputDirectory,folder)},{"prefix",document.outputPrefix},{"lighting_layers",document.exportLayers}}},
             {"preview",{{"view",document.view},{"channel",document.previewChannel},{"material",document.selectedMaterial}}},
             {"materials",Json::array()}};
@@ -211,7 +223,8 @@ SceneDocument LoadSceneFile(const std::filesystem::path& path,std::stop_token st
         if(!file.read(contents.data(),static_cast<std::streamsize>(contents.size())))throw std::runtime_error("Cannot read scene file");
         const auto root=Json::parse(contents,[](int depth,Json::parse_event_t,Json&){if(depth>64)Invalid("JSON nesting is too deep");return true;});
         if(String(root.at("format"))!="CitiesUnlimited.RenderKit")Invalid("unrecognized file format");
-        if(Integer(root.at("version"),0,100000)!=1)Invalid("unsupported scene version; use a compatible Render Kit");
+        const int version=Integer(root.at("version"),0,100000);
+        if(version!=1 && version!=2)Invalid("unsupported scene version; use a compatible Render Kit");
         SceneDocument document;ReadOptions(root,document,folder);
         const auto& saved=root.at("materials");
         if(!saved.is_array() || saved.empty() || saved.size()>100000)Invalid("invalid material list");

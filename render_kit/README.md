@@ -46,8 +46,9 @@ configure the root with `-DCITY_BUILD_RENDER_KIT=ON` and build target `RenderKit
    0 to 1. **Double-sided** is useful for foliage cards and other thin surfaces.
 4. Adjust ambient and directional light colors/strengths on the right. The
    light's world-space direction stays fixed while switching camera views.
-   Enable **Bake AO into albedo** for ambient occlusion; adjust its intensity,
-   radius and samples as described below.
+   Enable **Bake global illumination** for bounced sunlight and sky lighting;
+   see [Baked global illumination](GLOBAL_ILLUMINATION.md). With GI off, expand
+   **Ambient occlusion** and enable **Bake AO into albedo** for the legacy AO mode.
 5. Set output width/height (16..4096), an export folder, and a file prefix.
    Choose **Anti-aliasing** quality; **Low: 2x2** is a useful starting point.
    **Fit all four views** chooses one scale that fits every rotation, with the
@@ -58,7 +59,8 @@ configure the root with `-DCITY_BUILD_RENDER_KIT=ON` and build target `RenderKit
 
 Panels scroll on smaller windows. The preview is capped in resolution for
 responsiveness; exports always use the requested full size. The preview's
-**Display** selector shows the lit sprite, alpha, albedo (including baked AO), or sun mask.
+**Display** selector shows the lit sprite, alpha, albedo (including baked AO in
+legacy mode), or sun mask. GI adds direct, indirect and sky lighting views.
 Texture filtering is bilinear; preview display uses nearest-neighbor scaling
 so alpha edges can be inspected. Use **Save Scene...** in the top bar to keep
 those edits between sessions. Source models and textures are not modified.
@@ -68,9 +70,9 @@ Click the number in any slider to type an exact value, then press **Enter**
 unfinished edit. Typing does not rerender the preview until confirmed; dragging
 the slider track still updates continuously. Values are clamped to the slider's
 range, and invalid or nonfinite numbers remain editable with a red border.
-AO samples accepts whole numbers. Text entry preserves the stored value's full
+AO/GI sample counts and bounce counts accept whole numbers. Text entry preserves the stored value's full
 precision, even when the slider displays fewer decimal places. This applies to
-material cutoff/alpha/opacity strength, lighting strengths, AO controls and padding.
+material cutoff/alpha/opacity strength, lighting strengths, AO/GI controls and padding.
 
 ## Save and load scenes (.rks)
 
@@ -90,8 +92,10 @@ A scene stores:
   opacity channel/inversion/strength, base-alpha toggle, UV settings and wrapping.
 - Ambient/directional colors and intensities, plus self-shadow settings.
 - Ambient occlusion enabled state, intensity, radius, sample count and ground-plane toggle.
+- Global illumination enabled state, bake/preview samples, bounces, GI strength,
+  invisible ground toggle and ground reflectance.
 - Output dimensions, anti-aliasing quality, auto-fit/padding/manual scale, export folder, filename
-  prefix and whether to export day/night layers.
+  prefix and whether to export lighting layers.
 - The selected preview view, display channel and material.
 
 Scenes contain **references, not copies of model/PNG data**. Paths are relative
@@ -180,10 +184,26 @@ background pixels. No ground plane or its shadow is included in the output.
 
 Imported `MASK` becomes cut-out; imported `BLEND` is converted to cut-out with
 an import note. Semitransparent glass is intentionally outside this cut-out
-workflow. Base-color factors and vertex colors are multiplied in linear space,
-then converted to sRGB before applying the game's display-space light response.
+workflow. Base-color factors and vertex colors are multiplied in linear space.
+Legacy mode then converts to sRGB before applying the game's display-space light
+response; GI keeps light transport and compositing in linear space.
 
-## Fixed lighting and future day/night rendering
+## Baked global illumination
+
+Enable **Bake global illumination** to produce relightable direct, indirect and
+sky responses for the same fixed sun/moon direction. It supports diffuse color
+bleeding, adjustable bounces and independent preview/export sample counts, plus
+an invisible reflective ground plane. AO is bypassed in this mode. Completed
+previews can be tinted and scaled without rebaking. Combined sprites remain PNG;
+lighting layers use HDR RGBA16F DDS with premultiplied coverage alpha.
+
+See [Baked global illumination](GLOBAL_ILLUMINATION.md) for controls, format,
+shader/blending guidance, memory costs and limitations. GI scenes/exports use
+version 2; version 1 scenes still load in their original rendering mode.
+
+## Legacy fixed lighting and future day/night rendering
+
+This section describes rendering with **Bake global illumination** disabled.
 
 Defaults match the current game's `WorldBrightness` convention:
 
@@ -194,10 +214,10 @@ Defaults match the current game's `WorldBrightness` convention:
 The vector retains the game's magnitude for diffuse intensity. Only its
 normalized direction is used for shadow rays. Direct light supports hard
 self-shadows. Ambient light has a uniform color; optional ambient occlusion is
-baked into surface color. There is no environment lighting, specular reflection,
-emission or bounce lighting.
+baked into surface color. Legacy mode has no environment or bounce lighting. Specular reflection and
+emission are not implemented in either mode.
 
-**Export day/night layers** additionally writes, for every view:
+**Export lighting layers** additionally writes, for every view:
 
 - `*_albedo.png`: surface color with any enabled AO baked in (sRGB).
 - `*_sun.png`: grayscale directional response, including cut-out/self-shadow
@@ -248,7 +268,7 @@ linear data. Partially covered pixels contain gray alpha, not glass transparency
 The alpha preview displays this coverage directly.
 
 Start with 2x2. Higher settings multiply ray and shading work, including any AO
-samples: 8x8 uses 64 primary samples per output pixel. Supersampling accumulates
+or GI paths: 8x8 uses 64 primary samples per output pixel. Supersampling accumulates
 directly into output pixels without allocating a larger intermediate image.
 Cancel remains available during rendering. Off preserves the original
 single-sample behavior and remains the default for new and older scenes.
@@ -256,7 +276,7 @@ The selected quality is stored in `.rks` and `sprites.json`.
 
 ## Ambient occlusion
 
-Under **Lighting**, enable **Bake AO into albedo**. AO traces a hemisphere of
+Under **Lighting**, expand **Ambient occlusion** and enable **Bake AO into albedo** with GI off. AO traces a hemisphere of
 rays around each visible surface point and darkens places blocked by nearby
 parts of the model. It works with both GLB and FBX and respects material cutoffs,
 base-color alpha, separate opacity maps and inverted masks. Occluders are tested
@@ -296,7 +316,7 @@ the AO controls remain as set.
 ## Exports
 
 Each export creates a new numbered subfolder, e.g. `sprite_001`, containing the
-four PNGs, optional layers, and `sprites.json`. Existing exports are preserved.
+four PNGs, optional PNG/DDS lighting layers, and `sprites.json`. Existing exports are preserved.
 Cancel or a save failure removes the newly created incomplete batch. Prefixes
 accept letters, numbers, underscores and hyphens. Choose an existing parent
 folder using the folder dialog or the path field.
@@ -403,6 +423,9 @@ Anti-aliasing checks compare every quality and view with independently reduced
 high-resolution renders, including cutouts and ground AO. They verify linear-light
 color averaging, straight edge RGB, matching coverage across maps, deterministic
 renders, output dimensions, progress, cancellation, PNG export and scene compatibility.
+GI tests check analytic direct/sky and one-bounce lighting, color bleeding,
+additional bounces, deterministic relighting, two-sided nearest hits, cutouts,
+HDR half-float DDS reconstruction/coverage, scene validation and cancellation.
 Headless UI tests send mouse and keyboard events to the slider controls, checking
 direct numeric editing, Enter/cancellation, precision, validation/clamping,
 disabled controls, hidden controls, material changes and normal dragging.
