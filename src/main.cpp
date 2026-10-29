@@ -954,7 +954,7 @@ private:
     
             if (toolPreview.tiles && toolPreview.zoneType)
             {
-                zoneEvaluation = EvaluateZoning(*world, {*toolPreview.tiles, *toolPreview.zoneType}, city->funds);
+                zoneEvaluation = EvaluateZoning(*world, {*toolPreview.tiles, *toolPreview.zoneType, toolPreview.useMaximumLotSize}, city->funds);
             }
 
             evaluatedPreview = toolPreview;
@@ -1003,6 +1003,7 @@ private:
         PrepareWorldTool(elapsedSeconds);
         if (world) 
         {
+            zoneOverlay.PrepareLotPreview(*world, toolPreview, zoneEvaluation);
             zoneOverlay.PrepareRoadPreview(*world, toolPreview);
             roadRenderer.Prepare(*world);
         }

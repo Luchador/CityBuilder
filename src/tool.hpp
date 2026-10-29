@@ -74,6 +74,8 @@ struct ZoneRequest
     ToolTileRect tiles;
     ZoneType zoneType = ZoneType::None; // None requests dezoning.
     bool useMaximumLotSize = false;
+
+    bool operator==(const ZoneRequest&) const = default;
 };
 
 struct RoadRequest
@@ -98,6 +100,7 @@ struct ToolPreview
     bool placementAllowed = false;
     // Road previews select their route/footprint inside tiles' bounding rectangle.
     std::optional<RoadPath> roadPath;
+    bool useMaximumLotSize = false;
 };
 
 class Tool

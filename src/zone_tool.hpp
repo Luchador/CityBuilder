@@ -21,4 +21,5 @@ private:
     ZoneType zoneType;
     std::optional<ToolTile> anchor;
     std::optional<ToolTile> hovered;
+    bool useMaximumLotSize = false;
 };

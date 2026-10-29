@@ -27,6 +27,7 @@ ZoneTool::ZoneTool(ZoneType type, ToolSuccessSound successSound) : Tool(successS
 
 void ZoneTool::UpdateHover(const ToolContext& context, const ToolPointer& pointer)
 {
+    useMaximumLotSize = pointer.shiftHeld;
     hovered.reset();
     if (pointer.HasValidHit(context.world))
     {
@@ -74,6 +75,7 @@ void ZoneTool::Cancel() noexcept
 {
     anchor.reset();
     hovered.reset();
+    useMaximumLotSize = false;
 }
 
 void ZoneTool::BuildPreview(ToolPreview& preview) const
@@ -84,5 +86,6 @@ void ZoneTool::BuildPreview(ToolPreview& preview) const
     {
         preview.tiles = ToolTileRect::FromCorners(anchor.value_or(*hovered), *hovered);
         preview.zoneType = zoneType;
+        preview.useMaximumLotSize = useMaximumLotSize;
     }
 }

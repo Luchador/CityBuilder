@@ -26,7 +26,7 @@ cbuffer ZoneOverlay : register(ZONE_UNIFORMS, space3)
     float4 zoneBounds;   // inclusive min X/Z, max X/Z
     float4 zonePreview;  // RGB, zone type
     float4 roadPath;     // start X/Z, end X/Z
-    float4 roadBend;     // bend X/Z, padding
+    float4 roadBend;     // bend X/Z, lot preview enabled, padding
 };
 
 bool OnRoadSegment(float2 tile, float2 start, float2 end)
@@ -76,9 +76,8 @@ bool RoadPreviewFootprint(float2 tile, out bool allowed)
     return covered;
 }
 
-float3 ApplyLotMarkings(float3 color, float3 zoneColor, float2 tile, float2 local, float2 pixelWidth)
+float3 ApplyLotMarkings(float3 color, float3 zoneColor, float4 lot, float2 local, float2 pixelWidth)
 {
-    float4 lot = round(lotMap.SampleLevel(lotSampler, (tile + 0.5) / zoneSettings.x, 0) * 255.0);
     uint edges = (uint)lot.r;
     float2 thickness = max(float2(0.022, 0.022), pixelWidth);
     float border = 0.0;
@@ -111,22 +110,32 @@ float3 ApplyZoneOverlay(float3 color, float2 worldXZ, bool showPlacedZones)
     uint flags = (uint)round(data.a * 255.0);
     uint type = (flags & 127) / 2;
     bool eligible = (flags & 1) != 0;
-    if (showPlacedZones && type != 0)
+    bool inPreview = zoneSettings.z > 0 && all(tile >= zoneBounds.xy) && all(tile <= zoneBounds.zw);
+    bool canPreviewLot = showPlacedZones && inPreview && zoneSettings.z == 1 && roadBend.z > 0 &&
+        zoneSettings.w > 0 && eligible;
+    float4 lot = 0.0;
+    if (showPlacedZones && (type != 0 || canPreviewLot))
+        lot = round(lotMap.SampleLevel(lotSampler, (tile + 0.5) / zoneSettings.x, 0) * 255.0);
+    bool plannedLot = canPreviewLot && (((uint)lot.r & 16u) != 0);
+    // A proposed lot replaces the old markings on its tiles. Do not blend the
+    // old zone color, boundaries or arrows underneath a new zoning preview.
+    if (showPlacedZones && type != 0 && !plannedLot)
     {
         color = lerp(color, data.rgb, zoneSettings.y);
-        color = ApplyLotMarkings(color, data.rgb, tile, worldXZ - tile, pixelWidth);
+        color = ApplyLotMarkings(color, data.rgb, lot, worldXZ - tile, pixelWidth);
     }
-    if (zoneSettings.z > 0 && all(tile >= zoneBounds.xy) && all(tile <= zoneBounds.zw))
+    if (inPreview)
     {
         bool roadAllowed = false;
         if (zoneSettings.z == 3 && !RoadPreviewFootprint(tile, roadAllowed)) return color;
         bool unchanged = type == (uint)zonePreview.w;
         float3 tint = !eligible || (!unchanged && zoneSettings.w == 0) ? float3(1.0, 0.12, 0.10) :
-            unchanged ? float3(0.65, 0.65, 0.65) : zonePreview.rgb;
+            unchanged && !plannedLot ? float3(0.65, 0.65, 0.65) : zonePreview.rgb;
         if (zoneSettings.z == 2) tint = zonePreview.rgb;
         if (zoneSettings.z == 3) tint = roadAllowed ? zonePreview.rgb : float3(1.0, 0.12, 0.10);
         float2 edge = min(frac(worldXZ), 1.0 - frac(worldXZ));
-        color = lerp(color, tint, min(edge.x, edge.y) < 0.045 ? 0.95 : 0.5);
+        color = lerp(color, tint, !plannedLot && min(edge.x, edge.y) < 0.045 ? 0.95 : 0.5);
+        if (plannedLot) color = ApplyLotMarkings(color, zonePreview.rgb, lot, worldXZ - tile, pixelWidth);
     }
     return color;
 }

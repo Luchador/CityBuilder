@@ -20,37 +20,54 @@ namespace
     }
 }
 
+namespace
+{
+    std::vector<std::uint8_t> RasterizeLots(std::span<const Lot> lots, ToolTileRect bounds, bool preview)
+    {
+        const int width = bounds.maxX - bounds.minX + 1;
+        const int height = bounds.maxZ - bounds.minZ + 1;
+        if (width <= 0 || height <= 0) throw std::invalid_argument("Invalid lot pixel region");
+        std::vector<std::uint8_t> pixels(static_cast<std::size_t>(width) * height * 4, 0);
+        for (const auto& lot : lots)
+        {
+            if (lot.buildingId != NoBuilding || lot.lotStatus != LotStatus::UNDEVELOPED) continue;
+            const int endX = lot.x + static_cast<int>(lot.width), endZ = lot.z + static_cast<int>(lot.depth);
+            float centerX = lot.x + lot.width * 0.5f, centerZ = lot.z + lot.depth * 0.5f;
+            // Arrow quad is 0.75 tile wide, centered 0.375 tile inside the front.
+            // Half/eighth-tile coordinates pack exactly into the data texture.
+            switch (lot.facing)
+            {
+                case LotFacing::North: centerZ = lot.z + 0.375f; break;
+                case LotFacing::East: centerX = endX - 0.375f; break;
+                case LotFacing::South: centerZ = endZ - 0.375f; break;
+                case LotFacing::West: centerX = lot.x + 0.375f; break;
+            }
+            for (int z = std::max(lot.z, bounds.minZ); z < std::min(endZ, bounds.maxZ + 1); ++z)
+                for (int x = std::max(lot.x, bounds.minX); x < std::min(endX, bounds.maxX + 1); ++x)
+            {
+                const auto i = (static_cast<std::size_t>(z - bounds.minZ) * width + x - bounds.minX) * 4;
+                pixels[i] = static_cast<std::uint8_t>((x == lot.x ? 1 : 0) | (z == lot.z ? 2 : 0) |
+                    (x == endX - 1 ? 4 : 0) | (z == endZ - 1 ? 8 : 0) | (preview ? LotPreviewTileBit : 0));
+                if (centerX + 0.375f <= x || centerX - 0.375f >= x + 1 ||
+                    centerZ + 0.375f <= z || centerZ - 0.375f >= z + 1) continue;
+                pixels[i + 1] = static_cast<std::uint8_t>(lot.facing) + 1;
+                pixels[i + 2] = static_cast<std::uint8_t>(std::lround((centerX - x + 1.0f) * 8.0f));
+                pixels[i + 3] = static_cast<std::uint8_t>(std::lround((centerZ - z + 1.0f) * 8.0f));
+            }
+        }
+        return pixels;
+    }
+}
+
 std::vector<std::uint8_t> BuildLotPixels(const World& world)
 {
-    const auto count = world.GetDimensions().TileCount();
-    std::vector<std::uint8_t> pixels(static_cast<std::size_t>(count) * count * 4, 0);
-    for (const auto& lot : world.GetLots())
-    {
-        if (lot.buildingId != NoBuilding || lot.lotStatus != LotStatus::UNDEVELOPED) continue;
-        const int endX = lot.x + static_cast<int>(lot.width), endZ = lot.z + static_cast<int>(lot.depth);
-        float centerX = lot.x + lot.width * 0.5f, centerZ = lot.z + lot.depth * 0.5f;
-        // Arrow quad is 0.75 tile wide, centered 0.375 tile inside the front.
-        // Half/eighth-tile coordinates pack exactly into the data texture.
-        switch (lot.facing)
-        {
-            case LotFacing::North: centerZ = lot.z + 0.375f; break;
-            case LotFacing::East: centerX = endX - 0.375f; break;
-            case LotFacing::South: centerZ = endZ - 0.375f; break;
-            case LotFacing::West: centerX = lot.x + 0.375f; break;
-        }
-        for (int z = lot.z; z < endZ; ++z) for (int x = lot.x; x < endX; ++x)
-        {
-            const auto i = (static_cast<std::size_t>(z) * count + x) * 4;
-            pixels[i] = static_cast<std::uint8_t>((x == lot.x ? 1 : 0) | (z == lot.z ? 2 : 0) |
-                (x == endX - 1 ? 4 : 0) | (z == endZ - 1 ? 8 : 0));
-            if (centerX + 0.375f <= x || centerX - 0.375f >= x + 1 ||
-                centerZ + 0.375f <= z || centerZ - 0.375f >= z + 1) continue;
-            pixels[i + 1] = static_cast<std::uint8_t>(lot.facing) + 1;
-            pixels[i + 2] = static_cast<std::uint8_t>(std::lround((centerX - x + 1.0f) * 8.0f));
-            pixels[i + 3] = static_cast<std::uint8_t>(std::lround((centerZ - z + 1.0f) * 8.0f));
-        }
-    }
-    return pixels;
+    const int last = static_cast<int>(world.GetDimensions().TileCount()) - 1;
+    return RasterizeLots(world.GetLots(), {0, 0, last, last}, false);
+}
+
+std::vector<std::uint8_t> BuildLotPreviewPixels(std::span<const Lot> lots, ToolTileRect bounds)
+{
+    return RasterizeLots(lots, bounds, true);
 }
 
 std::vector<std::uint8_t> BuildZonePixels(const World& world, ToolTileRect r)
