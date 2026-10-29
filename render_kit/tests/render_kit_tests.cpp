@@ -10,6 +10,7 @@ namespace rk=renderkit;
 void FbxTests(const std::filesystem::path& folder);
 void SceneFileTests(const std::filesystem::path& folder);
 void AmbientOcclusionTests(const std::filesystem::path& folder);
+void AntialiasingTests(const std::filesystem::path& folder);
 namespace
 {
     void Check(bool ok,const char* message){if(!ok)throw std::runtime_error(message);}
@@ -161,7 +162,7 @@ int main()
     {
         if(!SDL_Init(0))throw std::runtime_error(SDL_GetError());
         std::filesystem::create_directory(folder);
-        ImportTests(folder);FbxTests(folder);SceneFileTests(folder);RayTests();RenderTests(folder);AmbientOcclusionTests(folder);
+        ImportTests(folder);FbxTests(folder);SceneFileTests(folder);RayTests();RenderTests(folder);AmbientOcclusionTests(folder);AntialiasingTests(folder);
         std::filesystem::remove_all(folder);SDL_Quit();return 0;
     }
     catch(const std::exception& e)

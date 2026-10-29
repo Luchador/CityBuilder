@@ -506,6 +506,10 @@ namespace
                 if(size!=256)ImGui::SameLine();
                 if(ImGui::Button(std::to_string(size).c_str())){settings.width=settings.height=size;Changed();}
             }
+            int aa=settings.aaGridSize==8?3:settings.aaGridSize==4?2:settings.aaGridSize==2?1:0;
+            if(ImGui::Combo("Anti-aliasing",&aa,"Off (1 sample)\0Low: 2x2 (4 samples)\0Medium: 4x4 (16 samples)\0High: 8x8 (64 samples)\0"))
+            {settings.aaGridSize=1<<aa;Changed();}
+            ImGui::SetItemTooltip("Samples per output pixel, shared by preview and all exported maps. Smooths geometry, cutouts and shading with coverage alpha. More samples take longer, especially with AO. Start with 2x2.");
             if(ImGui::Checkbox("Fit all four views",&settings.autoFit))Changed();
             if(settings.autoFit)
             {if(ImGui::SliderFloat("Padding",&settings.padding,0,.3f,"%.2f"))Changed();}
@@ -521,7 +525,7 @@ namespace
             ImGui::BeginDisabled(!scene);
             if(ImGui::Button("Export four views",{-1,42}))StartExport();
             ImGui::EndDisabled();ImGui::EndDisabled();
-            ImGui::TextWrapped("RGBA PNG. Alpha is white on model hits and black on misses. Each export gets a new numbered folder.");
+            ImGui::TextWrapped("RGBA PNG. Alpha is white on covered pixels, black on misses, and gray at partial edges when anti-aliasing is enabled. Each export gets a new numbered folder.");
             if(!lastExport.empty())
             {
                 ImGui::SeparatorText("Last export");

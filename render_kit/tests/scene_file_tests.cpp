@@ -43,6 +43,7 @@ void SceneFileTests(const std::filesystem::path& folder)
     document.settings.lighting.shadows=false;document.view=3;document.previewChannel=2;
     document.settings.ambientOcclusion={true,.65f,2.5f,48};
     document.settings.ambientOcclusion.useGroundPlane=true;
+    document.settings.aaGridSize=2;
     auto& material=document.scene.materials[0];
     material.baseFactor={.7f,.8f,.4f,.9f};material.cutoff=.25f;material.doubleSided=false;
     material.uvScale={.8f,1.2f};material.uvOffset={.2f,-.3f};material.uvRotation=.33f;
@@ -61,6 +62,17 @@ void SceneFileTests(const std::filesystem::path& folder)
     Check(loaded.view==3 && loaded.previewChannel==2 && loaded.outputPrefix=="test_scene" && !loaded.exportLayers,"Editor/output settings were not restored");
     rk::SaveSceneFile(secondPath,loaded);
     Check(Read(secondPath)==saved,"Scene roundtrip lost a setting");
+    Check(loaded.settings.aaGridSize==2,"Scene lost anti-aliasing quality");
+    auto beforeAa=saved;beforeAa["render"].erase("aa_grid_size");Write(secondPath,beforeAa);
+    const auto oldAaScene=rk::LoadSceneFile(secondPath);
+    Check(oldAaScene.settings.aaGridSize==1,"Legacy scene must keep anti-aliasing off");
+    auto noAa=document;noAa.settings.aaGridSize=1;CompareRender(noAa,oldAaScene);
+    for(int quality:{1,4,8})
+    {
+        auto edited=saved;edited["render"]["aa_grid_size"]=quality;Write(secondPath,edited);
+        auto restored=rk::LoadSceneFile(secondPath);Check(restored.settings.aaGridSize==quality,"AA quality failed to load");
+        rk::SaveSceneFile(secondPath,restored);Check(Read(secondPath)==edited,"AA quality failed to roundtrip");
+    }
     Check(loaded.settings.ambientOcclusion.enabled && loaded.settings.ambientOcclusion.intensity==.65f &&
           loaded.settings.ambientOcclusion.radius==2.5f && loaded.settings.ambientOcclusion.samples==48 &&
           loaded.settings.ambientOcclusion.useGroundPlane,"AO settings were not restored");
@@ -103,6 +115,11 @@ void SceneFileTests(const std::filesystem::path& folder)
 
     const auto valid=Read(scenePath);
     const auto invalidPath=folder/"invalid.rks";
+    for(const auto& value:std::vector<Json>{0,3,16,2.5,nullptr,"4"})
+    {
+        auto invalidAa=valid;invalidAa["render"]["aa_grid_size"]=value;Write(invalidPath,invalidAa);
+        Reject([&]{rk::LoadSceneFile(invalidPath);},value==3?"Anti-aliasing":"Invalid Render Kit scene");
+    }
     for(const auto& field:{"intensity","radius","samples"})
     {
         auto badAo=valid;badAo["ambient_occlusion"][field]=-1;Write(invalidPath,badAo);

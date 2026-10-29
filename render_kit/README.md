@@ -49,6 +49,7 @@ configure the root with `-DCITY_BUILD_RENDER_KIT=ON` and build target `RenderKit
    Enable **Bake AO into albedo** for ambient occlusion; adjust its intensity,
    radius and samples as described below.
 5. Set output width/height (16..4096), an export folder, and a file prefix.
+   Choose **Anti-aliasing** quality; **Low: 2x2** is a useful starting point.
    **Fit all four views** chooses one scale that fits every rotation, with the
    requested padding. Turn it off to specify **Pixels / unit** explicitly.
 6. Click **Export four views**. Progress and Cancel appear below the panels.
@@ -80,7 +81,7 @@ A scene stores:
   opacity channel/inversion/strength, base-alpha toggle, UV settings and wrapping.
 - Ambient/directional colors and intensities, plus self-shadow settings.
 - Ambient occlusion enabled state, intensity, radius, sample count and ground-plane toggle.
-- Output dimensions, auto-fit/padding/manual scale, export folder, filename
+- Output dimensions, anti-aliasing quality, auto-fit/padding/manual scale, export folder, filename
   prefix and whether to export day/night layers.
 - The selected preview view, display channel and material.
 
@@ -105,6 +106,7 @@ They do not save preview images, generated sprites, undo history or UI layout.
 Older `.rks` files without AO settings still load with AO disabled. Save them
 again after enabling AO to retain the new settings.
 Scenes saved before the ground-plane option was added load with that option off.
+Scenes without an anti-aliasing setting load with **Off**, retaining their original pixels.
 
 ## Camera and alignment
 
@@ -159,14 +161,16 @@ white-opaque grayscale; an existing FBX opacity UV mapping is retained.
 
 A sample below the cutoff is discarded. The ray continues to other triangles
 behind it, so windows, leaves, fences and stacked cut-out surfaces work. Cut-out
-also affects shadow and ambient-occlusion rays. Surviving samples have alpha **255** (white); rays
-that miss have alpha **0** (black), including misses through cut-out holes.
-Dark or unlit model surfaces remain opaque. There are no fractional-alpha
-antialiased edge pixels. RGB is straight/unassociated, with transparent-black
+also affects shadow and ambient-occlusion rays. Each surviving sample counts as
+covered; misses, including cut-out holes, count as uncovered. With anti-aliasing
+off, output alpha is **255** (white) on hits and **0** (black) on misses. With it
+enabled, partially covered pixels have intermediate alpha, including cut-out
+boundaries. Dark or unlit surfaces still contribute coverage. RGB is
+straight/unassociated, with transparent-black
 background pixels. No ground plane or its shadow is included in the output.
 
 Imported `MASK` becomes cut-out; imported `BLEND` is converted to cut-out with
-an import note. Semitransparent glass is intentionally outside this binary-alpha
+an import note. Semitransparent glass is intentionally outside this cut-out
 workflow. Base-color factors and vertex colors are multiplied in linear space,
 then converted to sRGB before applying the game's display-space light response.
 
@@ -190,7 +194,7 @@ emission or bounce lighting.
 - `*_sun.png`: grayscale directional response, including cut-out/self-shadow
   occlusion. This is linear data, not an sRGB color texture.
 
-Both layers carry exactly the same binary alpha as the lit sprite. To reproduce
+Both layers carry exactly the same coverage alpha as the lit sprite. To apply
 the current game's lighting response, the future sprite shader can calculate:
 
 ```
@@ -204,6 +208,42 @@ cannot independently change those two light contributions. This patch supplies
 the layers and metadata; it does not yet add building sprite rendering to the
 game. If the game's lighting formula changes later, keep `render.hpp` and this
 formula synchronized. Camera rotation/pitch are already shared source.
+
+With anti-aliasing, the lit sprite is shaded per sample before averaging. Albedo
+and sun are averaged independently, so the formula above approximates the lit
+sprite at pixels mixing different colors or illumination. Their silhouettes
+and alpha still match exactly. Preserve coverage alpha with alpha blending when
+using the sprites; a hard alpha cutoff would reintroduce jagged edges.
+
+## Anti-aliasing
+
+Under **Output**, choose **Anti-aliasing**:
+
+| Quality | Samples per pixel |
+| --- | ---: |
+| Off | 1 |
+| Low: 2x2 | 4 |
+| Medium: 4x4 | 16 |
+| High: 8x8 | 64 |
+
+The renderer traces a regular grid of subpixel rays and averages them into each
+output pixel. This smooths silhouettes, material boundaries, cut-out foliage,
+textures and shading. It applies to the lit sprite, albedo, directional-light
+mask and their alpha channels in all four views. Preview uses the same quality
+at its existing capped resolution. Output size, framing and pivot do not change.
+
+RGB colors are averaged in linear light. Only covered samples contribute to
+straight RGB, while alpha records the fraction of covered samples; transparent
+backgrounds therefore do not create dark edge fringes. The sun mask remains
+linear data. Partially covered pixels contain gray alpha, not glass transparency.
+The alpha preview displays this coverage directly.
+
+Start with 2x2. Higher settings multiply ray and shading work, including any AO
+samples: 8x8 uses 64 primary samples per output pixel. Supersampling accumulates
+directly into output pixels without allocating a larger intermediate image.
+Cancel remains available during rendering. Off preserves the original
+single-sample behavior and remains the default for new and older scenes.
+The selected quality is stored in `.rks` and `sprites.json`.
 
 ## Ambient occlusion
 
@@ -339,7 +379,7 @@ ctest --test-dir build-render-kit --output-on-failure
 Tests cover GLB transforms/active scenes/embedded PNGs and binary/ASCII FBX,
 Unicode paths, axis/unit conversion, geometric/mirrored transforms, per-instance
 materials, external/embedded PNGs, independent opacity UVs and alpha inversion.
-Both formats exercise the same binary-alpha renderer and four-view export.
+Both formats exercise the same renderer and four-view export.
 The FBX tests also use small exporter fixtures from the pinned ufbx source.
 Existing checks cover cutoff changes, stacked cut-out layers, camera fitting,
 lighting-layer reconstruction and cancellation/overwrite protection. Scene-file
@@ -350,6 +390,10 @@ linear-color baking, cutouts, stable repeated renders, preserved alpha/sun masks
 four-view exports, and compatibility with scenes saved before AO was added.
 Ground-plane checks compare against real floor geometry, verify radius/intensity
 and transparent backgrounds, and cover scene compatibility and exported settings.
+Anti-aliasing checks compare every quality and view with independently reduced
+high-resolution renders, including cutouts and ground AO. They verify linear-light
+color averaging, straight edge RGB, matching coverage across maps, deterministic
+renders, output dimensions, progress, cancellation, PNG export and scene compatibility.
 
 The standalone project also supports an installed SDL3 via
 `-DRENDER_KIT_USE_INSTALLED_SDL=ON`. A window smoke test for development is

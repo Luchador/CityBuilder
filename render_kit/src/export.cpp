@@ -60,7 +60,12 @@ std::filesystem::path ExportViews(const Scene& scene,const RenderSettings& setti
                 <<",\n  \"width\": "<<settings.width<<",\n  \"height\": "<<settings.height
                 <<",\n  \"pixels_per_model_unit\": "<<frame.pixelsPerUnit
                 <<",\n  \"projection\": \"orthographic\",\n  \"pitch_degrees\": 33,\n"
-                <<"  \"alpha\": \"straight binary: 255=accepted hit, 0=miss\",\n  \"frame_center\": ";
+                <<"  \"alpha\": "<<JsonString(settings.aaGridSize==1?"straight binary: 255=accepted hit, 0=miss":
+                    "straight coverage: 0=miss, 255=fully covered, intermediate=partial coverage")
+                <<",\n  \"anti_aliasing\": {\"method\": \"supersampling\", \"grid_size\": "<<settings.aaGridSize
+                <<", \"samples_per_pixel\": "<<settings.aaGridSize*settings.aaGridSize
+                <<", \"resolve\": \"coverage-weighted linear-light RGB; linear sun mask; straight alpha\"}"
+                <<",\n  \"frame_center\": ";
         WriteVector(metadata,frame.center);metadata<<",\n  \"ground_pivot\": ";WriteVector(metadata,frame.pivot);
         metadata<<",\n  \"light_direction_toward_source\": ";WriteVector(metadata,DirectionalLightDirection);
         metadata<<",\n  \"ambient_color\": ";WriteVector(metadata,settings.lighting.ambientColor);
@@ -77,6 +82,7 @@ std::filesystem::path ExportViews(const Scene& scene,const RenderSettings& setti
                 <<", \"use_ground_plane\": "<<(settings.ambientOcclusion.useGroundPlane?"true":"false")
                 <<", \"bake_target\": \"linear albedo before sRGB encoding\"}"
                 <<",\n  \"lighting_formula\": \"displayRGB = albedo_sRGB * (ambient_color * ambient_intensity + directional_color * directional_intensity * sun_mask_linear) / lighting_divisor\",\n"
+                <<"  \"lighting_formula_note\": \"Applied per sample. With anti-aliasing, independently resolved albedo and sun maps approximate the resolved lit sprite at mixed-color or mixed-lighting pixels.\",\n"
                 <<"  \"views\": [\n";
         for(unsigned view=0;view<4;++view)
         {

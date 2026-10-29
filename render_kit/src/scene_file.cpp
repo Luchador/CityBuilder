@@ -105,6 +105,7 @@ namespace
         settings.width=Integer(render.at("width"),16,4096);settings.height=Integer(render.at("height"),16,4096);
         settings.padding=Number(render.at("padding"),0,.45f);settings.autoFit=render.at("auto_fit").get<bool>();
         settings.pixelsPerUnit=Number(render.at("pixels_per_unit"));
+        settings.aaGridSize=render.contains("aa_grid_size")?Integer(render.at("aa_grid_size"),1,8):1;
         const auto& light=root.at("lighting");auto& lighting=settings.lighting;
         lighting.ambientColor=ReadColor(light.at("ambient_color"));lighting.directionalColor=ReadColor(light.at("directional_color"));
         lighting.ambientIntensity=Number(light.at("ambient_intensity"));lighting.directionalIntensity=Number(light.at("directional_intensity"));
@@ -172,7 +173,8 @@ void SaveSceneFile(const std::filesystem::path& path,const SceneDocument& docume
         const auto& ao=settings.ambientOcclusion;
         Json root={
             {"format","CitiesUnlimited.RenderKit"},{"version",1},{"model",Reference(NativePath(document.scene.source),folder)},
-            {"render",{{"width",settings.width},{"height",settings.height},{"padding",settings.padding},{"auto_fit",settings.autoFit},{"pixels_per_unit",settings.pixelsPerUnit}}},
+            {"render",{{"width",settings.width},{"height",settings.height},{"padding",settings.padding},{"auto_fit",settings.autoFit},
+                       {"pixels_per_unit",settings.pixelsPerUnit},{"aa_grid_size",settings.aaGridSize}}},
             {"lighting",{{"ambient_color",Vector(light.ambientColor)},{"directional_color",Vector(light.directionalColor)},
                          {"ambient_intensity",light.ambientIntensity},{"directional_intensity",light.directionalIntensity},{"shadows",light.shadows}}},
             {"ambient_occlusion",{{"enabled",ao.enabled},{"intensity",ao.intensity},{"radius",ao.radius},{"samples",ao.samples},

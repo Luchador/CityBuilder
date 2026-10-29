@@ -32,6 +32,7 @@ namespace renderkit
         float pixelsPerUnit = 32.0f;
         Lighting lighting;
         AmbientOcclusion ambientOcclusion;
+        int aaGridSize = 1; // 1=off, 2/4/8 samples per axis (4/16/64 rays per pixel).
         void Validate() const;
     };
     struct Basis { Vec3 right, up, towardCamera; };
@@ -56,7 +57,7 @@ namespace renderkit
     struct RenderImage
     {
         int width = 0, height = 0;
-        // Straight/unassociated alpha: exactly 255 on an accepted hit, 0 on miss.
+        // Straight/unassociated RGB; alpha is sample coverage (binary with AA off).
         std::vector<std::uint8_t> rgba, albedo, directional;
     };
     RenderImage Render(const Scene& scene, const RenderSettings& settings, const Frame& frame,

@@ -65,6 +65,11 @@ namespace
     {
         return static_cast<std::uint8_t>(std::lround(std::clamp(value,0.0f,1.0f)*255));
     }
+    Vec3 LinearColor(Vec3 color)
+    {
+        return {SrgbToLinear(std::clamp(color.x,0.0f,1.0f)),SrgbToLinear(std::clamp(color.y,0.0f,1.0f)),
+                SrgbToLinear(std::clamp(color.z,0.0f,1.0f))};
+    }
     Vec3 AlbedoAt(const Triangle& triangle,const Material& material,float u,float v,float visibility)
     {
         const Vec4 texture=material.baseColor?material.baseColor->Sample(UvAt(triangle,material,u,v),material.wrapU,material.wrapV,true):Vec4{};
@@ -131,6 +136,8 @@ void RenderSettings::Validate() const
 {
     if(width<16 || height<16 || width>4096 || height>4096)
         throw std::invalid_argument("Output width and height must be 16..4096 pixels");
+    if(aaGridSize!=1 && aaGridSize!=2 && aaGridSize!=4 && aaGridSize!=8)
+        throw std::invalid_argument("Anti-aliasing grid size must be 1, 2, 4 or 8");
     if(!std::isfinite(padding) || padding<0 || padding>.45f || !std::isfinite(pixelsPerUnit) || pixelsPerUnit<=0 || pixelsPerUnit>4096)
         throw std::invalid_argument("Invalid framing settings");
     const auto color=[](Vec3 c){return Finite(c) && c.x>=0 && c.y>=0 && c.z>=0 && c.x<=1 && c.y<=1 && c.z<=1;};
@@ -234,6 +241,7 @@ RenderImage Render(const Scene& scene,const RenderSettings& settings,const Frame
     const float shadowBias=std::max(1e-6f,Length(scene.geometry->bounds.max-scene.geometry->bounds.min)*1e-5f);
     const auto& light=settings.lighting;
     const auto samples=OcclusionSamples(settings.ambientOcclusion);
+    const int grid=settings.aaGridSize,sampleCount=grid*grid;
     std::atomic<int> nextRow{0};
     const auto work=[&]
     {
@@ -241,31 +249,61 @@ RenderImage Render(const Scene& scene,const RenderSettings& settings,const Frame
         {
             for(int x=0;x<settings.width;++x)
             {
-                if(stop.stop_requested())return;
-                const Vec3 origin=frame.center+basis.towardCamera*frame.distance+
-                    basis.right*((x+.5f-settings.width*.5f)*worldPerPixel)+
-                    basis.up*((settings.height*.5f-y-.5f)*worldPerPixel);
-                const Hit hit=Trace(scene,origin,direction,frame.distance*2);
-                if(!hit.found)continue;
-                const auto& triangle=scene.geometry->triangles[hit.triangle];const auto& material=scene.materials[triangle.material];
-                const auto& vertices=triangle.vertices;
-                Vec3 normal=Normalize(vertices[0].normal*(1-hit.u-hit.v)+vertices[1].normal*hit.u+vertices[2].normal*hit.v);
-                if(material.doubleSided && Dot(normal,direction)>0)normal=normal*-1.0f;
-                float sun=std::max(0.0f,Dot(normal,DirectionalLightDirection));
-                if(light.shadows && sun>0)
-                {
-                    const Vec3 point=origin+direction*hit.distance;
-                    if(Trace(scene,point+normal*shadowBias+lightRay*shadowBias,lightRay,frame.distance*3,true).found)sun=0;
-                }
-                const float visibility=OcclusionVisibility(scene,hit,normal,direction,
-                    settings.ambientOcclusion,samples,shadowBias,stop);
-                const Vec3 albedo=AlbedoAt(triangle,material,hit.u,hit.v,visibility);
-                const Vec3 illumination=(light.ambientColor*light.ambientIntensity+light.directionalColor*(light.directionalIntensity*sun))/LightingDivisor;
                 const auto index=(static_cast<std::size_t>(y)*settings.width+x)*4;
-                result.rgba[index]=Byte(albedo.x*illumination.x);result.rgba[index+1]=Byte(albedo.y*illumination.y);result.rgba[index+2]=Byte(albedo.z*illumination.z);
-                result.albedo[index]=Byte(albedo.x);result.albedo[index+1]=Byte(albedo.y);result.albedo[index+2]=Byte(albedo.z);
-                result.directional[index]=result.directional[index+1]=result.directional[index+2]=Byte(sun);
-                result.rgba[index+3]=result.albedo[index+3]=result.directional[index+3]=255;
+                Vec3 litSum{},albedoSum{};float sunSum=0;int covered=0;
+                // Deterministic subpixel centers. Accumulate locally rather than
+                // allocating a supersized image; output dimensions stay unchanged.
+                for(int sy=0;sy<grid;++sy)for(int sx=0;sx<grid;++sx)
+                {
+                    if(stop.stop_requested())return;
+                    const Vec3 origin=frame.center+basis.towardCamera*frame.distance+
+                        basis.right*((x+(sx+.5f)/grid-settings.width*.5f)*worldPerPixel)+
+                        basis.up*((settings.height*.5f-y-(sy+.5f)/grid)*worldPerPixel);
+                    const Hit hit=Trace(scene,origin,direction,frame.distance*2);
+                    if(!hit.found)continue;
+                    const auto& triangle=scene.geometry->triangles[hit.triangle];const auto& material=scene.materials[triangle.material];
+                    const auto& vertices=triangle.vertices;
+                    Vec3 normal=Normalize(vertices[0].normal*(1-hit.u-hit.v)+vertices[1].normal*hit.u+vertices[2].normal*hit.v);
+                    if(material.doubleSided && Dot(normal,direction)>0)normal=normal*-1.0f;
+                    float sun=std::max(0.0f,Dot(normal,DirectionalLightDirection));
+                    if(light.shadows && sun>0)
+                    {
+                        const Vec3 point=origin+direction*hit.distance;
+                        if(Trace(scene,point+normal*shadowBias+lightRay*shadowBias,lightRay,frame.distance*3,true).found)sun=0;
+                    }
+                    const float visibility=OcclusionVisibility(scene,hit,normal,direction,
+                        settings.ambientOcclusion,samples,shadowBias,stop);
+                    const Vec3 albedo=AlbedoAt(triangle,material,hit.u,hit.v,visibility);
+                    const Vec3 illumination=(light.ambientColor*light.ambientIntensity+light.directionalColor*(light.directionalIntensity*sun))/LightingDivisor;
+                    const Vec3 lit{albedo.x*illumination.x,albedo.y*illumination.y,albedo.z*illumination.z};
+                    if(grid==1)
+                    {
+                        // Preserve the original single-sample pixels exactly.
+                        result.rgba[index]=Byte(lit.x);result.rgba[index+1]=Byte(lit.y);result.rgba[index+2]=Byte(lit.z);
+                        result.albedo[index]=Byte(albedo.x);result.albedo[index+1]=Byte(albedo.y);result.albedo[index+2]=Byte(albedo.z);
+                        result.directional[index]=result.directional[index+1]=result.directional[index+2]=Byte(sun);
+                        result.rgba[index+3]=result.albedo[index+3]=result.directional[index+3]=255;
+                    }
+                    else
+                    {
+                        litSum=litSum+LinearColor(lit);albedoSum=albedoSum+LinearColor(albedo);
+                        sunSum+=std::clamp(sun,0.0f,1.0f);++covered;
+                    }
+                }
+                if(grid>1 && covered)
+                {
+                    // Average covered colors only, then store coverage separately.
+                    // This is a premultiplied resolve converted to straight alpha:
+                    // transparent misses never darken edge RGB. The sun mask is linear.
+                    for(int c=0;c<3;++c)
+                    {
+                        result.rgba[index+c]=Byte(LinearToSrgb(Component(litSum,c)/covered));
+                        result.albedo[index+c]=Byte(LinearToSrgb(Component(albedoSum,c)/covered));
+                        result.directional[index+c]=Byte(sunSum/covered);
+                    }
+                    const auto alpha=Byte(static_cast<float>(covered)/sampleCount);
+                    result.rgba[index+3]=result.albedo[index+3]=result.directional[index+3]=alpha;
+                }
             }
             if(completedRows)completedRows->fetch_add(1,std::memory_order_relaxed);
         }
