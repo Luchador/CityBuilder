@@ -68,3 +68,29 @@ bool World::RemoveLot(LotId id)
     ++lotRevision;
     return true;
 }
+
+bool World::RemoveLotForRepair(LotId id, std::vector<Lot>& removedLots)
+{
+    const auto* lot = GetLot(id);
+    if (!lot) return false;
+    // Copy before RemoveLot's swap/pop invalidates pointers into lots.
+    removedLots.push_back(*lot);
+    if (RemoveLot(id)) return true;
+    removedLots.pop_back();
+    return false;
+}
+
+std::size_t World::RepairLots(std::span<const Lot> removedLots)
+{
+    std::size_t created = 0;
+    for (const auto& original : removedLots)
+    {
+        if (GetLot(original.id)) continue; // It was not successfully removed.
+        for (const auto& lot : PlanLotRepair(*this, original))
+        {
+            CreateLot(lot);
+            ++created;
+        }
+    }
+    return created;
+}

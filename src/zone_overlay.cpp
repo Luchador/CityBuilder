@@ -57,7 +57,7 @@ void ZoneOverlay::Update(const World& world, ToolTileRect bounds)
     textures->UpdateRgba(*roadImage, bounds.minX, bounds.minZ, bounds.maxX - bounds.minX + 1, bounds.maxZ - bounds.minZ + 1, BuildRoadPreviewPixels(world, bounds));
     if (preparedLotRevision != world.GetLotRevision())
     {
-        // A partial edit can dissolve a lot extending outside this rectangle.
+        // A partial edit can reform lots extending outside this rectangle.
         // Refresh only when lots change; never rebuild this map per frame.
         const auto count = world.GetDimensions().TileCount();
         auto pixels = BuildLotPixels(world);
@@ -86,7 +86,7 @@ std::vector<std::uint8_t> ZoneOverlay::CopyCommittedLotRegion(ToolTileRect bound
 void ZoneOverlay::RestoreLotPreview()
 {
     if (!preparedLotRequest) return;
-    const auto r = preparedLotRequest->tiles;
+    const auto r = preparedLotBounds;
     textures->UpdateRgba(*lotImage, r.minX, r.minZ, r.maxX - r.minX + 1, r.maxZ - r.minZ + 1,
         CopyCommittedLotRegion(r));
     preparedLotRequest.reset();
@@ -95,7 +95,7 @@ void ZoneOverlay::RestoreLotPreview()
 
 void ZoneOverlay::PrepareLotPreview(const World& world, const ToolPreview& preview, const ZoneEvaluation& evaluation)
 {
-    if (!preview.tiles || !preview.zoneType || *preview.zoneType == ZoneType::None ||
+    if (!preview.tiles || !preview.zoneType ||
         !evaluation.valid || !evaluation.affordable)
     {
         RestoreLotPreview();
@@ -106,23 +106,44 @@ void ZoneOverlay::PrepareLotPreview(const World& world, const ToolPreview& previ
         previewLotRevision == world.GetLotRevision() && previewRoadRevision == world.GetRoadRevision()) return;
 
     RestoreLotPreview();
-    // Exactly the planner used by ApplyZoning, without creating IDs or editing
-    // tiles/funds. Only the selected rectangle is rasterized and uploaded.
+    // Both plans are shared with ApplyZoning. Include complete affected lots,
+    // since their remnants can extend beyond the selected rectangle.
     const auto lots = PlanZoneLots(world, request);
-    const auto r = request.tiles;
-    auto pixels = BuildLotPreviewPixels(lots, r);
+    const auto repairs = PlanZoningLotRepairs(world, request);
+    auto r = request.tiles;
+    for (const auto& lot : repairs.removed)
+    {
+        r.minX = std::min(r.minX, lot.x); r.minZ = std::min(r.minZ, lot.z);
+        r.maxX = std::max(r.maxX, lot.x + static_cast<int>(lot.width) - 1);
+        r.maxZ = std::max(r.maxZ, lot.z + static_cast<int>(lot.depth) - 1);
+    }
+    auto pixels = CopyCommittedLotRegion(r);
     const auto width = static_cast<std::size_t>(r.maxX - r.minX + 1);
     const auto height = static_cast<std::size_t>(r.maxZ - r.minZ + 1);
-    for (std::size_t row = 0; row < height; ++row) for (std::size_t column = 0; column < width; ++column)
+    for (const auto& lot : repairs.removed)
+        for (int z = lot.z; z < lot.z + static_cast<int>(lot.depth); ++z)
     {
-        const auto i = (row * width + column) * 4;
-        if (pixels[i] & LotPreviewTileBit) continue;
-        // Retain markings on existing, unchanged lots and on blocked tiles.
-        const auto source = ((r.minZ + row) * image->Width() + r.minX + column) * 4;
-        std::copy_n(committedLotPixels.begin() + source, 4, pixels.begin() + i);
+        const auto i = (static_cast<std::size_t>(z - r.minZ) * width + lot.x - r.minX) * 4;
+        std::fill_n(pixels.begin() + i, static_cast<std::size_t>(lot.width) * 4, 0);
     }
+    const auto paste = [&](std::span<const Lot> planned, bool newZoning)
+    {
+        if (planned.empty()) return;
+        const auto metadata = BuildLotPreviewPixels(planned, r);
+        for (std::size_t i = 0; i < pixels.size(); i += 4)
+        {
+            if (!(metadata[i] & LotPreviewTileBit)) continue;
+            std::copy_n(metadata.begin() + i, 4, pixels.begin() + i);
+            // Remnants keep their original zone color, outside or inside the
+            // gesture. Only newly zoned lots use the new-zone preview tint.
+            if (!newZoning) pixels[i] &= static_cast<std::uint8_t>(~LotPreviewTileBit);
+        }
+    };
+    paste(repairs.replacements, false);
+    paste(lots, true);
     textures->UpdateRgba(*lotImage, r.minX, r.minZ, static_cast<Uint32>(width), static_cast<Uint32>(height), pixels);
     preparedLotRequest = request;
+    preparedLotBounds = r;
     preparedLotWorld = &world;
     previewLotRevision = world.GetLotRevision();
     previewRoadRevision = world.GetRoadRevision();

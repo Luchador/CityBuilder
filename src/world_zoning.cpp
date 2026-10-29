@@ -3,6 +3,7 @@
 #include "city.hpp"
 
 #include <limits>
+#include <unordered_set>
 
 bool CanZoneTile(const World& world, int x, int z)
 {
@@ -46,6 +47,25 @@ ZoneEvaluation EvaluateZoning(const World& world, const ZoneRequest& request, st
     return result;
 }
 
+ZoningLotRepairs PlanZoningLotRepairs(const World& world, const ZoneRequest& request)
+{
+    ZoningLotRepairs result;
+    const auto& r = request.tiles;
+    if (request.zoneType >= ZoneType::Count || r.minX > r.maxX || r.minZ > r.maxZ ||
+        !world.ContainsTile(r.minX, r.minZ) || !world.ContainsTile(r.maxX, r.maxZ)) return result;
+    std::unordered_set<LotId> seen;
+    for (int z = r.minZ; z <= r.maxZ; ++z) for (int x = r.minX; x <= r.maxX; ++x)
+    {
+        if (GetZoneTileStatus(world, x, z, request.zoneType) != ZoneTileStatus::Change) continue;
+        const auto* lot = world.GetLotAt(x, z);
+        if (!lot || !seen.insert(lot->id).second) continue;
+        result.removed.push_back(*lot);
+        const auto replacements = PlanLotRepair(world, *lot, &request);
+        result.replacements.insert(result.replacements.end(), replacements.begin(), replacements.end());
+    }
+    return result;
+}
+
 ZonePlacementResult ApplyZoning(World& world, City& city, const ZoneRequest& request)
 {
     ZonePlacementResult result{EvaluateZoning(world, request, city.funds)};
@@ -53,19 +73,23 @@ ZonePlacementResult ApplyZoning(World& world, City& city, const ZoneRequest& req
     // Plan before edits, using the same eligibility rules as the quote. Run on
     // the main thread so neither the quote nor the lot plan can go stale.
     const auto lots = PlanZoneLots(world, request);
+    const auto repairs = PlanZoningLotRepairs(world, request);
+    for (const auto& lot : repairs.removed) world.RemoveLot(lot.id);
     const auto& r = request.tiles;
     for (int z = r.minZ; z <= r.maxZ; ++z)
         for (int x = r.minX; x <= r.maxX; ++x)
             if (GetZoneTileStatus(world, x, z, request.zoneType) == ZoneTileStatus::Change)
             {
-                // Until lot splitting is implemented, an edit dissolves the
-                // affected vacant lot. Its other tiles keep their zone.
-                world.RemoveLot(world.GetTile(x, z).lotId);
                 world.GetTile(x, z).zoneType = request.zoneType;
                 ++result.changed;
             }
     city.funds -= result.evaluation.cost;
     for (const auto& lot : lots)
+    {
+        world.CreateLot(lot);
+        ++result.lotsCreated;
+    }
+    for (const auto& lot : repairs.replacements)
     {
         world.CreateLot(lot);
         ++result.lotsCreated;

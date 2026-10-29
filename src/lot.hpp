@@ -51,3 +51,9 @@ struct ZoneRequest;
 // Preferred/max dimensions are frontage width and depth away from the road;
 // Lot::width/depth above are the resulting world X/Z footprint.
 std::vector<Lot> PlanZoneLots(const World& world, const ZoneRequest& request);
+
+// Repack only the original lot's surviving tiles, retaining large rectangles
+// instead of reverting to preferred sizes. Optional zoning is previewed without
+// editing World. Call after removing the original lot when committing repairs.
+std::vector<Lot> PlanLotRepair(const World& world, const Lot& original,
+    const ZoneRequest* pendingZoning = nullptr);

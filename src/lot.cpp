@@ -63,7 +63,7 @@ std::vector<Lot> PlanZoneLots(const World& world, const ZoneRequest& request)
         if (!CanZoneTile(world, x, z) || (tile.lotId != NoLot && tile.zoneType == request.zoneType)) continue;
         available[index(x, z)] = 1;
         for (int side = 0; side < 4; ++side)
-            if (world.GetRoadAt(x + RoadDx[side], z + RoadDz[side]))
+            if (world.GetRoadOccupyingTile(x + RoadDx[side], z + RoadDz[side]))
                 roadSides[index(x, z)] |= static_cast<std::uint8_t>(1 << side);
     }
     const bool light = request.zoneType == ZoneType::ResidentialLight || request.zoneType == ZoneType::CommercialLight;

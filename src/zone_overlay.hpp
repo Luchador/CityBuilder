@@ -51,6 +51,7 @@ private:
     std::uint64_t preparedLotRevision = 0;
     std::vector<std::uint8_t> committedLotPixels;
     std::optional<ZoneRequest> preparedLotRequest;
+    ToolTileRect preparedLotBounds{}; // Includes remnants outside the gesture.
     const World* preparedLotWorld = nullptr;
     std::uint64_t previewLotRevision = 0, previewRoadRevision = 0;
     std::optional<RoadPath> preparedRoadPath;

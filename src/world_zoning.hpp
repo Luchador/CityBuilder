@@ -1,6 +1,7 @@
 #pragma once
 
 #include "tool.hpp"
+#include "lot.hpp"
 
 class World;
 class City;
@@ -24,6 +25,14 @@ struct ZoneEvaluation
 // Preview and commit use the same rules. Invalid/out-of-map rectangles and
 // invalid prices fail without changing World or City. Bounds are inclusive.
 ZoneEvaluation EvaluateZoning(const World& world, const ZoneRequest& request, std::int64_t funds);
+
+struct ZoningLotRepairs
+{
+    std::vector<Lot> removed;
+    std::vector<Lot> replacements;
+};
+// Shared by the preview and commit. Unchanged/blocked lots are left intact.
+ZoningLotRepairs PlanZoningLotRepairs(const World& world, const ZoneRequest& request);
 struct ZonePlacementResult
 {
     ZoneEvaluation evaluation;

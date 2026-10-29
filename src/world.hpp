@@ -89,10 +89,16 @@ public:
     LotId CreateLot(Lot lot);
     // Clears references, retaining the zoning. Developed lots cannot be removed.
     bool RemoveLot(LotId id);
+    // Save each removed footprint once; repair only after the entire edit has
+    // finished, so new roads/occupancy and all removed tiles are visible.
+    bool RemoveLotForRepair(LotId id, std::vector<Lot>& removedLots);
+    std::size_t RepairLots(std::span<const Lot> removedLots);
     std::uint64_t GetLotRevision() const { return lotRevision; }
 
     std::span<const Road> GetRoads() const { return roads; }
     const Road* GetRoadAt(int x, int z) const;
+    // Includes reserved tiles of diagonal and multi-tile road meshes.
+    const Road* GetRoadOccupyingTile(int x, int z) const;
     // Resolve any tile of a multi-cell module to the road owning its model.
     // GetRoadAt still returns the per-tile node used by the road network.
     const Road* GetRoadModuleAt(int x, int z) const;
@@ -124,7 +130,7 @@ private:
     RoadPlacementStatus CheckRoadFootprint(const Road& road, const RoadPath& path, const RoadPlan& plan) const;
     std::uint8_t RoadConnectionsAt(const Road& road, const RoadPath* path = nullptr, const RoadPlan* plan = nullptr) const;
     void InsertRoad(const PlannedRoadTile& tile);
-    void RefreshRoadReservations(int x, int z);
+    void RefreshRoadReservations(int x, int z, std::vector<Lot>& removedLots);
     void ReconnectRoadNeighborhood(int x, int z);
     void RefreshRoadModules(int x, int z);
 

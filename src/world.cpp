@@ -10,6 +10,12 @@
 
 namespace
 {
+    bool ProtectedLot(const World& world, int x, int z)
+    {
+        const auto* lot = world.GetLotAt(x, z);
+        return lot && (lot->buildingId != NoBuilding || lot->lotStatus != LotStatus::UNDEVELOPED);
+    }
+
     // Coordinates have already been checked. Heights are quantized, so exact
     // equality is intentional. NW/NE/SW/SE are shared terrain corner heights.
     RoadPlacementStatus ReadRoadSurface(const TerrainHeightmap& terrain, int x, int z, RoadSurface& surface)
@@ -78,7 +84,7 @@ RoadPlacementStatus World::CheckRoadPlacement(int x, int z, std::uint8_t require
     // query only checks anchor eligibility; full routes use PlanRoads.
     const auto* road = GetRoadAt(x, z);
     const auto& tile = GetTile(x, z);
-    if (tile.buildingId != NoBuilding || (!road && tile.infrastructureId != NoInfrastructure))
+    if (tile.buildingId != NoBuilding || ProtectedLot(*this, x, z) || (!road && tile.infrastructureId != NoInfrastructure))
         return RoadPlacementStatus::Occupied;
     if (road) return RoadPlacementStatus::ExistingRoad;
     RoadSurface surface;
@@ -87,7 +93,7 @@ RoadPlacementStatus World::CheckRoadPlacement(int x, int z, std::uint8_t require
 
 std::uint8_t World::GetRoadAllowedConnections(int x, int z) const
 {
-    if (!ContainsTile(x, z) || GetTile(x, z).buildingId != NoBuilding) return 0;
+    if (!ContainsTile(x, z) || GetTile(x, z).buildingId != NoBuilding || ProtectedLot(*this, x, z)) return 0;
     if (const auto* road = GetRoadAt(x, z)) return RoadPorts(*road);
     if (GetTile(x, z).infrastructureId != NoInfrastructure) return 0;
     RoadSurface surface;
@@ -109,6 +115,17 @@ const Road* World::GetRoadModuleAt(int x, int z) const
     const auto* road = GetRoadAt(x, z);
     if (!road || HasRoadModel(*road)) return road;
     return GetRoadAt(x + road->modelOwnerOffsetX, z + road->modelOwnerOffsetZ);
+}
+
+const Road* World::GetRoadOccupyingTile(int x, int z) const
+{
+    if (const auto* road = GetRoadAt(x, z)) return road;
+    if (!ContainsTile(x, z)) return nullptr;
+    const auto index = TileIndex(x, z);
+    const auto owner = roadFootprintAtTile[index];
+    if (!owner) return nullptr;
+    const auto& road = roads[owner - 1];
+    return tiles[index].infrastructureId == road.id ? &road : nullptr;
 }
 
 std::optional<Road> World::RawPlannedRoadAt(int x, int z, const RoadPath* path, const RoadPlan* plan) const
@@ -226,7 +243,7 @@ RoadPlacementStatus World::CheckRoadFootprint(const Road& road, const RoadPath& 
         if (!ContainsTile(px, pz)) return RoadPlacementStatus::OutsideMap;
         const auto index = TileIndex(px, pz);
         const auto& tile = tiles[index];
-        if (tile.buildingId != NoBuilding) return RoadPlacementStatus::Occupied;
+        if (tile.buildingId != NoBuilding || ProtectedLot(*this, px, pz)) return RoadPlacementStatus::Occupied;
         if (tile.infrastructureId != NoInfrastructure)
         {
             const auto owner = roadFootprintAtTile[index];
@@ -527,7 +544,7 @@ void World::InsertRoad(const PlannedRoadTile& tile)
     ++roadRevision;
 }
 
-void World::RefreshRoadReservations(int x, int z)
+void World::RefreshRoadReservations(int x, int z, std::vector<Lot>& removedLots)
 {
     for (int pz = z - RoadFootprintRadius; pz <= z + RoadFootprintRadius; ++pz)
         for (int px = x - RoadFootprintRadius; px <= x + RoadFootprintRadius; ++px)
@@ -545,7 +562,7 @@ void World::RefreshRoadReservations(int x, int z)
         }
         if (owner)
         {
-            RemoveLot(tiles[index].lotId);
+            RemoveLotForRepair(tiles[index].lotId, removedLots);
             roadFootprintAtTile[index] = owner;
             tiles[index].infrastructureId = roads[owner - 1].id;
             tiles[index].zoneType = ZoneType::None;
@@ -603,9 +620,11 @@ RoadPlacementResult World::CommitRoadPlan(const RoadPlan& plan)
     }
     for (const auto& tile : plan.tiles)
         if (RoadPlacementAccepted(tile.status)) RefreshRoadModules(tile.x, tile.z);
+    std::vector<Lot> removedLots;
     for (const auto& tile : plan.tiles)
-        if (RoadPlacementAccepted(tile.status)) RefreshRoadReservations(tile.x, tile.z);
+        if (RoadPlacementAccepted(tile.status)) RefreshRoadReservations(tile.x, tile.z, removedLots);
     for (const auto& tile : plan.tiles)
         if (RoadPlacementAccepted(tile.status)) ReconnectRoadNeighborhood(tile.x, tile.z);
+    RepairLots(removedLots);
     return result;
 }
