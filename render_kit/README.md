@@ -63,6 +63,15 @@ Texture filtering is bilinear; preview display uses nearest-neighbor scaling
 so alpha edges can be inspected. Use **Save Scene...** in the top bar to keep
 those edits between sessions. Source models and textures are not modified.
 
+Click the number in any slider to type an exact value, then press **Enter**
+(or keypad Enter) to apply it. **Escape** or clicking elsewhere cancels the
+unfinished edit. Typing does not rerender the preview until confirmed; dragging
+the slider track still updates continuously. Values are clamped to the slider's
+range, and invalid or nonfinite numbers remain editable with a red border.
+AO samples accepts whole numbers. Text entry preserves the stored value's full
+precision, even when the slider displays fewer decimal places. This applies to
+material cutoff/alpha/opacity strength, lighting strengths, AO controls and padding.
+
 ## Save and load scenes (.rks)
 
 The top bar has **Save Scene...** and **Load Scene...** buttons. Import a model
@@ -258,7 +267,7 @@ on both sides, so thin foliage cards can block nearby light.
 - **AO radius**: maximum distance to an occluder, in imported model units
   (meters for FBX). Small values emphasize tight contacts; larger values darken
   broader cavities and foliage clusters. It is independent of image resolution
-  and auto-fit. Ctrl+click the slider to type an exact value.
+  and auto-fit. Click the displayed number to type an exact value; Enter confirms.
 - **AO samples**: 16–256 rays per visible point; default 64. Higher values reduce
   sampling steps but increase CPU rendering time, especially with dense foliage.
   Preview and export use the same deterministic sampling pattern and count.
@@ -372,7 +381,7 @@ camera and the Render Kit's fixed lighting.
 
 ```bat
 cmake -S render_kit -B build-render-kit -DRENDER_KIT_BUILD_TESTS=ON
-cmake --build build-render-kit --target RenderKitTests
+cmake --build build-render-kit --target RenderKitTests RenderKitUiTests
 ctest --test-dir build-render-kit --output-on-failure
 ```
 
@@ -394,6 +403,9 @@ Anti-aliasing checks compare every quality and view with independently reduced
 high-resolution renders, including cutouts and ground AO. They verify linear-light
 color averaging, straight edge RGB, matching coverage across maps, deterministic
 renders, output dimensions, progress, cancellation, PNG export and scene compatibility.
+Headless UI tests send mouse and keyboard events to the slider controls, checking
+direct numeric editing, Enter/cancellation, precision, validation/clamping,
+disabled controls, hidden controls, material changes and normal dragging.
 
 The standalone project also supports an installed SDL3 via
 `-DRENDER_KIT_USE_INSTALLED_SDL=ON`. A window smoke test for development is

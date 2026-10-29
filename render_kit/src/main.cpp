@@ -6,6 +6,7 @@
 
 #include "export.hpp"
 #include "scene_file.hpp"
+#include "slider_input.hpp"
 #include <chrono>
 #include <cctype>
 #include <cstdio>
@@ -284,6 +285,7 @@ namespace
                 switch(result.kind)
                 {
                     case JobKind::Import:
+                        sliderInput.Reset();
                         scene=std::move(result.scene);selectedMaterial=0;preview.reset();previewImage.reset();
                         scenePath.clear();
                         status="Model loaded. Choose a material to edit its textures and cut-out settings.";Changed();break;
@@ -295,6 +297,7 @@ namespace
                         if(model.size()>=sizeof(modelPath) || output.size()>=sizeof(outputDirectory) || document.outputPrefix.size()>=sizeof(prefix))
                             throw std::runtime_error("Scene paths are too long for the editor");
                         SetText(modelPath,model);SetText(outputDirectory,output);SetText(prefix,document.outputPrefix);
+                        sliderInput.Reset();
                         scene=std::move(document.scene);settings=document.settings;exportLayers=document.exportLayers;
                         view=document.view;previewChannel=document.previewChannel;selectedMaterial=document.selectedMaterial;
                         scenePath=std::move(result.folder);lastExport.clear();preview.reset();previewImage.reset();
@@ -416,7 +419,8 @@ namespace
             for(std::size_t i=0;i<scene->materials.size();++i)
             {
                 ImGui::PushID(static_cast<int>(i));
-                if(ImGui::Selectable(scene->materials[i].name.c_str(),selectedMaterial==static_cast<int>(i)))selectedMaterial=static_cast<int>(i);
+                if(ImGui::Selectable(scene->materials[i].name.c_str(),selectedMaterial==static_cast<int>(i)))
+                {sliderInput.Reset();selectedMaterial=static_cast<int>(i);}
                 ImGui::PopID();
             }
             ImGui::EndChild();
@@ -426,13 +430,13 @@ namespace
             ImGui::SetNextItemWidth(-1);
             if(ImGui::Combo("##alphaMode",&mode,"Opaque\0Alpha cut-out\0")){material.alphaMode=static_cast<rk::AlphaMode>(mode);Changed();}
             ImGui::BeginDisabled(material.alphaMode==rk::AlphaMode::Opaque);
-            if(ImGui::SliderFloat("Cut-off",&material.cutoff,0,1,"%.3f"))Changed();
+            if(sliderInput.Float("Cut-off",&material.cutoff,0,1,"%.3f"))Changed();
             ImGui::EndDisabled();
             if(ImGui::Checkbox("Double-sided",&material.doubleSided))Changed();
             float color[3]={rk::LinearToSrgb(material.baseFactor.r),rk::LinearToSrgb(material.baseFactor.g),rk::LinearToSrgb(material.baseFactor.b)};
             if(ImGui::ColorEdit3("Tint",color))
             {material.baseFactor.r=rk::SrgbToLinear(color[0]);material.baseFactor.g=rk::SrgbToLinear(color[1]);material.baseFactor.b=rk::SrgbToLinear(color[2]);Changed();}
-            if(ImGui::SliderFloat("Factor alpha",&material.baseFactor.a,0,1))Changed();
+            if(sliderInput.Float("Factor alpha",&material.baseFactor.a,0,1))Changed();
             ImGui::SeparatorText("Base color PNG");
             ImGui::TextWrapped("%s",material.baseColor?material.baseColor->name.c_str():"No texture (uses tint)");
             ImGui::BeginDisabled(job || inbox->pending);
@@ -449,7 +453,7 @@ namespace
             if(ImGui::Combo("Channel",&channel,"Grayscale / luminance\0Alpha\0Red\0")){material.opacityChannel=static_cast<rk::OpacityChannel>(channel);Changed();}
             if(ImGui::Checkbox("Use base-color alpha",&material.useBaseColorAlpha))Changed();
             if(ImGui::Checkbox("Invert opacity",&material.invertOpacity))Changed();
-            if(ImGui::SliderFloat("Map strength",&material.opacityStrength,0,1))Changed();
+            if(sliderInput.Float("Map strength",&material.opacityStrength,0,1))Changed();
             if(material.separateOpacityUv)ImGui::TextWrapped("Opacity uses its imported FBX UV mapping.");
             ImGui::TextWrapped("Cut-out combines the enabled alpha sources. Invert opacity is for masks where white means transparent. Rejected pixels reveal surfaces behind them.");
             if(ImGui::TreeNode("UV settings"))
@@ -476,9 +480,9 @@ namespace
             float ambient[]={light.ambientColor.x,light.ambientColor.y,light.ambientColor.z};
             float sun[]={light.directionalColor.x,light.directionalColor.y,light.directionalColor.z};
             if(ImGui::ColorEdit3("Ambient",ambient)){light.ambientColor={ambient[0],ambient[1],ambient[2]};Changed();}
-            if(ImGui::SliderFloat("Ambient strength",&light.ambientIntensity,0,3,"%.2f"))Changed();
+            if(sliderInput.Float("Ambient strength",&light.ambientIntensity,0,3,"%.2f"))Changed();
             if(ImGui::ColorEdit3("Directional",sun)){light.directionalColor={sun[0],sun[1],sun[2]};Changed();}
-            if(ImGui::SliderFloat("Sun strength",&light.directionalIntensity,0,3,"%.2f"))Changed();
+            if(sliderInput.Float("Sun strength",&light.directionalIntensity,0,3,"%.2f"))Changed();
             if(ImGui::Checkbox("Self shadows",&light.shadows))Changed();
             if(ImGui::Button("Reset lighting")){light=rk::Lighting{};Changed();}
             ImGui::SeparatorText("Ambient occlusion");
@@ -487,11 +491,11 @@ namespace
             ImGui::BeginDisabled(!ao.enabled);
             if(ImGui::Checkbox("Use Ground Plane",&ao.useGroundPlane))Changed();
             ImGui::SetItemTooltip("Invisible AO ground at the model's lowest point (ground pivot). Uses the AO radius and intensity; never appears in the sprite or sun mask.");
-            if(ImGui::SliderFloat("AO intensity",&ao.intensity,0,1,"%.2f",ImGuiSliderFlags_AlwaysClamp))Changed();
-            if(ImGui::SliderFloat("AO radius",&ao.radius,.001f,10000,"%.3f units",
+            if(sliderInput.Float("AO intensity",&ao.intensity,0,1,"%.2f",ImGuiSliderFlags_AlwaysClamp))Changed();
+            if(sliderInput.Float("AO radius",&ao.radius,.001f,10000,"%.3f units",
                 ImGuiSliderFlags_Logarithmic|ImGuiSliderFlags_AlwaysClamp))Changed();
-            ImGui::SetItemTooltip("Maximum distance to nearby occluders, in model units (meters for FBX). Ctrl+click to enter a value.");
-            if(ImGui::SliderInt("AO samples",&ao.samples,16,256,"%d",ImGuiSliderFlags_AlwaysClamp))Changed();
+            ImGui::SetItemTooltip("Maximum distance to nearby occluders, in model units (meters for FBX). Click the number to type; Enter confirms.");
+            if(sliderInput.Int("AO samples",&ao.samples,16,256,"%d",ImGuiSliderFlags_AlwaysClamp))Changed();
             ImGui::SetItemTooltip("More rays per surface point smooth the result but take longer. Preview and export use the same sample count.");
             ImGui::EndDisabled();
             ImGui::TextWrapped("AO darkens nearby creases and overlaps in the albedo and lit sprite. Alpha and the sun mask stay unchanged.");
@@ -512,7 +516,7 @@ namespace
             ImGui::SetItemTooltip("Samples per output pixel, shared by preview and all exported maps. Smooths geometry, cutouts and shading with coverage alpha. More samples take longer, especially with AO. Start with 2x2.");
             if(ImGui::Checkbox("Fit all four views",&settings.autoFit))Changed();
             if(settings.autoFit)
-            {if(ImGui::SliderFloat("Padding",&settings.padding,0,.3f,"%.2f"))Changed();}
+            {if(sliderInput.Float("Padding",&settings.padding,0,.3f,"%.2f"))Changed();}
             else
             {if(ImGui::DragFloat("Pixels / unit",&settings.pixelsPerUnit,1,1,4096,"%.1f",ImGuiSliderFlags_AlwaysClamp))Changed();}
             ImGui::TextWrapped("One common scale and center for all views. 1 model unit = 1 game tile.");
@@ -607,6 +611,7 @@ namespace
         std::vector<std::uint8_t> fontData;
         std::optional<rk::Scene> scene;
         rk::RenderSettings settings;
+        rk::SliderInput sliderInput;
         int selectedMaterial=0,view=0,previewChannel=0;
         bool exportLayers=true,dirty=false;
         std::uint64_t revision=0;Uint64 lastChange=0;
