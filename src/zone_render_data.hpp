@@ -9,6 +9,10 @@
 class World;
 inline constexpr float ZoneOverlayOpacity = 0.65f;
 
+// The displayed color after the zone map's RGBA8 rounding. Use this for
+// preview uniforms so they match the color sampled from placed-zone pixels.
+ZoneColor GetZoneOverlayColor(ZoneType type);
+
 // RGB is the zone color. A: bit 0 = zone eligibility, bits 1..6 =
 // ZoneType, bit 7 = an existing road that a route can reuse.
 // This is a data texture, NOT an alpha-premultiplied UI image.

@@ -214,7 +214,7 @@ void ZoneOverlay::Bind(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, 
     if (preview.tiles && preview.zoneType && evaluation.valid)
     {
         const auto r = *preview.tiles;
-        const auto color = Zone::GetZoneDefinition(*preview.zoneType).color;
+        const auto color = GetZoneOverlayColor(*preview.zoneType);
         uniforms.previewEnabled = 1;
         uniforms.affordable = evaluation.affordable ? 1.0f : 0.0f;
         uniforms.minX = static_cast<float>(r.minX); uniforms.minZ = static_cast<float>(r.minZ);

@@ -70,6 +70,12 @@ std::vector<std::uint8_t> BuildLotPreviewPixels(std::span<const Lot> lots, ToolT
     return RasterizeLots(lots, bounds, true);
 }
 
+ZoneColor GetZoneOverlayColor(ZoneType type)
+{
+    const auto color = Zone::GetZoneDefinition(type).color;
+    return {Byte(color.r) / 255.0f, Byte(color.g) / 255.0f, Byte(color.b) / 255.0f};
+}
+
 std::vector<std::uint8_t> BuildZonePixels(const World& world, ToolTileRect r)
 {
     static_assert(static_cast<unsigned int>(ZoneType::Count) <= 64, "Zone texture metadata needs another channel");

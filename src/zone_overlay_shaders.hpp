@@ -111,15 +111,27 @@ float3 ApplyZoneOverlay(float3 color, float2 worldXZ, bool showPlacedZones)
     uint type = (flags & 127) / 2;
     bool eligible = (flags & 1) != 0;
     bool inPreview = zoneSettings.z > 0 && all(tile >= zoneBounds.xy) && all(tile <= zoneBounds.zw);
+    bool unchanged = type == (uint)zonePreview.w;
+    bool previewZone = showPlacedZones && inPreview && zoneSettings.z == 1 && zonePreview.w != 0 &&
+        eligible && (unchanged || zoneSettings.w > 0);
     bool canPreviewLot = showPlacedZones && inPreview && zoneSettings.z == 1 && roadBend.z > 0 &&
         zoneSettings.w > 0 && eligible;
     float4 lot = 0.0;
     if (showPlacedZones && (type != 0 || canPreviewLot))
         lot = round(lotMap.SampleLevel(lotSampler, (tile + 0.5) / zoneSettings.x, 0) * 255.0);
     bool plannedLot = canPreviewLot && (((uint)lot.r & 16u) != 0);
-    // A proposed lot replaces the old markings on its tiles. Do not blend the
-    // old zone color, boundaries or arrows underneath a new zoning preview.
-    if (showPlacedZones && type != 0 && !plannedLot)
+
+    // Valid zoning previews use exactly the placed-zone blend and markings.
+    // Blend once over the terrain, including when replacing another zone.
+    // Same-zone tiles retain their appearance instead of receiving gray tint.
+    if (previewZone)
+    {
+        color = lerp(color, zonePreview.rgb, zoneSettings.y);
+        if (plannedLot || unchanged)
+            color = ApplyLotMarkings(color, zonePreview.rgb, lot, worldXZ - tile, pixelWidth);
+        return color;
+    }
+    if (showPlacedZones && type != 0)
     {
         color = lerp(color, data.rgb, zoneSettings.y);
         color = ApplyLotMarkings(color, data.rgb, lot, worldXZ - tile, pixelWidth);
@@ -128,14 +140,14 @@ float3 ApplyZoneOverlay(float3 color, float2 worldXZ, bool showPlacedZones)
     {
         bool roadAllowed = false;
         if (zoneSettings.z == 3 && !RoadPreviewFootprint(tile, roadAllowed)) return color;
-        bool unchanged = type == (uint)zonePreview.w;
         float3 tint = !eligible || (!unchanged && zoneSettings.w == 0) ? float3(1.0, 0.12, 0.10) :
-            unchanged && !plannedLot ? float3(0.65, 0.65, 0.65) : zonePreview.rgb;
+            unchanged ? float3(0.65, 0.65, 0.65) : zonePreview.rgb;
         if (zoneSettings.z == 2) tint = zonePreview.rgb;
         if (zoneSettings.z == 3) tint = roadAllowed ? zonePreview.rgb : float3(1.0, 0.12, 0.10);
         float2 edge = min(frac(worldXZ), 1.0 - frac(worldXZ));
-        color = lerp(color, tint, !plannedLot && min(edge.x, edge.y) < 0.045 ? 0.95 : 0.5);
-        if (plannedLot) color = ApplyLotMarkings(color, zonePreview.rgb, lot, worldXZ - tile, pixelWidth);
+        // Road/other-tool previews, rejection feedback and dezoning keep their
+        // existing fill and individual tile-edge highlights.
+        color = lerp(color, tint, min(edge.x, edge.y) < 0.045 ? 0.95 : 0.5);
     }
     return color;
 }
