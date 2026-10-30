@@ -1,8 +1,5 @@
-#pragma once
-
-// Compile with WorldViewShaderSource. Locations 3 (pose) and 4 (slope/length/UV mode) advance once per road,
-// while locations 0..2 read one of the seven shared meshes.
-inline constexpr char RoadVertexShaderSource[] = R"hlsl(
+// Locations 3 (pose) and 4 (slope/length/UV mode) advance once per road instance.
+#include "common/world_view.hlsli"
 struct Output {
     float4 position : SV_Position;
     float3 normal : TEXCOORD0;
@@ -45,34 +42,3 @@ Output main(float3 position : TEXCOORD0, float3 normal : TEXCOORD1,
     result.worldXZ = position.xz;
     return result;
 }
-)hlsl";
-
-// Compile with WorldLightingShaderSource and ZoneOverlayShaderSource (zone t1, road t2, b0).
-// The PNG is an sRGB color texture;
-// match the terrain's existing display-space lighting/output convention.
-inline constexpr char RoadFragmentShaderSource[] = R"hlsl(
-Texture2D<float4> baseColorTexture : register(t0, space2);
-SamplerState baseColorSampler : register(s0, space2);
-struct Input {
-    float4 position : SV_Position;
-    float3 normal : TEXCOORD0;
-    float2 uv : TEXCOORD1;
-    float2 worldXZ : TEXCOORD2;
-    nointerpolation float repeatAlongRoad : TEXCOORD3;
-};
-float3 LinearToSrgb(float3 color)
-{
-    color = max(color, 0.0);
-    return lerp(1.055 * pow(color, 1.0 / 2.4) - 0.055, color * 12.92, step(color, 0.0031308));
-}
-float4 main(Input input) : SV_Target0
-{
-    // Wrap only the straight's longitudinal UV; keep end/curve/junction atlases
-    // clamped. Gradients from unwrapped UVs avoid mip seams at repeats.
-    float2 uv = input.uv;
-    if (input.repeatAlongRoad > 0.5) uv.y = frac(uv.y);
-    float3 color = baseColorTexture.SampleGrad(baseColorSampler, uv, ddx(input.uv), ddy(input.uv)).rgb;
-    color = LinearToSrgb(color) * WorldBrightness(input.normal);
-    return float4(ApplyZoneOverlay(color, input.worldXZ, false), 1.0);
-}
-)hlsl";

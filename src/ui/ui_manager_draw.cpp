@@ -3,9 +3,7 @@
 #include "world.hpp"
 
 #include "gpu_utils.hpp"
-#include "text_shaders.hpp"
-#include "ui_image_shaders.hpp"
-#include "ui_shaders.hpp"
+#include "embedded/ui_shaders.hpp"
 
 #include <algorithm>
 #include <cstddef>

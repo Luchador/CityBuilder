@@ -1,29 +1,6 @@
-#pragma once
-
-// Compile with WorldViewShaderSource. UVs come from world position, so Vertex
-// needs no new fields and grass stays fixed during camera movement/rotation.
-inline constexpr char TerrainVertexShaderSource[] = R"hlsl(
-struct Output {
-    float4 position : SV_Position;
-    float3 color : TEXCOORD0;
-    float3 normal : TEXCOORD1;
-    float2 worldXZ : TEXCOORD2;
-};
-
-Output main(float3 position : TEXCOORD0, float3 normal : TEXCOORD1, float3 vertexColor : TEXCOORD2)
-{
-    Output result;
-    result.position = ProjectWorldPosition(position);
-    result.color = vertexColor * style.rgb;
-    result.normal = normal;
-    result.worldXZ = position.xz;
-    return result;
-}
-)hlsl";
-
-// Compile with WorldLightingShaderSource and ZoneOverlayShaderSource. SDL fragment texture/sampler slots
-// use space2; fragment uniform buffers use space3.
-inline constexpr char TerrainFragmentShaderSource[] = R"hlsl(
+// SDL fragment textures/samplers use space2; uniform buffers use space3.
+#include "common/world_lighting.hlsli"
+#include "common/zone_overlay.hlsli"
 Texture2D<float4> baseColorTexture : register(t0, space2);
 SamplerState baseColorSampler : register(s0, space2);
 Texture2D<float4> normalTexture : register(t1, space2);
@@ -77,4 +54,3 @@ float4 main(Input input) : SV_Target0
     float3 color = LinearToSrgb(surfaceColor) * WorldBrightness(worldNormal);
     return float4(ApplyZoneOverlay(color, input.worldXZ, true), 1.0);
 }
-)hlsl";

@@ -1,6 +1,3 @@
-#pragma once
-
-inline constexpr char UiVertexShaderSource[] = R"hlsl(
 cbuffer Screen : register(b0, space1)
 {
     float4 screen; // logical window width, height, unused, unused
@@ -19,16 +16,3 @@ Output main(float2 position : TEXCOORD0, float4 color : TEXCOORD1)
     result.color = color;
     return result;
 }
-)hlsl";
-
-inline constexpr char UiFragmentShaderSource[] = R"hlsl(
-struct Input {
-    float4 position : SV_Position;
-    float4 color : TEXCOORD0;
-};
-
-float4 main(Input input) : SV_Target0
-{
-    return input.color;
-}
-)hlsl";

@@ -1,6 +1,3 @@
-#pragma once
-
-inline constexpr char ZoneOverlayShaderSource[] = R"hlsl(
 #ifndef ZONE_TEXTURE
 #define ZONE_TEXTURE t2
 #define ZONE_SAMPLER s2
@@ -151,4 +148,3 @@ float3 ApplyZoneOverlay(float3 color, float2 worldXZ, bool showPlacedZones)
     }
     return color;
 }
-)hlsl";

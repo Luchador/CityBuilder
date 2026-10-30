@@ -34,6 +34,8 @@ FetchContent_Declare(renderkit_cgltf
     SOURCE_SUBDIR render_kit_no_subproject)
 FetchContent_MakeAvailable(renderkit_cgltf)
 
+add_subdirectory(shaders)
+
 file(GLOB_RECURSE CITYBUILDER_SOURCES CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/*.hpp"
@@ -47,7 +49,7 @@ target_include_directories(CityBuilder PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src"
 target_include_directories(CityBuilder SYSTEM PRIVATE "${renderkit_cgltf_SOURCE_DIR}")
 target_compile_definitions(CityBuilder PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)
 # D3DCompile is supplied by the Windows SDK; no separate shader tools needed.
-target_link_libraries(CityBuilder PRIVATE SDL3::SDL3-static SDL3_ttf::SDL3_ttf-static d3dcompiler)
+target_link_libraries(CityBuilder PRIVATE SDL3::SDL3-static SDL3_ttf::SDL3_ttf-static d3dcompiler CityShaderSources)
 if(MSVC)
     target_compile_options(CityBuilder PRIVATE /W4 /permissive-)
 endif()
@@ -102,7 +104,7 @@ if(CITY_BUILD_ROAD_TESTS)
     target_compile_features(CityRoadRendererTests PRIVATE cxx_std_20)
     target_include_directories(CityRoadRendererTests PRIVATE src)
     target_include_directories(CityRoadRendererTests SYSTEM PRIVATE "${renderkit_cgltf_SOURCE_DIR}")
-    target_link_libraries(CityRoadRendererTests PRIVATE SDL3::Headers)
+    target_link_libraries(CityRoadRendererTests PRIVATE SDL3::Headers CityShaderSources)
     add_test(NAME CityRoadRendererTests COMMAND CityRoadRendererTests "${CMAKE_CURRENT_SOURCE_DIR}")
     add_executable(CityRoadPreviewTests tests/road_preview_tests.cpp src/zone_overlay.cpp src/zone_render_data.cpp
         src/world.cpp src/terrain.cpp src/world_zoning.cpp src/zone.cpp src/tool.cpp)
@@ -203,7 +205,7 @@ if(CITY_BUILD_UI_MANAGER_TESTS)
     # Device/font doubles only need the public headers, not the SDL_ttf binary.
     target_include_directories(CityUiManagerTests PRIVATE src
         $<TARGET_PROPERTY:SDL3_ttf::SDL3_ttf,INTERFACE_INCLUDE_DIRECTORIES>)
-    target_link_libraries(CityUiManagerTests PRIVATE SDL3::Headers)
+    target_link_libraries(CityUiManagerTests PRIVATE SDL3::Headers CityShaderSources)
     add_test(NAME CityUiManagerTests COMMAND CityUiManagerTests)
 endif()
 

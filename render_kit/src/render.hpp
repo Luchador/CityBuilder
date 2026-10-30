@@ -5,7 +5,7 @@
 
 namespace renderkit
 {
-    // Same world-space direction as shaders.hpp. Legacy mode retains its magnitude; GI normalizes it.
+    // Same direction as shaders/common/world_lighting.hlsli. Legacy mode retains its magnitude; GI normalizes it.
     // This vector points TOWARD the light, not along the emitted rays.
     inline constexpr Vec3 DirectionalLightDirection{-.75f,.5f,.25f};
     inline constexpr float LightingDivisor = .89f;

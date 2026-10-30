@@ -1,7 +1,5 @@
 #include "road_renderer.hpp"
-#include "road_shaders.hpp"
-#include "shaders.hpp"
-#include "zone_overlay_shaders.hpp"
+#include "embedded/road_shaders.hpp"
 #include "gpu_utils.hpp"
 #include "road_mesh.hpp"
 #include "world.hpp"
@@ -97,9 +95,8 @@ void RoadRenderer::Initialize(SDL_GPUDevice* gpu, TextureManager& textures, SDL_
             Fail("Create road sampler");
         }
 
-        vertexShader = CompileShader(device, RoadVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX, 0, WorldViewShaderSource);
-        const std::string fragmentPreamble = std::string(WorldLightingShaderSource) + "#define ZONE_TEXTURE t1\n#define ZONE_SAMPLER s1\n#define ROAD_TEXTURE t2\n#define ROAD_SAMPLER s2\n#define LOT_TEXTURE t3\n#define LOT_SAMPLER s3\n#define ARROW_TEXTURE t4\n#define ARROW_SAMPLER s4\n#define ZONE_UNIFORMS b0\n" + ZoneOverlayShaderSource;
-        fragmentShader = CompileShader(device, RoadFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 5, fragmentPreamble.c_str(), 1);
+        vertexShader = CompileShader(device, RoadVertexShaderSource, SDL_GPU_SHADERSTAGE_VERTEX);
+        fragmentShader = CompileShader(device, RoadFragmentShaderSource, SDL_GPU_SHADERSTAGE_FRAGMENT, 5, "", 1);
 
         SDL_GPUVertexBufferDescription buffers[2]{};
         buffers[0].slot = 0;
