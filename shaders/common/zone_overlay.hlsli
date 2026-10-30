@@ -73,15 +73,41 @@ bool RoadPreviewFootprint(float2 tile, out bool allowed)
     return covered;
 }
 
+float LotBorderCoverage(float distanceToEdge, float pixelWidth)
+{
+    // Width on each side of a lot boundary, in tile units. Do not force a
+    // minimum pixel width: that would cover more of the zone when zoomed out.
+    const float borderWidth = 0.022;
+    float footprint = max(pixelWidth, 0.00001);
+    float halfPixel = footprint * 0.5;
+
+    // Filter a fixed-width strip across the pixel's footprint. Subpixel lines
+    // lose opacity instead of growing, while nearby lines keep their contrast.
+    float coveredWidth = max(0.0, min(distanceToEdge + halfPixel, borderWidth) -
+                                   max(distanceToEdge - halfPixel, -borderWidth));
+    return saturate(coveredWidth / footprint);
+}
+
 float3 ApplyLotMarkings(float3 color, float3 zoneColor, float4 lot, float2 local, float2 pixelWidth)
 {
     uint edges = (uint)lot.r;
-    float2 thickness = max(float2(0.022, 0.022), pixelWidth);
     float border = 0.0;
-    if ((edges & 1u) != 0) border = max(border, 1.0 - smoothstep(thickness.x, thickness.x + pixelWidth.x, local.x));
-    if ((edges & 2u) != 0) border = max(border, 1.0 - smoothstep(thickness.y, thickness.y + pixelWidth.y, local.y));
-    if ((edges & 4u) != 0) border = max(border, 1.0 - smoothstep(thickness.x, thickness.x + pixelWidth.x, 1.0 - local.x));
-    if ((edges & 8u) != 0) border = max(border, 1.0 - smoothstep(thickness.y, thickness.y + pixelWidth.y, 1.0 - local.y));
+    if ((edges & 1u) != 0)
+    {
+        border = max(border, LotBorderCoverage(local.x, pixelWidth.x));
+    }
+    if ((edges & 2u) != 0)
+    {
+        border = max(border, LotBorderCoverage(local.y, pixelWidth.y));
+    }
+    if ((edges & 4u) != 0)
+    {
+        border = max(border, LotBorderCoverage(1.0 - local.x, pixelWidth.x));
+    }
+    if ((edges & 8u) != 0)
+    {
+        border = max(border, LotBorderCoverage(1.0 - local.y, pixelWidth.y));
+    }
     color = lerp(color, zoneColor * 0.30, border * 0.9);
     if (lot.g != 0)
     {
