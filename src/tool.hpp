@@ -75,7 +75,7 @@ struct ZoneRequest
     ToolTileRect tiles;
     ZoneType zoneType = ZoneType::None; // None requests dezoning.
     bool useMaximumLotSize = false;
-    bool useAlternateLayout = false; // Alt selects the other layout in an exact two-way tie.
+    bool useAlternateLayout = false; // Alt selects one fixed alternate among equally ranked layouts.
 
     bool operator==(const ZoneRequest&) const = default;
 };

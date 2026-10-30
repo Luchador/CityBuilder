@@ -211,7 +211,8 @@ namespace
     }
 
     // Compare actual footprints AND arrows, independently of creation order.
-    // Several frontage passes can converge on the same layout; count it once.
+    // Several frontage passes can converge on the same layout; a matching plan
+    // is not an alternate.
     using LayoutKey = std::vector<std::array<unsigned, 5>>;
     LayoutKey KeyForLayout(std::span<const Lot> lots)
     {
@@ -236,8 +237,8 @@ std::vector<Lot> PlanZoneLots(const World& world, const ZoneRequest& request)
     if (!request.useAlternateLayout && !competingFrontages) return normal;
 
     auto bestScore = ScoreLayout(world, normal);
-    std::vector<LayoutKey> tiedLayouts;
-    if (request.useAlternateLayout) tiedLayouts.push_back(KeyForLayout(normal));
+    LayoutKey normalKey;
+    if (request.useAlternateLayout) normalKey = KeyForLayout(normal);
     std::vector<Lot> alternate;
     for (const auto facing : Facings)
     {
@@ -251,18 +252,15 @@ std::vector<Lot> PlanZoneLots(const World& world, const ZoneRequest& request)
             normal = std::move(candidate);
             bestScore = score;
             alternate.clear();
-            tiedLayouts.clear();
-            if (request.useAlternateLayout) tiedLayouts.push_back(KeyForLayout(normal));
+            if (request.useAlternateLayout) normalKey = KeyForLayout(normal);
             continue;
         }
-        if (!request.useAlternateLayout || BetterLayout(bestScore, score)) continue;
-        auto key = KeyForLayout(candidate);
-        if (std::find(tiedLayouts.begin(), tiedLayouts.end(), key) != tiedLayouts.end()) continue;
-        // Three distinct best layouts are enough to disallow the alternate.
-        // Continue comparing scores: a later, better plan resets the tie group.
-        if (tiedLayouts.size() < 3) tiedLayouts.push_back(std::move(key));
-        if (tiedLayouts.size() == 2) alternate = std::move(candidate);
-        else alternate.clear();
+        if (!request.useAlternateLayout || BetterLayout(bestScore, score) || !alternate.empty()) continue;
+        if (KeyForLayout(candidate) == normalKey) continue;
+        // Keep the first distinct equally ranked layout, even if more tie.
+        // Alt always selects this same alternate; it does not cycle choices.
+        // A later strictly better score still resets both layouts above.
+        alternate = std::move(candidate);
     }
-    return request.useAlternateLayout && tiedLayouts.size() == 2 ? std::move(alternate) : std::move(normal);
+    return alternate.empty() ? std::move(normal) : std::move(alternate);
 }

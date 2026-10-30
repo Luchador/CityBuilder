@@ -51,7 +51,7 @@ struct ZoneRequest;
 // Preferred/max dimensions are frontage width and depth away from the road;
 // Lot::width/depth above are the resulting world X/Z footprint.
 // Alt compares distinct cardinal-frontage layouts against the normal plan and
-// uses the other equally ranked layout only in an exact two-way tie.
+// uses the first distinct equally ranked alternative, even when several tie.
 std::vector<Lot> PlanZoneLots(const World& world, const ZoneRequest& request);
 
 // Repack only the original lot's surviving tiles, retaining large rectangles
