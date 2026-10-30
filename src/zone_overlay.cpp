@@ -95,50 +95,73 @@ void ZoneOverlay::RestoreLotPreview()
 
 void ZoneOverlay::PrepareLotPreview(const World& world, const ToolPreview& preview, const ZoneEvaluation& evaluation)
 {
-    if (!preview.tiles || !preview.zoneType ||
-        !evaluation.valid || !evaluation.affordable)
+    if (!preview.tiles || !preview.zoneType || !evaluation.valid || !evaluation.affordable)
     {
         RestoreLotPreview();
         return;
     }
+
     const ZoneRequest request{*preview.tiles, *preview.zoneType, preview.useMaximumLotSize, preview.useAlternateLayout};
-    if (preparedLotWorld == &world && preparedLotRequest == request &&
-        previewLotRevision == world.GetLotRevision() && previewRoadRevision == world.GetRoadRevision()) return;
+
+    if (preparedLotWorld == &world && preparedLotRequest == request && previewLotRevision == world.GetLotRevision() && previewRoadRevision == world.GetRoadRevision()) 
+    {
+        return;
+    }
 
     RestoreLotPreview();
+
     // Both plans are shared with ApplyZoning. Include complete affected lots,
     // since their remnants can extend beyond the selected rectangle.
     const auto lots = PlanZoneLots(world, request);
     const auto repairs = PlanZoningLotRepairs(world, request);
     auto r = request.tiles;
+
     for (const auto& lot : repairs.removed)
     {
         r.minX = std::min(r.minX, lot.x); r.minZ = std::min(r.minZ, lot.z);
         r.maxX = std::max(r.maxX, lot.x + static_cast<int>(lot.width) - 1);
         r.maxZ = std::max(r.maxZ, lot.z + static_cast<int>(lot.depth) - 1);
     }
+
     auto pixels = CopyCommittedLotRegion(r);
     const auto width = static_cast<std::size_t>(r.maxX - r.minX + 1);
     const auto height = static_cast<std::size_t>(r.maxZ - r.minZ + 1);
+
     for (const auto& lot : repairs.removed)
-        for (int z = lot.z; z < lot.z + static_cast<int>(lot.depth); ++z)
     {
-        const auto i = (static_cast<std::size_t>(z - r.minZ) * width + lot.x - r.minX) * 4;
-        std::fill_n(pixels.begin() + i, static_cast<std::size_t>(lot.width) * 4, 0);
+        for (int z = lot.z; z < lot.z + static_cast<int>(lot.depth); ++z)
+        {
+            const auto i = (static_cast<std::size_t>(z - r.minZ) * width + lot.x - r.minX) * 4;
+            std::fill_n(pixels.begin() + i, static_cast<std::size_t>(lot.width) * 4, 0);
+        }
     }
+
     const auto paste = [&](std::span<const Lot> planned, bool newZoning)
     {
-        if (planned.empty()) return;
+        if (planned.empty()) 
+        {
+            return;
+        }
+    
         const auto metadata = BuildLotPreviewPixels(planned, r);
+    
         for (std::size_t i = 0; i < pixels.size(); i += 4)
         {
-            if (!(metadata[i] & LotPreviewTileBit)) continue;
+            if (!(metadata[i] & LotPreviewTileBit)) 
+            {
+                continue;
+            }
+
             std::copy_n(metadata.begin() + i, 4, pixels.begin() + i);
             // Remnants keep their original zone color, outside or inside the
             // gesture. Only newly zoned lots use the new-zone preview tint.
-            if (!newZoning) pixels[i] &= static_cast<std::uint8_t>(~LotPreviewTileBit);
+            if (!newZoning) 
+            {
+                pixels[i] &= static_cast<std::uint8_t>(~LotPreviewTileBit);
+            }
         }
     };
+
     paste(repairs.replacements, false);
     paste(lots, true);
     textures->UpdateRgba(*lotImage, r.minX, r.minZ, static_cast<Uint32>(width), static_cast<Uint32>(height), pixels);
@@ -151,12 +174,22 @@ void ZoneOverlay::PrepareLotPreview(const World& world, const ToolPreview& previ
 
 void ZoneOverlay::PrepareRoadPreview(const World& world, const ToolPreview& preview)
 {
-    if (!preview.roadPath) return;
+    if (!preview.roadPath) 
+    {
+        return;
+    }
+
     const auto& path = *preview.roadPath;
-    if (preparedWorld == &world && preparedRoadRevision == world.GetRoadRevision() && preparedRoadPath == path) return;
+
+    if (preparedWorld == &world && preparedRoadRevision == world.GetRoadRevision() && preparedRoadPath == path) 
+    {
+        return;
+    }
+
     // A failed partial upload must not leave the old preview marked as cached.
     preparedRoadPath.reset();
     const auto plan = world.PlanRoads(path);
+
     // Upload small blocks along either kind of route. G holds acceptance;
     // B/R/A hold the 24 footprint bits. Off-path values are never sampled.
     for (std::size_t first = 0; first < plan.tiles.size(); first += 16)
@@ -164,9 +197,9 @@ void ZoneOverlay::PrepareRoadPreview(const World& world, const ToolPreview& prev
         const auto& a = plan.tiles[first];
         const auto& b = plan.tiles[std::min(first + 15, plan.tiles.size() - 1)];
         const auto r = ToolTileRect::FromCorners({a.x, a.z}, {b.x, b.z});
-        textures->UpdateRgba(*roadImage, r.minX, r.minZ, r.maxX - r.minX + 1, r.maxZ - r.minZ + 1,
-            BuildPlannedRoadPreviewPixels(world, plan, r));
+        textures->UpdateRgba(*roadImage, r.minX, r.minZ, r.maxX - r.minX + 1, r.maxZ - r.minZ + 1, BuildPlannedRoadPreviewPixels(world, plan, r));
     }
+
     preparedRoadPath = path;
     preparedWorld = &world;
     preparedRoadRevision = world.GetRoadRevision();
@@ -206,6 +239,7 @@ void ZoneOverlay::Bind(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, 
         uniforms.red = color.r;
         uniforms.green = color.g;
         uniforms.blue = color.b;
+
         if (preview.roadPath)
         {
             const auto& path = *preview.roadPath;
@@ -220,8 +254,7 @@ void ZoneOverlay::Bind(SDL_GPUCommandBuffer* commands, SDL_GPURenderPass* pass, 
         }
     }
 
-    const SDL_GPUTextureSamplerBinding bindings[] = {{image->Handle(), sampler}, {roadImage->Handle(), sampler},
-        {lotImage->Handle(), sampler}, {arrowImage->Handle(), arrowSampler}};
+    const SDL_GPUTextureSamplerBinding bindings[] = {{image->Handle(), sampler}, {roadImage->Handle(), sampler}, {lotImage->Handle(), sampler}, {arrowImage->Handle(), arrowSampler}};
     SDL_BindGPUFragmentSamplers(pass, samplerSlot, bindings, 4);
     SDL_PushGPUFragmentUniformData(commands, uniformSlot, &uniforms, sizeof(uniforms));
 }
@@ -232,7 +265,12 @@ void ZoneOverlay::Release() noexcept
     roadImage.reset();
     lotImage.reset();
     arrowImage = nullptr;
-    if (arrowSampler) SDL_ReleaseGPUSampler(device, arrowSampler);
+
+    if (arrowSampler) 
+    {
+        SDL_ReleaseGPUSampler(device, arrowSampler);
+    }
+
     arrowSampler = nullptr;
     preparedLotRevision = 0;
     committedLotPixels.clear();

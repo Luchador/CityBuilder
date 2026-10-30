@@ -47,36 +47,69 @@ LotId World::CreateLot(Lot lot)
 bool World::RemoveLot(LotId id)
 {
     const auto found = lotIndices.find(id);
-    if (found == lotIndices.end()) return false;
+
+    if (found == lotIndices.end()) 
+    {
+        return false;
+    }
+
     const auto index = found->second;
     const auto lot = lots[index];
-    if (lot.buildingId != NoBuilding || lot.lotStatus != LotStatus::UNDEVELOPED) return false;
+
+    if (lot.buildingId != NoBuilding || lot.lotStatus != LotStatus::UNDEVELOPED) 
+    {
+        return false;
+    }
+
     for (int z = lot.z; z < lot.z + static_cast<int>(lot.depth); ++z)
+    {
         for (int x = lot.x; x < lot.x + static_cast<int>(lot.width); ++x)
+        {
             if (GetTile(x, z).buildingId != NoBuilding) return false;
+        }
+    }
+
     for (int z = lot.z; z < lot.z + static_cast<int>(lot.depth); ++z)
+    {
         for (int x = lot.x; x < lot.x + static_cast<int>(lot.width); ++x)
+        {
             GetTile(x, z).lotId = NoLot;
+        }
+    }
+
     // Dense storage can move; public IDs and tile references never do.
     if (index != lots.size() - 1)
     {
         lots[index] = lots.back();
         lotIndices.at(lots[index].id) = index;
     }
+
     lots.pop_back();
     lotIndices.erase(found);
     ++lotRevision;
+
     return true;
 }
 
 bool World::RemoveLotForRepair(LotId id, std::vector<Lot>& removedLots)
 {
     const auto* lot = GetLot(id);
-    if (!lot) return false;
+
+    if (!lot) 
+    {
+        return false;
+    }
+
     // Copy before RemoveLot's swap/pop invalidates pointers into lots.
     removedLots.push_back(*lot);
-    if (RemoveLot(id)) return true;
+
+    if (RemoveLot(id)) 
+    {
+        return true;
+    }
+
     removedLots.pop_back();
+
     return false;
 }
 
